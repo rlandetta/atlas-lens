@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nueva cobertura | ATLAS LENS</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body>
+    <div class="app-layout">
+        <aside class="app-sidebar" data-collapsible="ready">
+            <div class="sidebar-brand">LENS</div>
+            <nav class="sidebar-nav" aria-label="Módulos">
+                <a href="{{ url_for('web.new_coverage') }}" class="sidebar-link is-active">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.6"/><path d="M8 10h8" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Coberturas</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/></svg>
+                    </span>
+                    <span>Fotografías</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M6 5h12v14H6z" stroke="currentColor" stroke-width="1.6"/><path d="M9 9h6M9 13h6" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Captions</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M5 5h14v14H5z" stroke="currentColor" stroke-width="1.6"/><path d="M9 15l6-6" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Exportaciones</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="currentColor" stroke-width="1.6"/><path d="M12 4v16" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Entregas</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.6h-4l-.3 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5c.07-.33.1-.66.1-1Z" stroke="currentColor" stroke-width="1.2"/></svg>
+                    </span>
+                    <span>Configuración</span>
+                </a>
+            </nav>
+        </aside>
+
+        <div class="app-workspace">
+            <header class="app-header">
+                <div class="header-logo">ATLAS LENS</div>
+                <div class="header-future-actions">Área de acciones</div>
+                <div class="header-user">Editor</div>
+            </header>
+
+            <main class="view-content form-page">
+                <section class="form-card ui-card">
+                    <h1>Iniciar cobertura</h1>
+                    <p class="subtitle">Complete la información editorial para iniciar una nueva cobertura.</p>
+
+                    {% if error_message %}
+                    <p class="form-error">{{ error_message }}</p>
+                    {% endif %}
+
+                    <form method="post" class="coverage-form">
+                        <div class="coverage-form-grid">
+                            <div class="form-field">
+                                <label for="coverage_name">Nombre de la cobertura</label>
+                                <input id="coverage_name" name="coverage_name" type="text" value="{{ form_data.coverage_name or '' }}" required spellcheck="true">
+                            </div>
+
+                            <div class="form-field">
+                                <label for="agency">Agencia</label>
+                                <select id="agency" name="agency" required>
+                                    <option value="" {% if not form_data.agency %}selected{% endif %} disabled>Selecciona una agencia</option>
+                                    {% for agency in agency_options %}
+                                    <option value="{{ agency }}" {% if form_data.agency == agency %}selected{% endif %}>{{ agency }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="form-field">
+                                <label for="submit_date">Fecha de envío</label>
+                                <input id="submit_date" name="submit_date" type="date" value="{{ form_data.submit_date or '' }}" required>
+                            </div>
+
+                            <div class="form-field">
+                                <label for="event_date">Fecha del evento</label>
+                                <input id="event_date" name="event_date" type="date" value="{{ form_data.event_date or '' }}" required>
+                            </div>
+
+                            <div class="form-field">
+                                <label for="city">Ciudad</label>
+                                <input id="city" name="city" type="text" value="{{ form_data.city or '' }}" required spellcheck="true">
+                            </div>
+
+                            <div class="form-field">
+                                <label for="country">País</label>
+                                <select id="country" name="country" required>
+                                    <option value="" {% if not form_data.country %}selected{% endif %} disabled>Selecciona un país</option>
+                                    {% for group_label, group_countries in country_groups %}
+                                    <optgroup label="{{ group_label }}">
+                                        {% for country_name in group_countries %}
+                                        <option value="{{ country_name }}" {% if form_data.country == country_name %}selected{% endif %}>{{ country_name }}</option>
+                                        {% endfor %}
+                                    </optgroup>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="form-field">
+                                <label for="photographer">Fotógrafo</label>
+                                <input id="photographer" name="photographer" type="text" value="{{ form_data.photographer or '' }}" required spellcheck="true">
+                            </div>
+
+                            <div class="form-field">
+                                <label for="editor">Editor</label>
+                                <input id="editor" name="editor" type="text" value="{{ form_data.editor or '' }}" required spellcheck="false">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="primary-button compact-action">Crear cobertura</button>
+                    </form>
+
+                    <a href="{{ url_for('web.home') }}" class="back-link">Volver al inicio</a>
+                </section>
+            </main>
+        </div>
+    </div>
+</body>
+</html>

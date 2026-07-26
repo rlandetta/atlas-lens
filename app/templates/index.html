@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,10 +7,64 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
 <body>
-    <main class="hero">
-        <h1>ATLAS LENS</h1>
-        <p class="subtitle">Editorial workflow for news photographers</p>
-        <button type="button" class="primary-button">Nueva cobertura</button>
-    </main>
+    <div class="app-layout">
+        <aside class="app-sidebar" data-collapsible="ready">
+            <div class="sidebar-brand">LENS</div>
+            <nav class="sidebar-nav" aria-label="Módulos">
+                <a href="{{ url_for('web.new_coverage') }}" class="sidebar-link is-active">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.6"/><path d="M8 10h8" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Coberturas</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/></svg>
+                    </span>
+                    <span>Fotografías</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M6 5h12v14H6z" stroke="currentColor" stroke-width="1.6"/><path d="M9 9h6M9 13h6" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Captions</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M5 5h14v14H5z" stroke="currentColor" stroke-width="1.6"/><path d="M9 15l6-6" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Exportaciones</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="currentColor" stroke-width="1.6"/><path d="M12 4v16" stroke="currentColor" stroke-width="1.6"/></svg>
+                    </span>
+                    <span>Entregas</span>
+                </a>
+                <a href="#" class="sidebar-link">
+                    <span class="sidebar-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.6h-4l-.3 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5c.07-.33.1-.66.1-1Z" stroke="currentColor" stroke-width="1.2"/></svg>
+                    </span>
+                    <span>Configuración</span>
+                </a>
+            </nav>
+        </aside>
+
+        <div class="app-workspace">
+            <header class="app-header">
+                <div class="header-logo">ATLAS LENS</div>
+                <div class="header-future-actions">Área de acciones</div>
+                <div class="header-user">Editor</div>
+            </header>
+
+            <main class="view-content">
+                <section class="hero-card ui-card">
+                    <h1>ATLAS LENS</h1>
+                    <p class="subtitle">Editorial workflow for news photographers</p>
+                    <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Nueva cobertura</a>
+                </section>
+            </main>
+        </div>
+    </div>
 </body>
 </html>
