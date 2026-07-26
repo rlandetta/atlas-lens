@@ -1,0 +1,24 @@
+ {
+  "manifest_version": "1.0",
+
+  "coverage": {
+    "id": "cov_20260725_001",
+    "title": "Convoy humanitario Imbabura",
+    "slug": "Convoy-humanitario-Imbabura-EC",
+    "date": "2026-07-25",
+    "city": "Ibarra",
+    "country": "Ecuador",
+    "agency": "Xinhua",
+    "photographer": "Ricardo Landeta",
+    "editor": "",
+    "status": "draft"
+  },
+
+  "photos": [],
+
+  "exports": [],
+
+  "delivery": [],
+
+  "history": []
+}
