@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 import random
 import re
 
-from flask import Blueprint, abort, redirect, render_template, request, url_for
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
 web_bp = Blueprint("web", __name__)
 
@@ -90,11 +90,25 @@ def validate_coverage_data(form_data: dict[str, str]) -> str | None:
     return None
 
 
-def build_detail_context(coverage_id: str, coverage: dict[str, str], edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
+def ensure_coverage_photos(coverage: dict) -> list[dict]:
+    photos = coverage.setdefault("photos", [])
+    return photos if isinstance(photos, list) else []
+
+
+def parse_optional_int(value):
+    if value in (None, ""):
+        return None
+
+    return int(value)
+
+
+def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
+    photos = ensure_coverage_photos(coverage)
     return {
         "coverage_id": coverage_id,
         "coverage": coverage,
         "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
+        "photos": photos,
         "country_groups": COUNTRY_GROUPS,
         "agency_options": AGENCY_OPTIONS,
         "edit_error": edit_error,
@@ -109,7 +123,7 @@ def home() -> str:
             "coverage_id": coverage_id,
             "coverage": coverage,
             "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
-            "photo_count": 0,
+            "photo_count": len(ensure_coverage_photos(coverage)),
             "status": "En preparación",
         }
         for coverage_id, coverage in coverages.items()
@@ -141,6 +155,7 @@ def new_coverage() -> str:
         )
 
     coverage_id = build_coverage_id(form_data["coverage_name"])
+    form_data["photos"] = []
     coverages[coverage_id] = form_data
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
@@ -151,7 +166,15 @@ def coverage_detail(coverage_id: str) -> str:
     if coverage is None:
         abort(404)
 
-    return render_template("coverage_detail.html", **build_detail_context(coverage_id, coverage))
+    open_edit_dialog = request.args.get("edit") == "1"
+    return render_template(
+        "coverage_detail.html",
+        **build_detail_context(
+            coverage_id,
+            coverage,
+            open_edit_dialog=open_edit_dialog,
+        ),
+    )
 
 
 @web_bp.post("/coverages/<coverage_id>/edit")
@@ -163,6 +186,7 @@ def edit_coverage(coverage_id: str) -> str:
     error_message = validate_coverage_data(form_data)
 
     if error_message:
+        form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
         return render_template(
             "coverage_detail.html",
             **build_detail_context(
@@ -173,5 +197,67 @@ def edit_coverage(coverage_id: str) -> str:
             ),
         )
 
+    form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
     coverages[coverage_id] = form_data
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
+
+
+@web_bp.post("/coverages/<coverage_id>/delete")
+def delete_coverage(coverage_id: str) -> str:
+    if coverage_id not in coverages:
+        abort(404)
+
+    del coverages[coverage_id]
+    return redirect(url_for("web.home"))
+
+
+@web_bp.post("/coverages/<coverage_id>/photos")
+def add_coverage_photo(coverage_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    required_fields = ("id", "name", "size", "type", "data_url")
+    if any(not payload.get(field) for field in required_fields):
+        return jsonify({"error": "Photo payload is incomplete."}), 400
+
+    try:
+        photo = {
+            "id": str(payload["id"]),
+            "name": str(payload["name"]),
+            "size": int(payload["size"]),
+            "type": str(payload["type"]),
+            "width": parse_optional_int(payload.get("width")),
+            "height": parse_optional_int(payload.get("height")),
+            "data_url": str(payload["data_url"]),
+        }
+    except (TypeError, ValueError):
+        return jsonify({"error": "Photo payload contains invalid numeric metadata."}), 400
+
+    photos = ensure_coverage_photos(coverage)
+    if any(existing_photo["id"] == photo["id"] for existing_photo in photos):
+        return jsonify({"photo": photo, "total": len(photos)})
+
+    photos.append(photo)
+    return jsonify({"photo": photo, "total": len(photos)}), 201
+
+
+@web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/delete")
+def delete_coverage_photo(coverage_id: str, photo_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    photos = ensure_coverage_photos(coverage)
+    next_photos = [
+        photo
+        for photo in photos
+        if photo.get("id") != photo_id
+    ]
+
+    if len(next_photos) == len(photos):
+        abort(404)
+
+    coverage["photos"] = next_photos
+    return jsonify({"total": len(next_photos)})

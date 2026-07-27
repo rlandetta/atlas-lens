@@ -48,22 +48,78 @@
     </nav>
 
     <section id="tab-fotografias" class="tab-panel is-active coverage-section photo-section" role="tabpanel" data-tab-panel>
-        <h2 id="photo-section-title">Fotografías</h2>
-        <div id="drop-zone" class="drop-zone">
-            <p class="drop-main">Arrastra y suelta tus fotografías aquí</p>
-            <p class="drop-secondary">o</p>
-            <button id="select-photos-button" type="button" class="secondary-button">Seleccionar fotografías</button>
-            <input id="photo-input" type="file" accept=".jpg,.jpeg,image/jpeg" multiple hidden>
+        <div
+            class="photo-workspace"
+            aria-labelledby="photo-section-title"
+            data-coverage-id="{{ coverage_id }}"
+            data-photos-url="{{ url_for('web.add_coverage_photo', coverage_id=coverage_id) }}"
+            data-photo-delete-url-template="{{ url_for('web.delete_coverage_photo', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+        >
+            <div class="photo-workspace-toolbar">
+                <h2 id="photo-section-title">Fotografías</h2>
+                <div class="photo-toolbar-actions">
+                    <button id="select-photos-button" type="button" class="primary-button compact-action">Importar fotografías</button>
+                    <span id="photo-total-count" class="toolbar-counter" aria-live="polite">Total: 0</span>
+                    <span id="photo-selected-count" class="toolbar-counter" aria-live="polite">Seleccionadas: 0</span>
+                    <button id="remove-selected-photo-button" type="button" class="secondary-button" disabled>Quitar seleccionada</button>
+                    <button id="clear-photo-selection-button" type="button" class="secondary-button">Limpiar selección</button>
+                </div>
+            </div>
+
+            <div id="drop-zone" class="drop-zone">
+                <p class="drop-main">Arrastra y suelta tus fotografías aquí</p>
+                <p class="drop-secondary">o use el botón Importar fotografías</p>
+                <input id="photo-input" type="file" accept=".jpg,.jpeg,image/jpeg" multiple hidden>
+            </div>
+
+            <p id="photo-upload-message" class="form-success hidden-message" role="status" aria-live="polite">
+                Importación preparada correctamente
+            </p>
+
+            <div class="photo-workspace-grid">
+                <section class="photo-browser-panel" aria-label="Cuadrícula de fotografías">
+                    <div id="photo-grid" class="photo-grid" role="listbox" aria-label="Fotografías importadas"></div>
+                    <p id="photo-empty-message" class="photo-empty-message">Importe fotografías JPG/JPEG para comenzar el trabajo visual.</p>
+                </section>
+
+                <section class="photo-preview-panel" aria-label="Vista previa">
+                    <div id="photo-preview-empty" class="photo-preview-empty">Seleccione una fotografía para verla.</div>
+                    <img id="selected-photo-preview" class="selected-photo-preview" alt="" hidden>
+                </section>
+
+                <aside class="photo-info-panel" aria-label="Información de fotografía">
+                    <h3>Información</h3>
+                    <p id="photo-info-empty" class="photo-info-empty">Seleccione una fotografía para revisar sus datos.</p>
+                    <dl id="photo-info-details" class="photo-info-details" hidden>
+                        <div>
+                            <dt>Nombre</dt>
+                            <dd id="photo-info-name"></dd>
+                        </div>
+                        <div>
+                            <dt>Tamaño</dt>
+                            <dd id="photo-info-size"></dd>
+                        </div>
+                        <div>
+                            <dt>Tipo</dt>
+                            <dd id="photo-info-type"></dd>
+                        </div>
+                        <div>
+                            <dt>Dimensiones</dt>
+                            <dd id="photo-info-dimensions"></dd>
+                        </div>
+                        <div>
+                            <dt>Estado</dt>
+                            <dd>Preparada</dd>
+                        </div>
+                    </dl>
+                    <div id="photo-caption-preview" class="photo-caption-preview" hidden>
+                        <label for="photo-caption-field">Caption</label>
+                        <textarea id="photo-caption-field" rows="4" readonly></textarea>
+                        <p>La edición de captions se habilitará en una próxima iteración.</p>
+                    </div>
+                </aside>
+            </div>
         </div>
-
-        <p id="photo-count" class="photo-count">0 fotografías seleccionadas</p>
-
-        <ul id="photo-preview-list" class="photo-preview-list" aria-live="polite"></ul>
-
-        <button id="upload-photos-button" type="button" class="primary-button">Importar fotografías</button>
-        <p id="photo-upload-message" class="form-success hidden-message" role="status" aria-live="polite">
-            Importación preparada correctamente
-        </p>
     </section>
 
     <section id="tab-captions" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
@@ -154,10 +210,47 @@
         </div>
     </form>
 </dialog>
+<dialog id="photo-delete-dialog" class="delete-dialog" aria-labelledby="photo-delete-title">
+    <form method="dialog" class="delete-dialog-form">
+        <h2 id="photo-delete-title">Eliminar fotografía</h2>
+        <p>Esta acción eliminará la fotografía de esta cobertura temporal. No se puede deshacer.</p>
+        <p class="delete-dialog-coverage-title" id="photo-delete-name"></p>
+        <div class="dialog-actions">
+            <button type="button" id="cancel-photo-delete-button" class="secondary-button">Cancelar</button>
+            <button type="button" id="confirm-photo-delete-button" class="danger-button danger-confirm-button">Eliminar fotografía</button>
+        </div>
+    </form>
+</dialog>
+<dialog id="photo-viewer-dialog" class="photo-viewer-dialog" aria-labelledby="photo-viewer-title">
+    <div class="photo-viewer-shell">
+        <header class="photo-viewer-header">
+            <div>
+                <h2 id="photo-viewer-title">Fotografía</h2>
+                <p id="photo-viewer-meta">Resolución no disponible</p>
+            </div>
+            <div class="photo-viewer-controls">
+                <span id="photo-viewer-zoom" class="toolbar-counter">100%</span>
+                <button type="button" id="photo-viewer-fit-button" class="secondary-button">Ajustar a ventana</button>
+                <button type="button" id="photo-viewer-actual-button" class="secondary-button">100%</button>
+                <button type="button" id="photo-viewer-close-button" class="secondary-button">Cerrar</button>
+            </div>
+        </header>
+        <div class="photo-viewer-stage">
+            <button type="button" id="photo-viewer-prev-button" class="photo-viewer-nav" aria-label="Fotografía anterior">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m15 6-6 6 6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <img id="photo-viewer-image" class="photo-viewer-image" alt="">
+            <button type="button" id="photo-viewer-next-button" class="photo-viewer-nav" aria-label="Fotografía siguiente">
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+        </div>
+    </div>
+</dialog>
+<script id="coverage-photos-data" type="application/json">{{ photos | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/new_coverage.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/photo_workspace.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_edit.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_tabs.js') }}" defer></script>
 {% endblock %}

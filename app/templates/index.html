@@ -58,10 +58,33 @@
                 <dd>{{ item.coverage.event_date }}</dd>
             </div>
         </dl>
-        <a href="{{ url_for('web.coverage_detail', coverage_id=item.coverage_id) }}" class="secondary-button card-action">Abrir cobertura</a>
+        <div class="coverage-card-actions">
+            <a href="{{ url_for('web.coverage_detail', coverage_id=item.coverage_id) }}" class="primary-button card-action">Abrir cobertura</a>
+            <a href="{{ url_for('web.coverage_detail', coverage_id=item.coverage_id, edit=1) }}" class="secondary-button card-action">Editar</a>
+            <button
+                type="button"
+                class="danger-button card-action"
+                data-delete-coverage-button
+                data-delete-title="{{ item.title }}"
+                data-delete-action="{{ url_for('web.delete_coverage', coverage_id=item.coverage_id) }}"
+            >
+                Eliminar
+            </button>
+        </div>
     </article>
     {% endfor %}
 </section>
+<dialog id="delete-coverage-dialog" class="delete-dialog" aria-labelledby="delete-coverage-title">
+    <form method="post" id="delete-coverage-form" class="delete-dialog-form">
+        <h2 id="delete-coverage-title">Eliminar cobertura</h2>
+        <p>Esta acción eliminará la cobertura y sus datos temporales. No se puede deshacer.</p>
+        <p class="delete-dialog-coverage-title" id="delete-coverage-name"></p>
+        <div class="dialog-actions">
+            <button type="button" id="cancel-delete-coverage-button" class="secondary-button">Cancelar</button>
+            <button type="submit" class="danger-button danger-confirm-button">Eliminar cobertura</button>
+        </div>
+    </form>
+</dialog>
 {% else %}
 <section class="empty-state ui-card">
     <h2>Aún no hay coberturas</h2>
@@ -69,4 +92,8 @@
     <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Crear primera cobertura</a>
 </section>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/coverage_delete.js') }}" defer></script>
 {% endblock %}
