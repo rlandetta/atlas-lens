@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import random
 import re
+import unicodedata
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
@@ -90,6 +91,38 @@ def validate_coverage_data(form_data: dict[str, str]) -> str | None:
     return None
 
 
+def normalize_initial_source(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value or "")
+    ascii_value = "".join(
+        character
+        for character in normalized
+        if not unicodedata.combining(character)
+    )
+    return re.sub(r"[^A-Za-z\s]", " ", ascii_value).strip()
+
+
+def build_editor_initials(editor_name: str) -> str:
+    normalized = normalize_initial_source(editor_name)
+    parts = [
+        part
+        for part in normalized.split()
+        if part
+    ]
+
+    if len(parts) == 1 and 1 <= len(parts[0]) <= 4:
+        return parts[0].lower()
+
+    initials = "".join(part[0] for part in parts).lower()
+    return initials or "xx"
+
+
+def attach_editor_metadata(form_data: dict) -> dict:
+    editor_name = form_data.get("editor_name") or form_data.get("editor", "")
+    form_data["editor_name"] = editor_name
+    form_data["editor_initials"] = build_editor_initials(editor_name)
+    return form_data
+
+
 def ensure_coverage_photos(coverage: dict) -> list[dict]:
     photos = coverage.setdefault("photos", [])
     return photos if isinstance(photos, list) else []
@@ -156,6 +189,7 @@ def new_coverage() -> str:
 
     coverage_id = build_coverage_id(form_data["coverage_name"])
     form_data["photos"] = []
+    attach_editor_metadata(form_data)
     coverages[coverage_id] = form_data
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
@@ -187,6 +221,7 @@ def edit_coverage(coverage_id: str) -> str:
 
     if error_message:
         form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
+        attach_editor_metadata(form_data)
         return render_template(
             "coverage_detail.html",
             **build_detail_context(
@@ -198,6 +233,7 @@ def edit_coverage(coverage_id: str) -> str:
         )
 
     form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
+    attach_editor_metadata(form_data)
     coverages[coverage_id] = form_data
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 

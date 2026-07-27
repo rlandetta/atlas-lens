@@ -18,7 +18,15 @@ const photoInfoSize = document.getElementById("photo-info-size");
 const photoInfoType = document.getElementById("photo-info-type");
 const photoInfoDimensions = document.getElementById("photo-info-dimensions");
 const photoCaptionPreview = document.getElementById("photo-caption-preview");
-const photoCaptionField = document.getElementById("photo-caption-field");
+const captionGeneratedHeader = document.getElementById("caption-generated-header");
+const captionGeneratedCity = document.getElementById("caption-generated-city");
+const captionGeneratedCountry = document.getElementById("caption-generated-country");
+const captionGeneratedDate = document.getElementById("caption-generated-date");
+const captionGeneratedCredit = document.getElementById("caption-generated-credit");
+const captionGeneratedEditorInitials = document.getElementById("caption-generated-editor-initials");
+const captionNarrativeField = document.getElementById("caption-narrative-field");
+const captionFullPreview = document.getElementById("caption-full-preview");
+const captionLocationWarning = document.getElementById("caption-location-warning");
 const initialPhotosScript = document.getElementById("coverage-photos-data");
 const photoDeleteDialog = document.getElementById("photo-delete-dialog");
 const photoDeleteName = document.getElementById("photo-delete-name");
@@ -42,6 +50,7 @@ let deleteTriggerButton = null;
 let viewerPhotoId = null;
 let viewerZoomMode = "fit";
 let renderToken = 0;
+const captionDrafts = new Map();
 
 function generatePhotoId() {
     if (
@@ -82,6 +91,17 @@ const getPhotoById = (photoId) => (
 const getPhotoIndex = (photoId) => (
     selectedPhotos.findIndex((photo) => photo.id === photoId)
 );
+
+const getCoverageCaptionData = () => ({
+    template: photoWorkspace.dataset.captionTemplate || "xinhua",
+    city: photoWorkspace.dataset.captionCity || "",
+    country: photoWorkspace.dataset.captionCountry || "",
+    date: photoWorkspace.dataset.captionDate || "",
+    photographer: photoWorkspace.dataset.captionPhotographer || "",
+    agency: photoWorkspace.dataset.captionAgency || "",
+    editor: photoWorkspace.dataset.captionEditor || "",
+    editorInitials: photoWorkspace.dataset.captionEditorInitials || ""
+});
 
 const setElementVisibility = (element, shouldShow) => {
     element.hidden = !shouldShow;
@@ -242,6 +262,7 @@ const renderPhotoInfo = (photo) => {
     photoInfoEmpty.hidden = true;
     setElementVisibility(photoInfoDetails, true);
     setElementVisibility(photoCaptionPreview, true);
+    renderCaptionEditor(photo);
 };
 
 const clearPhotoInfo = () => {
@@ -252,6 +273,7 @@ const clearPhotoInfo = () => {
     photoInfoSize.textContent = "";
     photoInfoType.textContent = "";
     photoInfoDimensions.textContent = "";
+    clearCaptionEditor();
 };
 
 const renderPreview = (photo) => {
@@ -283,6 +305,279 @@ const selectPhoto = (photoId) => {
         item.classList.toggle("is-active", isActive);
         item.setAttribute("aria-selected", String(isActive));
     });
+};
+
+const spanishMonths = [
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre"
+];
+
+const referenceCountries = (
+    window.ATLAS_EDITORIAL_REFERENCE &&
+    window.ATLAS_EDITORIAL_REFERENCE.countries
+) || {};
+
+const normalizeTextKey = (value) => (
+    (value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase()
+        .replace(/d\.\s*c\./g, "dc")
+        .replace(/[^a-z0-9\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+);
+
+const normalizeCity = (value) => {
+    const key = normalizeTextKey(value);
+    const commonVariants = {
+        beijing: "beijing",
+        pekin: "beijing",
+        mexico: "ciudad de mexico",
+        "ciudad de mexico": "ciudad de mexico",
+        "mexico city": "ciudad de mexico",
+        cdmx: "ciudad de mexico",
+        washington: "washington dc",
+        "washington dc": "washington dc",
+        brasilia: "brasilia"
+    };
+
+    return commonVariants[key] || key;
+};
+
+const getCountryCapitalRecord = (countryName) => {
+    const requestedCountryKey = normalizeTextKey(countryName);
+    const entry = Object.entries(referenceCountries).find(([name]) => (
+        normalizeTextKey(name) === requestedCountryKey
+    ));
+
+    if (!entry) {
+        return null;
+    }
+
+    const [country, data] = entry;
+    return {
+        country,
+        capital: data.capital,
+        variants: data.variants || [data.capital]
+    };
+};
+
+const isCityKnownCapitalForCountry = (city, country) => {
+    const record = getCountryCapitalRecord(country);
+    if (!record) {
+        return false;
+    }
+
+    const normalizedCity = normalizeCity(city);
+    return record.variants.some((variant) => (
+        normalizeCity(variant) === normalizedCity
+    ));
+};
+
+const isKnownCapitalOfAnotherCountry = (city, country) => {
+    const normalizedCity = normalizeCity(city);
+    const normalizedCountry = normalizeTextKey(country);
+
+    return Object.entries(referenceCountries).some(([countryName, data]) => {
+        if (normalizeTextKey(countryName) === normalizedCountry) {
+            return false;
+        }
+
+        return (data.variants || [data.capital]).some((variant) => (
+            normalizeCity(variant) === normalizedCity
+        ));
+    });
+};
+
+const resolveLocationPhrase = (city, country) => {
+    const safeCity = city || "Ciudad pendiente";
+    const safeCountry = country || "País pendiente";
+
+    if (isCityKnownCapitalForCountry(safeCity, safeCountry)) {
+        return {
+            text: `en la ciudad de ${safeCity}, capital de ${safeCountry},`,
+            warning: false
+        };
+    }
+
+    return {
+        text: `en la ciudad de ${safeCity}, ${safeCountry},`,
+        warning: isKnownCapitalOfAnotherCountry(safeCity, safeCountry)
+    };
+};
+
+const parseCoverageDate = (dateValue) => {
+    const [year, month, day] = (dateValue || "").split("-").map(Number);
+    if (!year || !month || !day) {
+        return null;
+    }
+
+    return { year, month, day };
+};
+
+const formatXinhuaShortDate = (dateValue) => {
+    const date = parseCoverageDate(dateValue);
+    if (!date) {
+        return "fecha pendiente";
+    }
+
+    return `${date.day} ${spanishMonths[date.month - 1]}, ${date.year}`;
+};
+
+const formatXinhuaLongDate = (dateValue) => {
+    const date = parseCoverageDate(dateValue);
+    if (!date) {
+        return "fecha pendiente";
+    }
+
+    return `${date.day} de ${spanishMonths[date.month - 1]} de ${date.year}`;
+};
+
+const formatXinhuaCode = (dateValue) => {
+    const date = parseCoverageDate(dateValue);
+    if (!date) {
+        return "000000";
+    }
+
+    return [
+        String(date.year).slice(-2),
+        String(date.month).padStart(2, "0"),
+        String(date.day).padStart(2, "0")
+    ].join("");
+};
+
+const buildEditorInitials = (editorName) => {
+    const normalizedSource = (editorName || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[()]/g, " ")
+        .replace(/[^A-Za-z\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+
+    const parts = normalizedSource.split(/\s+/).filter(Boolean);
+
+    if (parts.length === 1 && /^[A-Za-z]{1,4}$/.test(parts[0])) {
+        return parts[0].toLowerCase();
+    }
+
+    const initials = parts
+        .map((part) => part[0])
+        .join("")
+        .toLowerCase();
+
+    return initials || "xx";
+};
+
+const normalizeNarrative = (narrative) => {
+    const cleanNarrative = (narrative || "")
+        .trim()
+        .replace(/\s+/g, " ")
+        .replace(/\s+([,.;:])/g, "$1")
+        .replace(/([,.;:]){2,}/g, "$1");
+
+    if (!cleanNarrative) {
+        return "[NARRACIÓN]";
+    }
+
+    return cleanNarrative.replace(/[.,\s]+$/g, "");
+};
+
+const captionTemplates = {
+    xinhua: {
+        blocks(context) {
+            const city = context.city || "Ciudad pendiente";
+            const country = context.country || "País pendiente";
+            const credit = `${context.agency || "Xinhua"}/${context.photographer || "Fotógrafo pendiente"}`;
+            const editorInitials = buildEditorInitials(context.editorInitials || context.editor);
+            const location = resolveLocationPhrase(city, country);
+
+            return {
+                header: `(${formatXinhuaCode(context.date)}) -- ${city.toUpperCase()}, ${formatXinhuaShortDate(context.date)} (Xinhua) --`,
+                city,
+                country,
+                date: formatXinhuaLongDate(context.date),
+                credit,
+                editorInitials,
+                location
+            };
+        },
+        generate(context, narrative) {
+            const blocks = this.blocks(context);
+            const cleanNarrative = normalizeNarrative(narrative);
+            const caption = `${blocks.header} ${cleanNarrative}, ${blocks.location.text} el ${blocks.date}. (${blocks.credit}) (${blocks.editorInitials})`;
+
+            return caption
+                .replace(/\s+/g, " ")
+                .replace(/\s+([,.;:])/g, "$1")
+                .replace(/,{2,}/g, ",")
+                .replace(/\.{2,}/g, ".")
+                .trim();
+        }
+    }
+};
+
+const getCaptionTemplate = (templateName) => (
+    captionTemplates[templateName] || captionTemplates.xinhua
+);
+
+const buildCaptionPreview = (narrative) => {
+    const coverage = getCoverageCaptionData();
+    return getCaptionTemplate(coverage.template).generate(coverage, narrative);
+};
+
+const renderGeneratedCaptionFields = () => {
+    const coverage = getCoverageCaptionData();
+    const blocks = getCaptionTemplate(coverage.template).blocks(coverage);
+
+    captionGeneratedHeader.textContent = blocks.header;
+    captionGeneratedCity.textContent = blocks.city;
+    captionGeneratedCountry.textContent = blocks.country;
+    captionGeneratedDate.textContent = blocks.date;
+    captionGeneratedCredit.textContent = blocks.credit;
+    captionGeneratedEditorInitials.textContent = blocks.editorInitials;
+    captionLocationWarning.hidden = !blocks.location.warning;
+};
+
+const getCaptionDraft = (photoId) => captionDrafts.get(photoId) || "";
+
+const setCaptionDraft = (photoId, narrative) => {
+    captionDrafts.set(photoId, narrative);
+};
+
+const renderCaptionPreview = () => {
+    captionFullPreview.textContent = buildCaptionPreview(captionNarrativeField.value);
+};
+
+const renderCaptionEditor = (photo) => {
+    renderGeneratedCaptionFields();
+    captionNarrativeField.value = getCaptionDraft(photo.id);
+    captionNarrativeField.disabled = false;
+    renderCaptionPreview();
+};
+
+const clearCaptionEditor = () => {
+    captionNarrativeField.value = "";
+    captionNarrativeField.disabled = true;
+    captionGeneratedHeader.textContent = "";
+    captionGeneratedCity.textContent = "";
+    captionGeneratedCountry.textContent = "";
+    captionGeneratedDate.textContent = "";
+    captionGeneratedCredit.textContent = "";
+    captionGeneratedEditorInitials.textContent = "";
+    captionLocationWarning.hidden = true;
+    captionFullPreview.textContent = "";
 };
 
 const createSkeletonCard = () => {
@@ -420,7 +715,7 @@ const focusCaptionField = () => {
 
     renderPhotoInfo(activePhoto);
     photoCaptionPreview.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    photoCaptionField.focus({ preventScroll: true });
+    captionNarrativeField.focus({ preventScroll: true });
 };
 
 const hasDuplicatePhoto = (file) => (
@@ -694,6 +989,14 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
 
     removeSelectedButton.addEventListener("click", removeActivePhoto);
     clearSelectionButton.addEventListener("click", clearSelection);
+    captionNarrativeField.addEventListener("input", () => {
+        if (activePhotoId === null) {
+            return;
+        }
+
+        setCaptionDraft(activePhotoId, captionNarrativeField.value);
+        renderCaptionPreview();
+    });
     cancelPhotoDeleteButton.addEventListener("click", closeDeleteDialog);
     confirmPhotoDeleteButton.addEventListener("click", async () => {
         const photoId = pendingDeletePhotoId;

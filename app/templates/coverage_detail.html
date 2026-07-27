@@ -54,6 +54,14 @@
             data-coverage-id="{{ coverage_id }}"
             data-photos-url="{{ url_for('web.add_coverage_photo', coverage_id=coverage_id) }}"
             data-photo-delete-url-template="{{ url_for('web.delete_coverage_photo', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+            data-caption-city="{{ coverage.city }}"
+            data-caption-country="{{ coverage.country }}"
+            data-caption-date="{{ coverage.event_date }}"
+            data-caption-photographer="{{ coverage.photographer }}"
+            data-caption-agency="{{ coverage.agency }}"
+            data-caption-editor="{{ coverage.editor_name or coverage.editor }}"
+            data-caption-editor-initials="{{ coverage.editor_initials or '' }}"
+            data-caption-template="xinhua"
         >
             <div class="photo-workspace-toolbar">
                 <h2 id="photo-section-title">Fotografías</h2>
@@ -112,10 +120,50 @@
                             <dd>Preparada</dd>
                         </div>
                     </dl>
-                    <div id="photo-caption-preview" class="photo-caption-preview" hidden>
-                        <label for="photo-caption-field">Caption</label>
-                        <textarea id="photo-caption-field" rows="4" readonly></textarea>
-                        <p>La edición de captions se habilitará en una próxima iteración.</p>
+                    <div id="photo-caption-preview" class="caption-editor" hidden>
+                        <div class="caption-editor-header">
+                            <h4>Caption editorial</h4>
+                            <span>Base manual</span>
+                        </div>
+                        <section class="caption-block">
+                            <h5>Datos generados</h5>
+                            <dl class="caption-generated-fields">
+                                <div>
+                                    <dt>Encabezado Xinhua</dt>
+                                    <dd id="caption-generated-header"></dd>
+                                </div>
+                                <div>
+                                    <dt>Ciudad</dt>
+                                    <dd id="caption-generated-city"></dd>
+                                </div>
+                                <div>
+                                    <dt>País</dt>
+                                    <dd id="caption-generated-country"></dd>
+                                </div>
+                                <div>
+                                    <dt>Fecha</dt>
+                                    <dd id="caption-generated-date"></dd>
+                                </div>
+                                <div>
+                                    <dt>Crédito</dt>
+                                    <dd id="caption-generated-credit"></dd>
+                                </div>
+                                <div>
+                                    <dt>Iniciales del editor</dt>
+                                    <dd id="caption-generated-editor-initials"></dd>
+                                </div>
+                            </dl>
+                        </section>
+                        <section class="caption-block">
+                            <label for="caption-narrative-field">Narración editable</label>
+                            <textarea id="caption-narrative-field" rows="5" placeholder="Escriba aquí la narración editorial de esta fotografía."></textarea>
+                        </section>
+                        <section class="caption-block">
+                            <h5>Vista previa</h5>
+                            <p id="caption-location-warning" class="caption-warning" hidden>La ciudad ingresada no coincide con la capital conocida del país seleccionado.</p>
+                            <p id="caption-full-preview" class="caption-full-preview" aria-live="polite"></p>
+                        </section>
+                        <p class="caption-editor-note">La narración se mantiene temporalmente en esta página. La integración con IA se preparará en una próxima iteración.</p>
                     </div>
                 </aside>
             </div>
@@ -250,6 +298,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/editorial_reference_data.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/photo_workspace.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_edit.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_tabs.js') }}" defer></script>
