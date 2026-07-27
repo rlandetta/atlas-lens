@@ -1,70 +1,72 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ATLAS LENS</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-</head>
-<body>
-    <div class="app-layout">
-        <aside class="app-sidebar" data-collapsible="ready">
-            <div class="sidebar-brand">LENS</div>
-            <nav class="sidebar-nav" aria-label="Módulos">
-                <a href="{{ url_for('web.new_coverage') }}" class="sidebar-link is-active">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.6"/><path d="M8 10h8" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Coberturas</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/></svg>
-                    </span>
-                    <span>Fotografías</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M6 5h12v14H6z" stroke="currentColor" stroke-width="1.6"/><path d="M9 9h6M9 13h6" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Captions</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M5 5h14v14H5z" stroke="currentColor" stroke-width="1.6"/><path d="M9 15l6-6" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Exportaciones</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="currentColor" stroke-width="1.6"/><path d="M12 4v16" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Entregas</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.6h-4l-.3 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5c.07-.33.1-.66.1-1Z" stroke="currentColor" stroke-width="1.2"/></svg>
-                    </span>
-                    <span>Configuración</span>
-                </a>
-            </nav>
-        </aside>
+{% extends "base.html" %}
 
-        <div class="app-workspace">
-            <header class="app-header">
-                <div class="header-logo">ATLAS LENS</div>
-                <div class="header-future-actions">Área de acciones</div>
-                <div class="header-user">Editor</div>
-            </header>
+{% block title %}Coberturas | ATLAS LENS{% endblock %}
+{% block main_class %}coverage-list-page{% endblock %}
 
-            <main class="view-content">
-                <section class="hero-card ui-card">
-                    <h1>ATLAS LENS</h1>
-                    <p class="subtitle">Editorial workflow for news photographers</p>
-                    <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Nueva cobertura</a>
-                </section>
-            </main>
-        </div>
+{% block content %}
+<section class="page-heading">
+    <div>
+        <h1>Coberturas</h1>
+        <p class="subtitle">Gestione sus coberturas fotográficas y editoriales.</p>
     </div>
-</body>
-</html>
+    <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Nueva cobertura</a>
+</section>
+
+<section class="list-tools ui-card" aria-label="Herramientas de listado">
+    <div class="search-field" aria-label="Búsqueda visual preparada">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.7"/>
+            <path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7"/>
+        </svg>
+        <input type="search" placeholder="Buscar coberturas próximamente" disabled>
+    </div>
+    <div class="visual-filters" aria-label="Filtros visuales preparados">
+        <span class="filter-chip is-active">Todas</span>
+        <span class="filter-chip">En preparación</span>
+        <span class="filter-chip">Esta semana</span>
+    </div>
+</section>
+
+{% if coverages %}
+<section class="coverage-grid" aria-label="Listado de coberturas">
+    {% for item in coverages %}
+    <article class="coverage-card ui-card">
+        <div class="coverage-card-top">
+            <span class="status-pill">{{ item.status }}</span>
+            <span class="photo-total">{{ item.photo_count }} fotografías</span>
+        </div>
+        <h2>{{ item.title }}</h2>
+        <dl class="coverage-card-meta">
+            <div>
+                <dt>Ciudad y país</dt>
+                <dd>{{ item.coverage.city }}, {{ item.coverage.country }}</dd>
+            </div>
+            <div>
+                <dt>Agencia</dt>
+                <dd>{{ item.coverage.agency }}</dd>
+            </div>
+            <div>
+                <dt>Fotógrafo</dt>
+                <dd>{{ item.coverage.photographer }}</dd>
+            </div>
+            <div>
+                <dt>Fecha de envío</dt>
+                <dd>{{ item.coverage.submit_date }}</dd>
+            </div>
+            <div>
+                <dt>Fecha del evento</dt>
+                <dd>{{ item.coverage.event_date }}</dd>
+            </div>
+        </dl>
+        <a href="{{ url_for('web.coverage_detail', coverage_id=item.coverage_id) }}" class="secondary-button card-action">Abrir cobertura</a>
+    </article>
+    {% endfor %}
+</section>
+{% else %}
+<section class="empty-state ui-card">
+    <h2>Aún no hay coberturas</h2>
+    <p>Cree una cobertura para comenzar a organizar fotografías, captions y entregas.</p>
+    <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Crear primera cobertura</a>
+</section>
+{% endif %}
+{% endblock %}

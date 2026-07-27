@@ -104,7 +104,17 @@ def build_detail_context(coverage_id: str, coverage: dict[str, str], edit_error:
 
 @web_bp.get("/")
 def home() -> str:
-    return render_template("index.html")
+    coverage_items = [
+        {
+            "coverage_id": coverage_id,
+            "coverage": coverage,
+            "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
+            "photo_count": 0,
+            "status": "En preparación",
+        }
+        for coverage_id, coverage in coverages.items()
+    ]
+    return render_template("index.html", coverages=coverage_items)
 
 
 @web_bp.route("/coverages/new", methods=["GET", "POST"])

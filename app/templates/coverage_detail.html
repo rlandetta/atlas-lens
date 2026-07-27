@@ -1,218 +1,163 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cobertura | ATLAS LENS</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
-</head>
-<body>
-    <div class="app-layout">
-        <aside class="app-sidebar" data-collapsible="ready">
-            <div class="sidebar-brand">LENS</div>
-            <nav class="sidebar-nav" aria-label="Módulos">
-                <a href="{{ url_for('web.new_coverage') }}" class="sidebar-link is-active">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 6h16v12H4z" stroke="currentColor" stroke-width="1.6"/><path d="M8 10h8" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Coberturas</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/></svg>
-                    </span>
-                    <span>Fotografías</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M6 5h12v14H6z" stroke="currentColor" stroke-width="1.6"/><path d="M9 9h6M9 13h6" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Captions</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M5 5h14v14H5z" stroke="currentColor" stroke-width="1.6"/><path d="M9 15l6-6" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Exportaciones</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><path d="M4 12h16" stroke="currentColor" stroke-width="1.6"/><path d="M12 4v16" stroke="currentColor" stroke-width="1.6"/></svg>
-                    </span>
-                    <span>Entregas</span>
-                </a>
-                <a href="#" class="sidebar-link">
-                    <span class="sidebar-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6"/><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 0 0-1.7-1l-.3-2.6h-4l-.3 2.6a7 7 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.4 2.4-1a7 7 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7 7 0 0 0 1.7-1l2.4 1 2-3.4-2-1.5c.07-.33.1-.66.1-1Z" stroke="currentColor" stroke-width="1.2"/></svg>
-                    </span>
-                    <span>Configuración</span>
-                </a>
-            </nav>
-        </aside>
+{% extends "base.html" %}
 
-        <div class="app-workspace">
-            <header class="app-header">
-                <div class="header-logo">ATLAS LENS</div>
-                <div class="header-future-actions">Área de acciones</div>
-                <div class="header-user">Editor</div>
-            </header>
+{% block title %}Cobertura | ATLAS LENS{% endblock %}
+{% block main_class %}coverage-page{% endblock %}
 
-            <main class="view-content coverage-page">
-                <section class="coverage-header-card ui-card">
-                    <div class="coverage-header-top">
-                        <p class="coverage-id">ID temporal: {{ coverage_id }}</p>
-                        <button id="open-edit-dialog-button" type="button" class="secondary-button edit-information-button">Editar información</button>
-                    </div>
-                    <h1 class="editorial-title">{{ title }}</h1>
-                    <dl class="coverage-meta-grid">
-                        <div>
-                            <dt>Agencia</dt>
-                            <dd>{{ coverage.agency }}</dd>
-                        </div>
-                        <div>
-                            <dt>Fotógrafo</dt>
-                            <dd>{{ coverage.photographer }}</dd>
-                        </div>
-                        <div>
-                            <dt>Editor</dt>
-                            <dd>{{ coverage.editor }}</dd>
-                        </div>
-                        <div>
-                            <dt>Fecha de envío</dt>
-                            <dd>{{ coverage.submit_date }}</dd>
-                        </div>
-                        <div>
-                            <dt>Fecha del evento</dt>
-                            <dd>{{ coverage.event_date }}</dd>
-                        </div>
-                        <div>
-                            <dt>Ciudad y país</dt>
-                            <dd>{{ coverage.city }}, {{ coverage.country }}</dd>
-                        </div>
-                    </dl>
-                    <a href="{{ url_for('web.home') }}" class="back-link compact-link">Volver al inicio</a>
-                </section>
-
-                <section class="ui-card coverage-tabs-card">
-                    <nav class="coverage-tabs" role="tablist" aria-label="Secciones de cobertura">
-                        <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-button data-tab-target="tab-fotografias">Fotografías</button>
-                        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-captions">Captions</button>
-                        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-exportaciones">Exportaciones</button>
-                        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-entregas">Entregas</button>
-                    </nav>
-
-                    <section id="tab-fotografias" class="tab-panel is-active coverage-section photo-section" role="tabpanel" data-tab-panel>
-                        <h2 id="photo-section-title">Fotografías</h2>
-                        <div id="drop-zone" class="drop-zone">
-                            <p class="drop-main">Arrastra y suelta tus fotografías aquí</p>
-                            <p class="drop-secondary">o</p>
-                            <button id="select-photos-button" type="button" class="secondary-button">Seleccionar fotografías</button>
-                            <input id="photo-input" type="file" accept=".jpg,.jpeg,image/jpeg" multiple hidden>
-                        </div>
-
-                        <p id="photo-count" class="photo-count">0 fotografías seleccionadas</p>
-
-                        <ul id="photo-preview-list" class="photo-preview-list" aria-live="polite"></ul>
-
-                        <button id="upload-photos-button" type="button" class="primary-button">Importar fotografías</button>
-                        <p id="photo-upload-message" class="form-success hidden-message" role="status" aria-live="polite">
-                            Importación preparada correctamente
-                        </p>
-                    </section>
-
-                    <section id="tab-captions" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
-                        <h2>Captions</h2>
-                        <p>Sección reservada para edición de captions.</p>
-                    </section>
-
-                    <section id="tab-exportaciones" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
-                        <h2>Exportaciones</h2>
-                        <p>Sección reservada para exportaciones editoriales.</p>
-                    </section>
-
-                    <section id="tab-entregas" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
-                        <h2>Entregas</h2>
-                        <p>Sección reservada para el control de entregas.</p>
-                    </section>
-                </section>
-
-                <dialog
-                    id="edit-coverage-dialog"
-                    class="edit-dialog"
-                    data-open-on-load="{{ 'true' if open_edit_dialog else 'false' }}"
-                >
-                    <form method="post" action="{{ url_for('web.edit_coverage', coverage_id=coverage_id) }}" class="edit-dialog-form">
-                        <h2>Editar información</h2>
-
-                        {% if edit_error %}
-                        <p class="form-error">{{ edit_error }}</p>
-                        {% endif %}
-
-                        <div class="coverage-form-grid">
-                            <div class="form-field">
-                                <label for="edit_coverage_name">Nombre de la cobertura</label>
-                                <input id="edit_coverage_name" name="coverage_name" type="text" value="{{ coverage.coverage_name }}" required spellcheck="true">
-                            </div>
-
-                            <div class="form-field">
-                                <label for="edit_agency">Agencia</label>
-                                <select id="edit_agency" name="agency" required>
-                                    {% for agency in agency_options %}
-                                    <option value="{{ agency }}" {% if coverage.agency == agency %}selected{% endif %}>{{ agency }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="edit_submit_date">Fecha de envío</label>
-                                <input id="edit_submit_date" name="submit_date" type="date" value="{{ coverage.submit_date }}" required>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="edit_event_date">Fecha del evento</label>
-                                <input id="edit_event_date" name="event_date" type="date" value="{{ coverage.event_date }}" required>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="edit_city">Ciudad</label>
-                                <input id="edit_city" name="city" type="text" value="{{ coverage.city }}" required spellcheck="true">
-                            </div>
-
-                            <div class="form-field">
-                                <label for="edit_country">País</label>
-                                <select id="edit_country" name="country" required>
-                                    {% for group_label, group_countries in country_groups %}
-                                    <optgroup label="{{ group_label }}">
-                                        {% for country_name in group_countries %}
-                                        <option value="{{ country_name }}" {% if coverage.country == country_name %}selected{% endif %}>{{ country_name }}</option>
-                                        {% endfor %}
-                                    </optgroup>
-                                    {% endfor %}
-                                </select>
-                            </div>
-
-                            <div class="form-field">
-                                <label for="edit_photographer">Fotógrafo</label>
-                                <input id="edit_photographer" name="photographer" type="text" value="{{ coverage.photographer }}" required spellcheck="true">
-                            </div>
-
-                            <div class="form-field">
-                                <label for="edit_editor">Editor</label>
-                                <input id="edit_editor" name="editor" type="text" value="{{ coverage.editor }}" required spellcheck="false">
-                            </div>
-                        </div>
-
-                        <div class="dialog-actions">
-                            <button type="button" id="close-edit-dialog-button" class="secondary-button">Cancelar</button>
-                            <button type="submit" class="primary-button compact-action">Guardar cambios</button>
-                        </div>
-                    </form>
-                </dialog>
-            </main>
-        </div>
+{% block content %}
+<section class="coverage-header-card ui-card">
+    <div class="coverage-header-top">
+        <p class="coverage-id">ID temporal: {{ coverage_id }}</p>
+        <button id="open-edit-dialog-button" type="button" class="secondary-button edit-information-button">Editar información</button>
     </div>
-    <script src="{{ url_for('static', filename='js/new_coverage.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/coverage_edit.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/coverage_tabs.js') }}" defer></script>
-</body>
-</html>
+    <h1 class="editorial-title">{{ title }}</h1>
+    <dl class="coverage-meta-grid">
+        <div>
+            <dt>Agencia</dt>
+            <dd>{{ coverage.agency }}</dd>
+        </div>
+        <div>
+            <dt>Fotógrafo</dt>
+            <dd>{{ coverage.photographer }}</dd>
+        </div>
+        <div>
+            <dt>Editor</dt>
+            <dd>{{ coverage.editor }}</dd>
+        </div>
+        <div>
+            <dt>Fecha de envío</dt>
+            <dd>{{ coverage.submit_date }}</dd>
+        </div>
+        <div>
+            <dt>Fecha del evento</dt>
+            <dd>{{ coverage.event_date }}</dd>
+        </div>
+        <div>
+            <dt>Ciudad y país</dt>
+            <dd>{{ coverage.city }}, {{ coverage.country }}</dd>
+        </div>
+    </dl>
+    <a href="{{ url_for('web.home') }}" class="back-link compact-link">Volver a coberturas</a>
+</section>
+
+<section class="ui-card coverage-tabs-card">
+    <nav class="coverage-tabs" role="tablist" aria-label="Secciones de cobertura">
+        <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-button data-tab-target="tab-fotografias">Fotografías</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-captions">Captions</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-exportaciones">Exportaciones</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-entregas">Entregas</button>
+    </nav>
+
+    <section id="tab-fotografias" class="tab-panel is-active coverage-section photo-section" role="tabpanel" data-tab-panel>
+        <h2 id="photo-section-title">Fotografías</h2>
+        <div id="drop-zone" class="drop-zone">
+            <p class="drop-main">Arrastra y suelta tus fotografías aquí</p>
+            <p class="drop-secondary">o</p>
+            <button id="select-photos-button" type="button" class="secondary-button">Seleccionar fotografías</button>
+            <input id="photo-input" type="file" accept=".jpg,.jpeg,image/jpeg" multiple hidden>
+        </div>
+
+        <p id="photo-count" class="photo-count">0 fotografías seleccionadas</p>
+
+        <ul id="photo-preview-list" class="photo-preview-list" aria-live="polite"></ul>
+
+        <button id="upload-photos-button" type="button" class="primary-button">Importar fotografías</button>
+        <p id="photo-upload-message" class="form-success hidden-message" role="status" aria-live="polite">
+            Importación preparada correctamente
+        </p>
+    </section>
+
+    <section id="tab-captions" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
+        <h2>Captions</h2>
+        <p>Sección reservada para edición de captions.</p>
+    </section>
+
+    <section id="tab-exportaciones" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
+        <h2>Exportaciones</h2>
+        <p>Sección reservada para exportaciones editoriales.</p>
+    </section>
+
+    <section id="tab-entregas" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
+        <h2>Entregas</h2>
+        <p>Sección reservada para el control de entregas.</p>
+    </section>
+</section>
+
+<dialog
+    id="edit-coverage-dialog"
+    class="edit-dialog"
+    data-open-on-load="{{ 'true' if open_edit_dialog else 'false' }}"
+>
+    <form method="post" action="{{ url_for('web.edit_coverage', coverage_id=coverage_id) }}" class="edit-dialog-form">
+        <h2>Editar información</h2>
+
+        {% if edit_error %}
+        <p class="form-error">{{ edit_error }}</p>
+        {% endif %}
+
+        <div class="coverage-form-grid">
+            <div class="form-field">
+                <label for="edit_coverage_name">Nombre de la cobertura</label>
+                <input id="edit_coverage_name" name="coverage_name" type="text" value="{{ coverage.coverage_name }}" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="edit_agency">Agencia</label>
+                <select id="edit_agency" name="agency" required>
+                    {% for agency in agency_options %}
+                    <option value="{{ agency }}" {% if coverage.agency == agency %}selected{% endif %}>{{ agency }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-field">
+                <label for="edit_submit_date">Fecha de envío</label>
+                <input id="edit_submit_date" name="submit_date" type="date" value="{{ coverage.submit_date }}" required>
+            </div>
+
+            <div class="form-field">
+                <label for="edit_event_date">Fecha del evento</label>
+                <input id="edit_event_date" name="event_date" type="date" value="{{ coverage.event_date }}" required>
+            </div>
+
+            <div class="form-field">
+                <label for="edit_city">Ciudad</label>
+                <input id="edit_city" name="city" type="text" value="{{ coverage.city }}" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="edit_country">País</label>
+                <select id="edit_country" name="country" required>
+                    {% for group_label, group_countries in country_groups %}
+                    <optgroup label="{{ group_label }}">
+                        {% for country_name in group_countries %}
+                        <option value="{{ country_name }}" {% if coverage.country == country_name %}selected{% endif %}>{{ country_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-field">
+                <label for="edit_photographer">Fotógrafo</label>
+                <input id="edit_photographer" name="photographer" type="text" value="{{ coverage.photographer }}" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="edit_editor">Editor</label>
+                <input id="edit_editor" name="editor" type="text" value="{{ coverage.editor }}" required spellcheck="false">
+            </div>
+        </div>
+
+        <div class="dialog-actions">
+            <button type="button" id="close-edit-dialog-button" class="secondary-button">Cancelar</button>
+            <button type="submit" class="primary-button compact-action">Guardar cambios</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/new_coverage.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/coverage_edit.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/coverage_tabs.js') }}" defer></script>
+{% endblock %}
