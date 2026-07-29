@@ -5,6 +5,8 @@ import unicodedata
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
+from app.suggestion_store import get_all_suggestions, remember_coverage_values
+
 web_bp = Blueprint("web", __name__)
 
 REQUIRED_COVERAGE_FIELDS = (
@@ -59,8 +61,6 @@ COUNTRY_GROUPS = (
     ),
 )
 
-AGENCY_OPTIONS = ("Xinhua", "La Vocería", "Otra")
-
 # Temporary in-memory storage while there is no database.
 coverages = {}
 
@@ -86,7 +86,7 @@ def collect_coverage_form_data() -> dict[str, str]:
 
 
 def validate_coverage_data(form_data: dict[str, str]) -> str | None:
-    if any(not value for value in form_data.values()):
+    if any(not form_data.get(field) for field in REQUIRED_COVERAGE_FIELDS):
         return "Completa todos los campos obligatorios."
     return None
 
@@ -135,6 +135,11 @@ def parse_optional_int(value):
     return int(value)
 
 
+def normalize_caption_status(value: str) -> str:
+    allowed_statuses = {"Sin editar", "En edición", "Revisado", "Aprobado"}
+    return value if value in allowed_statuses else "Sin editar"
+
+
 def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
     photos = ensure_coverage_photos(coverage)
     return {
@@ -143,7 +148,7 @@ def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | Non
         "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
         "photos": photos,
         "country_groups": COUNTRY_GROUPS,
-        "agency_options": AGENCY_OPTIONS,
+        "suggestions": get_all_suggestions(),
         "edit_error": edit_error,
         "open_edit_dialog": open_edit_dialog,
     }
@@ -172,7 +177,7 @@ def new_coverage() -> str:
             form_data={},
             error_message=None,
             country_groups=COUNTRY_GROUPS,
-            agency_options=AGENCY_OPTIONS,
+            suggestions=get_all_suggestions(),
         )
 
     form_data = collect_coverage_form_data()
@@ -184,12 +189,13 @@ def new_coverage() -> str:
             form_data=form_data,
             error_message=error_message,
             country_groups=COUNTRY_GROUPS,
-            agency_options=AGENCY_OPTIONS,
+            suggestions=get_all_suggestions(),
         )
 
     coverage_id = build_coverage_id(form_data["coverage_name"])
     form_data["photos"] = []
     attach_editor_metadata(form_data)
+    remember_coverage_values(form_data)
     coverages[coverage_id] = form_data
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
@@ -234,6 +240,7 @@ def edit_coverage(coverage_id: str) -> str:
 
     form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
     attach_editor_metadata(form_data)
+    remember_coverage_values(form_data)
     coverages[coverage_id] = form_data
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
@@ -267,6 +274,8 @@ def add_coverage_photo(coverage_id: str):
             "width": parse_optional_int(payload.get("width")),
             "height": parse_optional_int(payload.get("height")),
             "data_url": str(payload["data_url"]),
+            "caption_narrative": str(payload.get("caption_narrative", "")),
+            "caption_status": normalize_caption_status(str(payload.get("caption_status", "Sin editar"))),
         }
     except (TypeError, ValueError):
         return jsonify({"error": "Photo payload contains invalid numeric metadata."}), 400
@@ -277,6 +286,35 @@ def add_coverage_photo(coverage_id: str):
 
     photos.append(photo)
     return jsonify({"photo": photo, "total": len(photos)}), 201
+
+
+@web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/caption")
+def save_coverage_photo_caption(coverage_id: str, photo_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    photos = ensure_coverage_photos(coverage)
+    photo = next(
+        (
+            existing_photo
+            for existing_photo in photos
+            if existing_photo.get("id") == photo_id
+        ),
+        None,
+    )
+
+    if photo is None:
+        abort(404)
+
+    photo["caption_narrative"] = str(payload.get("caption_narrative", ""))
+    photo["caption_status"] = normalize_caption_status(str(payload.get("caption_status", "Sin editar")))
+    return jsonify({
+        "photo_id": photo_id,
+        "caption_narrative": photo["caption_narrative"],
+        "caption_status": photo["caption_status"],
+    })
 
 
 @web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/delete")

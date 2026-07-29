@@ -1,5 +1,6 @@
 const photoWorkspace = document.querySelector(".photo-workspace");
 const dropZone = document.getElementById("drop-zone");
+const dropZoneMainText = dropZone ? dropZone.querySelector(".drop-main") : null;
 const photoInput = document.getElementById("photo-input");
 const selectPhotosButton = document.getElementById("select-photos-button");
 const photoGrid = document.getElementById("photo-grid");
@@ -18,15 +19,19 @@ const photoInfoSize = document.getElementById("photo-info-size");
 const photoInfoType = document.getElementById("photo-info-type");
 const photoInfoDimensions = document.getElementById("photo-info-dimensions");
 const photoCaptionPreview = document.getElementById("photo-caption-preview");
-const captionGeneratedHeader = document.getElementById("caption-generated-header");
-const captionGeneratedCity = document.getElementById("caption-generated-city");
-const captionGeneratedCountry = document.getElementById("caption-generated-country");
-const captionGeneratedDate = document.getElementById("caption-generated-date");
-const captionGeneratedCredit = document.getElementById("caption-generated-credit");
-const captionGeneratedEditorInitials = document.getElementById("caption-generated-editor-initials");
+const captionPhotoCounter = document.getElementById("caption-photo-counter");
+const captionPhotoStatusIndicator = document.getElementById("caption-photo-status-indicator");
+const captionPrevPhotoButton = document.getElementById("caption-prev-photo-button");
+const captionNextPhotoButton = document.getElementById("caption-next-photo-button");
 const captionNarrativeField = document.getElementById("caption-narrative-field");
+const captionReviewStatusField = document.getElementById("caption-review-status-field");
+const captionFooterStatus = document.getElementById("caption-footer-status");
+const captionCharacterCount = document.getElementById("caption-character-count");
+const captionWordCount = document.getElementById("caption-word-count");
 const captionFullPreview = document.getElementById("caption-full-preview");
 const captionLocationWarning = document.getElementById("caption-location-warning");
+const captionSaveStatus = document.getElementById("caption-save-status");
+const captionSaveStatusDetail = document.getElementById("caption-save-status-detail");
 const initialPhotosScript = document.getElementById("coverage-photos-data");
 const photoDeleteDialog = document.getElementById("photo-delete-dialog");
 const photoDeleteName = document.getElementById("photo-delete-name");
@@ -44,13 +49,21 @@ const photoViewerNextButton = document.getElementById("photo-viewer-next-button"
 const photoViewerImage = document.getElementById("photo-viewer-image");
 
 const selectedPhotos = [];
+const captionStatusOptions = ["Sin editar", "En edición", "Revisado", "Aprobado"];
+const maxPhotoProcessingConcurrency = 3;
 let activePhotoId = null;
 let pendingDeletePhotoId = null;
 let deleteTriggerButton = null;
 let viewerPhotoId = null;
 let viewerZoomMode = "fit";
 let renderToken = 0;
-const captionDrafts = new Map();
+let dropZoneDragDepth = 0;
+let activePhotoProcessingCount = 0;
+let queuedPhotoCount = 0;
+let completedPhotoCount = 0;
+const photoProcessingQueue = [];
+const captionRecords = new Map();
+const defaultDropZoneMainText = dropZoneMainText ? dropZoneMainText.textContent : "";
 
 function generatePhotoId() {
     if (
@@ -78,7 +91,13 @@ const formatSize = (bytes) => {
     return (kb / 1024).toFixed(2) + " MB";
 };
 
-const getPhotoSource = (photo) => photo.objectUrl || photo.dataUrl;
+const getPhotoThumbnailSource = (photo) => (
+    photo.thumbnailDataUrl || photo.objectUrl || photo.dataUrl || ""
+);
+
+const getPhotoPreviewSource = (photo) => (
+    photo.objectUrl || photo.dataUrl || photo.thumbnailDataUrl || ""
+);
 
 const getActivePhoto = () => (
     selectedPhotos.find((photo) => photo.id === activePhotoId) || null
@@ -97,6 +116,8 @@ const getCoverageCaptionData = () => ({
     city: photoWorkspace.dataset.captionCity || "",
     country: photoWorkspace.dataset.captionCountry || "",
     date: photoWorkspace.dataset.captionDate || "",
+    sendDate: photoWorkspace.dataset.captionSendDate || photoWorkspace.dataset.captionDate || "",
+    eventDate: photoWorkspace.dataset.captionEventDate || photoWorkspace.dataset.captionDate || "",
     photographer: photoWorkspace.dataset.captionPhotographer || "",
     agency: photoWorkspace.dataset.captionAgency || "",
     editor: photoWorkspace.dataset.captionEditor || "",
@@ -134,6 +155,58 @@ const readImageDimensions = (source) => new Promise((resolve) => {
     probeImage.src = source;
 });
 
+const loadImageElement = (source) => new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => resolve(image), { once: true });
+    image.addEventListener("error", () => reject(new Error("Unable to load image.")), { once: true });
+    image.src = source;
+});
+
+const createThumbnailDataUrl = async (file, objectUrl) => {
+    const maxWidth = 420;
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    let source = null;
+    let width = null;
+    let height = null;
+
+    if (!context) {
+        return { thumbnailDataUrl: "", width, height };
+    }
+
+    if (typeof window.createImageBitmap === "function") {
+        source = await window.createImageBitmap(file);
+        width = source.width;
+        height = source.height;
+    } else {
+        source = await loadImageElement(objectUrl);
+        width = source.naturalWidth;
+        height = source.naturalHeight;
+    }
+
+    if (!width || !height) {
+        if (source && typeof source.close === "function") {
+            source.close();
+        }
+        return { thumbnailDataUrl: "", width: null, height: null };
+    }
+
+    const scale = Math.min(1, maxWidth / width);
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+    if (source && typeof source.close === "function") {
+        source.close();
+    }
+
+    return {
+        thumbnailDataUrl: canvas.toDataURL("image/jpeg", 0.82),
+        width,
+        height
+    };
+};
+
 const normalizeInitialPhoto = (photo) => ({
     id: photo.id,
     name: photo.name,
@@ -142,8 +215,14 @@ const normalizeInitialPhoto = (photo) => ({
     width: photo.width || null,
     height: photo.height || null,
     dataUrl: photo.data_url || photo.dataUrl || "",
+    thumbnailDataUrl: photo.thumbnail_data_url || photo.thumbnailDataUrl || photo.data_url || photo.dataUrl || "",
     objectUrl: null,
-    lastModified: photo.lastModified || null
+    lastModified: photo.lastModified || null,
+    sourceFile: null,
+    importStatus: "Lista",
+    processingError: "",
+    captionNarrative: photo.caption_narrative || photo.captionNarrative || "",
+    captionStatus: photo.caption_status || photo.captionStatus || "Sin editar"
 });
 
 const serializePhotoForServer = (photo) => ({
@@ -153,11 +232,17 @@ const serializePhotoForServer = (photo) => ({
     type: photo.type || "image/jpeg",
     width: photo.width,
     height: photo.height,
-    data_url: photo.dataUrl
+    data_url: photo.dataUrl,
+    caption_narrative: photo.captionNarrative || "",
+    caption_status: photo.captionStatus || "Sin editar"
 });
 
 const buildPhotoDeleteUrl = (photoId) => (
     photoWorkspace.dataset.photoDeleteUrlTemplate.replace("__PHOTO_ID__", encodeURIComponent(photoId))
+);
+
+const buildPhotoCaptionUrl = (photoId) => (
+    photoWorkspace.dataset.photoCaptionUrlTemplate.replace("__PHOTO_ID__", encodeURIComponent(photoId))
 );
 
 const persistPhoto = async (photo) => {
@@ -183,6 +268,26 @@ const deletePhotoFromServer = async (photoId) => {
 
     if (!response.ok) {
         throw new Error("Unable to delete photo from coverage memory.");
+    }
+
+    return response.json();
+};
+
+const persistPhotoCaption = async (photoId, record, keepalive = false) => {
+    const response = await fetch(buildPhotoCaptionUrl(photoId), {
+        method: "POST",
+        keepalive,
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            caption_narrative: record.narrative,
+            caption_status: record.status
+        })
+    });
+
+    if (!response.ok) {
+        throw new Error("Unable to persist caption in coverage memory.");
     }
 
     return response.json();
@@ -277,7 +382,7 @@ const clearPhotoInfo = () => {
 };
 
 const renderPreview = (photo) => {
-    selectedPhotoPreview.src = getPhotoSource(photo);
+    selectedPhotoPreview.src = getPhotoPreviewSource(photo);
     selectedPhotoPreview.alt = `Vista previa de ${photo.name}`;
     selectedPhotoPreview.hidden = false;
     photoPreviewEmpty.hidden = true;
@@ -297,6 +402,10 @@ const renderSelectionState = () => {
 };
 
 const selectPhoto = (photoId) => {
+    if (activePhotoId !== null && activePhotoId !== photoId) {
+        autosaveCaption(activePhotoId);
+    }
+
     activePhotoId = photoId;
     renderSelectionState();
     updateCounters();
@@ -304,6 +413,33 @@ const selectPhoto = (photoId) => {
         const isActive = item.dataset.photoId === activePhotoId;
         item.classList.toggle("is-active", isActive);
         item.setAttribute("aria-selected", String(isActive));
+    });
+    scrollActiveThumbnailIntoView();
+};
+
+const moveActivePhoto = (direction) => {
+    const currentIndex = getPhotoIndex(activePhotoId);
+    if (currentIndex === -1 || selectedPhotos.length === 0) {
+        return;
+    }
+
+    const nextIndex = (currentIndex + direction + selectedPhotos.length) % selectedPhotos.length;
+    selectPhoto(selectedPhotos[nextIndex].id);
+};
+
+const scrollActiveThumbnailIntoView = () => {
+    if (activePhotoId === null) {
+        return;
+    }
+
+    const activeItem = photoGrid.querySelector(`.photo-grid-item[data-photo-id="${CSS.escape(activePhotoId)}"]`);
+    if (!activeItem) {
+        return;
+    }
+
+    activeItem.scrollIntoView({
+        block: "nearest",
+        inline: "nearest"
     });
 };
 
@@ -327,93 +463,24 @@ const referenceCountries = (
     window.ATLAS_EDITORIAL_REFERENCE.countries
 ) || {};
 
-const normalizeTextKey = (value) => (
-    (value || "")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase()
-        .replace(/d\.\s*c\./g, "dc")
-        .replace(/[^a-z0-9\s]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim()
-);
-
-const normalizeCity = (value) => {
-    const key = normalizeTextKey(value);
-    const commonVariants = {
-        beijing: "beijing",
-        pekin: "beijing",
-        mexico: "ciudad de mexico",
-        "ciudad de mexico": "ciudad de mexico",
-        "mexico city": "ciudad de mexico",
-        cdmx: "ciudad de mexico",
-        washington: "washington dc",
-        "washington dc": "washington dc",
-        brasilia: "brasilia"
-    };
-
-    return commonVariants[key] || key;
-};
-
-const getCountryCapitalRecord = (countryName) => {
-    const requestedCountryKey = normalizeTextKey(countryName);
-    const entry = Object.entries(referenceCountries).find(([name]) => (
-        normalizeTextKey(name) === requestedCountryKey
-    ));
-
-    if (!entry) {
-        return null;
-    }
-
-    const [country, data] = entry;
-    return {
-        country,
-        capital: data.capital,
-        variants: data.variants || [data.capital]
-    };
-};
-
-const isCityKnownCapitalForCountry = (city, country) => {
-    const record = getCountryCapitalRecord(country);
-    if (!record) {
-        return false;
-    }
-
-    const normalizedCity = normalizeCity(city);
-    return record.variants.some((variant) => (
-        normalizeCity(variant) === normalizedCity
-    ));
-};
-
-const isKnownCapitalOfAnotherCountry = (city, country) => {
-    const normalizedCity = normalizeCity(city);
-    const normalizedCountry = normalizeTextKey(country);
-
-    return Object.entries(referenceCountries).some(([countryName, data]) => {
-        if (normalizeTextKey(countryName) === normalizedCountry) {
-            return false;
-        }
-
-        return (data.variants || [data.capital]).some((variant) => (
-            normalizeCity(variant) === normalizedCity
-        ));
-    });
-};
-
 const resolveLocationPhrase = (city, country) => {
     const safeCity = city || "Ciudad pendiente";
     const safeCountry = country || "País pendiente";
-
-    if (isCityKnownCapitalForCountry(safeCity, safeCountry)) {
-        return {
-            text: `en la ciudad de ${safeCity}, capital de ${safeCountry},`,
-            warning: false
+    const validation = (
+        window.ATLAS_EDITORIAL_REFERENCE &&
+        typeof window.ATLAS_EDITORIAL_REFERENCE.validate_city_country === "function"
+    )
+        ? window.ATLAS_EDITORIAL_REFERENCE.validate_city_country(safeCity, safeCountry)
+        : {
+            is_capital: false,
+            city_country_warning: ""
         };
-    }
 
     return {
-        text: `en la ciudad de ${safeCity}, ${safeCountry},`,
-        warning: isKnownCapitalOfAnotherCountry(safeCity, safeCountry)
+        text: `en ${safeCity}, en ${safeCountry},`,
+        isCapital: Boolean(validation.is_capital),
+        warning: Boolean(validation.city_country_warning),
+        warningText: validation.city_country_warning || ""
     };
 };
 
@@ -457,6 +524,10 @@ const formatXinhuaCode = (dateValue) => {
     ].join("");
 };
 
+const areCoverageDatesEqual = (firstDateValue, secondDateValue) => (
+    formatXinhuaCode(firstDateValue) === formatXinhuaCode(secondDateValue)
+);
+
 const buildEditorInitials = (editorName) => {
     const normalizedSource = (editorName || "")
         .normalize("NFD")
@@ -494,36 +565,79 @@ const normalizeNarrative = (narrative) => {
     return cleanNarrative.replace(/[.,\s]+$/g, "");
 };
 
+const lowerFirstLetter = (value) => (
+    value
+        ? value.charAt(0).toLowerCase() + value.slice(1)
+        : value
+);
+
+const buildEventDateNarrative = (eventDate, narrative) => {
+    const cleanNarrative = narrative.replace(/^[.,;:\s]+/g, "");
+    const articleMatch = cleanNarrative.match(/^(el|la|los|las)\s+(.+)$/i);
+
+    if (articleMatch) {
+        const article = articleMatch[1].toLowerCase();
+        const body = lowerFirstLetter(articleMatch[2]);
+        const connector = article === "el" ? "del" : `de ${article}`;
+        return `Imagen del ${eventDate} ${connector} ${body}`;
+    }
+
+    const prepositionMatch = cleanNarrative.match(/^(de|del|de la|de los|de las)\s+(.+)$/i);
+    if (prepositionMatch) {
+        return `Imagen del ${eventDate} ${lowerFirstLetter(cleanNarrative)}`;
+    }
+
+    return `Imagen del ${eventDate} de ${cleanNarrative}`;
+};
+
+const cleanCaptionString = (caption) => (
+    caption
+        .replace(/\s+/g, " ")
+        .replace(/\s+([,.;:])/g, "$1")
+        .replace(/,\s*,+/g, ",")
+        .replace(/\.\s*\.+/g, ".")
+        .replace(/:\s*:+/g, ":")
+        .replace(/,\s*\./g, ".")
+        .trim()
+);
+
 const captionTemplates = {
     xinhua: {
-        blocks(context) {
+        buildContext(context) {
             const city = context.city || "Ciudad pendiente";
             const country = context.country || "País pendiente";
-            const credit = `${context.agency || "Xinhua"}/${context.photographer || "Fotógrafo pendiente"}`;
+            const sendDate = context.sendDate || context.date;
+            const eventDate = context.eventDate || context.date;
+            const agency = context.agency || "Xinhua";
+            const credit = `${agency}/${context.photographer || "Fotógrafo pendiente"}`;
             const editorInitials = buildEditorInitials(context.editorInitials || context.editor);
             const location = resolveLocationPhrase(city, country);
+            const usesSameDate = areCoverageDatesEqual(sendDate, eventDate);
 
             return {
-                header: `(${formatXinhuaCode(context.date)}) -- ${city.toUpperCase()}, ${formatXinhuaShortDate(context.date)} (Xinhua) --`,
+                header: `(${formatXinhuaCode(sendDate)}) -- ${city.toUpperCase()}, ${formatXinhuaShortDate(sendDate)} (${agency}) --`,
                 city,
                 country,
-                date: formatXinhuaLongDate(context.date),
+                sendDate: formatXinhuaLongDate(sendDate),
+                eventDate: formatXinhuaLongDate(eventDate),
+                usesSameDate,
                 credit,
                 editorInitials,
                 location
             };
         },
-        generate(context, narrative) {
-            const blocks = this.blocks(context);
+        generate(context, photo, narrative) {
+            const blocks = this.buildContext(context, photo);
             const cleanNarrative = normalizeNarrative(narrative);
-            const caption = `${blocks.header} ${cleanNarrative}, ${blocks.location.text} el ${blocks.date}. (${blocks.credit}) (${blocks.editorInitials})`;
+            const narrativeText = blocks.usesSameDate
+                ? cleanNarrative
+                : buildEventDateNarrative(blocks.eventDate, cleanNarrative);
+            const dateClause = blocks.usesSameDate
+                ? ` el ${blocks.sendDate}`
+                : "";
+            const caption = `${blocks.header} ${narrativeText}, ${blocks.location.text}${dateClause}. (${blocks.credit}) (${blocks.editorInitials})`;
 
-            return caption
-                .replace(/\s+/g, " ")
-                .replace(/\s+([,.;:])/g, "$1")
-                .replace(/,{2,}/g, ",")
-                .replace(/\.{2,}/g, ".")
-                .trim();
+            return cleanCaptionString(caption);
         }
     }
 };
@@ -532,52 +646,162 @@ const getCaptionTemplate = (templateName) => (
     captionTemplates[templateName] || captionTemplates.xinhua
 );
 
-const buildCaptionPreview = (narrative) => {
+const buildCaptionPreview = (photo, narrative) => {
     const coverage = getCoverageCaptionData();
-    return getCaptionTemplate(coverage.template).generate(coverage, narrative);
+    return getCaptionTemplate(coverage.template).generate(coverage, photo, narrative);
 };
 
-const renderGeneratedCaptionFields = () => {
+const getCurrentLocationValidation = () => {
     const coverage = getCoverageCaptionData();
-    const blocks = getCaptionTemplate(coverage.template).blocks(coverage);
-
-    captionGeneratedHeader.textContent = blocks.header;
-    captionGeneratedCity.textContent = blocks.city;
-    captionGeneratedCountry.textContent = blocks.country;
-    captionGeneratedDate.textContent = blocks.date;
-    captionGeneratedCredit.textContent = blocks.credit;
-    captionGeneratedEditorInitials.textContent = blocks.editorInitials;
-    captionLocationWarning.hidden = !blocks.location.warning;
+    const blocks = getCaptionTemplate(coverage.template).buildContext(coverage);
+    return blocks.location;
 };
 
-const getCaptionDraft = (photoId) => captionDrafts.get(photoId) || "";
+const createCaptionRecord = (photo = {}) => ({
+    narrative: photo.captionNarrative || "",
+    status: captionStatusOptions.includes(photo.captionStatus) ? photo.captionStatus : "Sin editar",
+    savedNarrative: photo.captionNarrative || "",
+    savedStatus: captionStatusOptions.includes(photo.captionStatus) ? photo.captionStatus : "Sin editar"
+});
 
-const setCaptionDraft = (photoId, narrative) => {
-    captionDrafts.set(photoId, narrative);
+const getCaptionRecord = (photoId) => {
+    if (!captionRecords.has(photoId)) {
+        captionRecords.set(photoId, createCaptionRecord(getPhotoById(photoId) || {}));
+    }
+
+    return captionRecords.get(photoId);
 };
 
-const renderCaptionPreview = () => {
-    captionFullPreview.textContent = buildCaptionPreview(captionNarrativeField.value);
+const setSaveStatus = (status) => {
+    const labels = {
+        dirty: "● Sin guardar",
+        saving: "Guardando...",
+        saved: "✓ Guardado"
+    };
+    const label = labels[status] || labels.saved;
+
+    captionSaveStatus.textContent = label;
+    captionSaveStatusDetail.textContent = label;
+    captionSaveStatus.dataset.status = status;
+    captionSaveStatusDetail.dataset.status = status;
+};
+
+const hasUnsavedCaption = (record) => (
+    record.narrative !== record.savedNarrative || record.status !== record.savedStatus
+);
+
+const autosaveCaption = async (photoId = activePhotoId) => {
+    if (photoId === null || !captionRecords.has(photoId)) {
+        return;
+    }
+
+    const record = getCaptionRecord(photoId);
+    if (!hasUnsavedCaption(record)) {
+        setSaveStatus("saved");
+        return;
+    }
+
+    if (photoId === activePhotoId) {
+        setSaveStatus("saving");
+    }
+
+    try {
+        await persistPhotoCaption(photoId, record);
+    } catch (error) {
+        if (photoId === activePhotoId) {
+            setSaveStatus("dirty");
+        }
+        return;
+    }
+
+    const photo = getPhotoById(photoId);
+    if (photo) {
+        photo.captionNarrative = record.narrative;
+        photo.captionStatus = record.status;
+    }
+
+    record.savedNarrative = record.narrative;
+    record.savedStatus = record.status;
+
+    if (photoId === activePhotoId) {
+        setSaveStatus("saved");
+    }
+};
+
+const updateCaptionTextCounters = () => {
+    const narrative = captionNarrativeField.value.trim();
+    const characterCount = captionNarrativeField.value.length;
+    const wordCount = narrative ? narrative.split(/\s+/).length : 0;
+
+    captionCharacterCount.textContent = `${characterCount} caracteres`;
+    captionWordCount.textContent = `${wordCount} palabras`;
+};
+
+const updateCaptionPhotoNavigation = () => {
+    const activeIndex = getPhotoIndex(activePhotoId);
+    const hasPhotos = selectedPhotos.length > 0;
+    const labelIndex = activeIndex === -1 ? 0 : activeIndex + 1;
+    const record = activePhotoId === null ? null : getCaptionRecord(activePhotoId);
+    const status = record ? record.status : "Sin editar";
+
+    captionPhotoCounter.textContent = `Foto ${labelIndex} de ${selectedPhotos.length}`;
+    captionPhotoStatusIndicator.textContent = status;
+    captionPhotoStatusIndicator.dataset.status = status;
+    captionFooterStatus.textContent = status;
+    const activeStatusPill = photoGrid.querySelector(`.photo-grid-item[data-photo-id="${CSS.escape(activePhotoId || "")}"] .photo-status-pill`);
+    const activePhoto = getActivePhoto();
+    if (activeStatusPill && (!activePhoto || !activePhoto.importStatus || activePhoto.importStatus === "Lista")) {
+        activeStatusPill.textContent = status;
+        activeStatusPill.dataset.status = status;
+    }
+    captionPrevPhotoButton.disabled = !hasPhotos || selectedPhotos.length < 2;
+    captionNextPhotoButton.disabled = !hasPhotos || selectedPhotos.length < 2;
+};
+
+const renderCaptionPreview = (photo = getActivePhoto()) => {
+    const location = getCurrentLocationValidation();
+
+    captionFullPreview.textContent = buildCaptionPreview(photo, captionNarrativeField.value);
+    captionLocationWarning.textContent = location.warningText || "";
+    captionLocationWarning.hidden = !location.warning;
+};
+
+const syncCaptionRecordFromFields = () => {
+    if (activePhotoId === null) {
+        return;
+    }
+
+    const record = getCaptionRecord(activePhotoId);
+    record.narrative = captionNarrativeField.value;
+    record.status = captionReviewStatusField.value;
+    updateCaptionPhotoNavigation();
+    setSaveStatus(hasUnsavedCaption(record) ? "dirty" : "saved");
 };
 
 const renderCaptionEditor = (photo) => {
-    renderGeneratedCaptionFields();
-    captionNarrativeField.value = getCaptionDraft(photo.id);
+    const record = getCaptionRecord(photo.id);
+    captionNarrativeField.value = record.narrative;
+    captionReviewStatusField.value = captionStatusOptions.includes(record.status)
+        ? record.status
+        : "Sin editar";
     captionNarrativeField.disabled = false;
-    renderCaptionPreview();
+    captionReviewStatusField.disabled = false;
+    updateCaptionTextCounters();
+    renderCaptionPreview(photo);
+    updateCaptionPhotoNavigation();
+    setSaveStatus(hasUnsavedCaption(record) ? "dirty" : "saved");
 };
 
 const clearCaptionEditor = () => {
     captionNarrativeField.value = "";
     captionNarrativeField.disabled = true;
-    captionGeneratedHeader.textContent = "";
-    captionGeneratedCity.textContent = "";
-    captionGeneratedCountry.textContent = "";
-    captionGeneratedDate.textContent = "";
-    captionGeneratedCredit.textContent = "";
-    captionGeneratedEditorInitials.textContent = "";
+    captionReviewStatusField.value = "Sin editar";
+    captionReviewStatusField.disabled = true;
     captionLocationWarning.hidden = true;
     captionFullPreview.textContent = "";
+    updateCaptionTextCounters();
+    updateCaptionPhotoNavigation();
+    setSaveStatus("saved");
 };
 
 const createSkeletonCard = () => {
@@ -618,15 +842,28 @@ const createPhotoCard = (item) => {
     const thumbnailWrap = document.createElement("span");
     thumbnailWrap.className = "photo-grid-thumb-wrap";
 
-    const thumbnail = document.createElement("img");
-    thumbnail.className = "photo-grid-thumb";
-    thumbnail.src = getPhotoSource(item);
-    thumbnail.alt = `Miniatura de ${item.name}`;
-    thumbnail.loading = "lazy";
+    const thumbnailSource = getPhotoThumbnailSource(item);
+    const thumbnail = thumbnailSource
+        ? document.createElement("img")
+        : document.createElement("span");
+    thumbnail.className = thumbnailSource
+        ? "photo-grid-thumb"
+        : "photo-grid-placeholder";
+
+    if (thumbnailSource) {
+        thumbnail.src = thumbnailSource;
+        thumbnail.alt = `Miniatura de ${item.name}`;
+        thumbnail.loading = "lazy";
+    } else {
+        thumbnail.textContent = "Preparando miniatura";
+    }
 
     const status = document.createElement("span");
+    const captionRecord = getCaptionRecord(item.id);
+    const displayStatus = item.importStatus || captionRecord.status;
     status.className = "photo-status-pill";
-    status.textContent = "Preparada";
+    status.textContent = displayStatus;
+    status.dataset.status = displayStatus;
 
     const actions = document.createElement("span");
     actions.className = "photo-thumb-actions";
@@ -686,6 +923,7 @@ const renderPhotoGridProgressively = () => {
             fragment.appendChild(createPhotoCard(photo));
         });
         photoGrid.appendChild(fragment);
+        scrollActiveThumbnailIntoView();
         cursor += batch.length;
 
         if (cursor < photos.length) {
@@ -729,25 +967,113 @@ const hasDuplicatePhoto = (file) => (
     ))
 );
 
-const buildPhotoFromFile = async (file) => {
+const buildQueuedPhoto = (file) => {
     const objectUrl = URL.createObjectURL(file);
-    const dataUrl = await readFileAsDataUrl(file);
-    const dimensions = await readImageDimensions(objectUrl);
 
     return {
         id: generatePhotoId(),
         name: file.name,
         size: file.size,
         type: file.type || "image/jpeg",
-        width: dimensions.width,
-        height: dimensions.height,
-        dataUrl,
+        width: null,
+        height: null,
+        dataUrl: "",
+        thumbnailDataUrl: "",
         objectUrl,
-        lastModified: file.lastModified
+        lastModified: file.lastModified,
+        sourceFile: file,
+        importStatus: "En cola",
+        processingError: "",
+        captionNarrative: "",
+        captionStatus: "Sin editar"
     };
 };
 
-const addFiles = async (files) => {
+const updatePhotoImportStatus = (photo, status, errorMessage = "") => {
+    photo.importStatus = status;
+    photo.processingError = errorMessage;
+
+    const statusPill = photoGrid.querySelector(`.photo-grid-item[data-photo-id="${CSS.escape(photo.id)}"] .photo-status-pill`);
+    if (statusPill) {
+        statusPill.textContent = status;
+        statusPill.dataset.status = status;
+    }
+
+    if (activePhotoId === photo.id) {
+        renderSelectionState();
+    }
+};
+
+const refreshImportMessage = () => {
+    const pendingCount = queuedPhotoCount + activePhotoProcessingCount;
+
+    if (pendingCount > 0) {
+        photoUploadMessage.textContent = `Preparando miniaturas... ${completedPhotoCount} listas · ${pendingCount} en proceso`;
+        photoUploadMessage.classList.add("is-visible");
+        return;
+    }
+
+    if (completedPhotoCount > 0) {
+        photoUploadMessage.textContent = `${completedPhotoCount} fotografías listas`;
+        photoUploadMessage.classList.add("is-visible");
+    }
+};
+
+const releasePhotoObjectUrl = (photo) => {
+    if (photo.objectUrl) {
+        URL.revokeObjectURL(photo.objectUrl);
+        photo.objectUrl = null;
+    }
+};
+
+const processQueuedPhoto = async (photo) => {
+    try {
+        updatePhotoImportStatus(photo, "Procesando");
+        const thumbnail = await createThumbnailDataUrl(photo.sourceFile, photo.objectUrl);
+        photo.thumbnailDataUrl = thumbnail.thumbnailDataUrl;
+        photo.width = thumbnail.width;
+        photo.height = thumbnail.height;
+        renderWorkspace();
+
+        updatePhotoImportStatus(photo, "Subiendo");
+        photo.dataUrl = await readFileAsDataUrl(photo.sourceFile);
+        if (!getPhotoById(photo.id)) {
+            releasePhotoObjectUrl(photo);
+            return;
+        }
+        await persistPhoto(photo);
+        photo.sourceFile = null;
+        releasePhotoObjectUrl(photo);
+        updatePhotoImportStatus(photo, "Lista");
+        completedPhotoCount += 1;
+    } catch (error) {
+        updatePhotoImportStatus(photo, "Error", error.message || "No se pudo importar la fotografía.");
+    } finally {
+        activePhotoProcessingCount = Math.max(activePhotoProcessingCount - 1, 0);
+        refreshImportMessage();
+        processNextPhotoInQueue();
+    }
+};
+
+const processNextPhotoInQueue = () => {
+    while (
+        activePhotoProcessingCount < maxPhotoProcessingConcurrency &&
+        photoProcessingQueue.length > 0
+    ) {
+        const photo = photoProcessingQueue.shift();
+        queuedPhotoCount = Math.max(queuedPhotoCount - 1, 0);
+        activePhotoProcessingCount += 1;
+        refreshImportMessage();
+        processQueuedPhoto(photo);
+    }
+};
+
+const enqueuePhotoProcessing = (photo) => {
+    photoProcessingQueue.push(photo);
+    queuedPhotoCount += 1;
+};
+
+const addFiles = (files) => {
     const incomingFiles = Array.from(files);
     let addedPhotoCount = 0;
 
@@ -756,31 +1082,44 @@ const addFiles = async (files) => {
             continue;
         }
 
-        const photo = await buildPhotoFromFile(file);
-
-        try {
-            await persistPhoto(photo);
-        } catch (error) {
-            URL.revokeObjectURL(photo.objectUrl);
-            continue;
-        }
-
+        const photo = buildQueuedPhoto(file);
         selectedPhotos.push(photo);
+        getCaptionRecord(photo.id);
+        enqueuePhotoProcessing(photo);
         addedPhotoCount += 1;
     }
 
     if (addedPhotoCount > 0) {
+        completedPhotoCount = 0;
+        photoUploadMessage.textContent = `${addedPhotoCount} fotografías recibidas · Preparando miniaturas...`;
         photoUploadMessage.classList.add("is-visible");
+
+        if (activePhotoId === null) {
+            activePhotoId = selectedPhotos[selectedPhotos.length - addedPhotoCount].id;
+        }
     }
 
     renderWorkspace();
+    processNextPhotoInQueue();
 };
 
-const toggleDropZone = (isActive) => {
-    dropZone.classList.toggle("is-active", isActive);
+const setDropZoneDragState = (isDragover) => {
+    dropZone.classList.toggle("is-dragover", isDragover);
+
+    if (dropZoneMainText) {
+        dropZoneMainText.textContent = isDragover
+            ? "Suelta las fotografías para importarlas"
+            : defaultDropZoneMainText;
+    }
+};
+
+const clearDropZoneDragState = () => {
+    dropZoneDragDepth = 0;
+    setDropZoneDragState(false);
 };
 
 const clearSelection = () => {
+    autosaveCaption(activePhotoId);
     activePhotoId = null;
     renderSelectionState();
     updateCounters();
@@ -828,11 +1167,18 @@ const removePhotoById = async (photoId) => {
     }
 
     const photo = selectedPhotos[index];
+    const queuedIndex = photoProcessingQueue.findIndex((queuedPhoto) => queuedPhoto.id === photo.id);
+    if (queuedIndex !== -1) {
+        photoProcessingQueue.splice(queuedIndex, 1);
+        queuedPhotoCount = Math.max(queuedPhotoCount - 1, 0);
+    }
 
-    try {
-        await deletePhotoFromServer(photo.id);
-    } catch (error) {
-        return;
+    if (photo.dataUrl || photo.importStatus === "Lista") {
+        try {
+            await deletePhotoFromServer(photo.id);
+        } catch (error) {
+            return;
+        }
     }
 
     if (photo.objectUrl) {
@@ -840,6 +1186,7 @@ const removePhotoById = async (photoId) => {
     }
 
     selectedPhotos.splice(index, 1);
+    captionRecords.delete(photo.id);
 
     if (activePhotoId === photo.id) {
         activePhotoId = null;
@@ -880,7 +1227,7 @@ const renderViewerPhoto = () => {
 
     photoViewerTitle.textContent = photo.name;
     photoViewerMeta.textContent = dimensions;
-    photoViewerImage.src = getPhotoSource(photo);
+    photoViewerImage.src = getPhotoPreviewSource(photo);
     photoViewerImage.alt = `Revisión de ${photo.name}`;
     setViewerZoom(viewerZoomMode);
 };
@@ -945,27 +1292,34 @@ const hydrateInitialPhotos = async () => {
         }
 
         selectedPhotos.push(photo);
+        getCaptionRecord(photo.id);
     }
 };
 
 if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
-    ["dragenter", "dragover"].forEach((eventName) => {
-        dropZone.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            toggleDropZone(true);
-        });
+    dropZone.addEventListener("dragenter", (event) => {
+        event.preventDefault();
+        dropZoneDragDepth += 1;
+        setDropZoneDragState(true);
     });
 
-    ["dragleave", "dragend"].forEach((eventName) => {
-        dropZone.addEventListener(eventName, (event) => {
-            event.preventDefault();
-            toggleDropZone(false);
-        });
+    dropZone.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        setDropZoneDragState(true);
+    });
+
+    dropZone.addEventListener("dragleave", (event) => {
+        event.preventDefault();
+        dropZoneDragDepth = Math.max(dropZoneDragDepth - 1, 0);
+
+        if (dropZoneDragDepth === 0) {
+            setDropZoneDragState(false);
+        }
     });
 
     dropZone.addEventListener("drop", (event) => {
         event.preventDefault();
-        toggleDropZone(false);
+        clearDropZoneDragState();
 
         if (!event.dataTransfer) {
             return;
@@ -994,9 +1348,23 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
             return;
         }
 
-        setCaptionDraft(activePhotoId, captionNarrativeField.value);
+        syncCaptionRecordFromFields();
+        updateCaptionTextCounters();
         renderCaptionPreview();
     });
+    captionNarrativeField.addEventListener("blur", () => {
+        autosaveCaption(activePhotoId);
+    });
+    captionReviewStatusField.addEventListener("change", () => {
+        if (activePhotoId === null) {
+            return;
+        }
+
+        syncCaptionRecordFromFields();
+        autosaveCaption(activePhotoId);
+    });
+    captionPrevPhotoButton.addEventListener("click", () => moveActivePhoto(-1));
+    captionNextPhotoButton.addEventListener("click", () => moveActivePhoto(1));
     cancelPhotoDeleteButton.addEventListener("click", closeDeleteDialog);
     confirmPhotoDeleteButton.addEventListener("click", async () => {
         const photoId = pendingDeletePhotoId;
@@ -1039,6 +1407,36 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
         }
     });
 
+    document.addEventListener("keydown", (event) => {
+        const isTyping = event.target.matches("input, textarea, select");
+
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+            event.preventDefault();
+            autosaveCaption(activePhotoId);
+            return;
+        }
+
+        if (event.key === "Escape" && document.activeElement === captionNarrativeField) {
+            event.preventDefault();
+            captionNarrativeField.blur();
+            return;
+        }
+
+        if (photoViewerDialog.open || isTyping || selectedPhotos.length < 2) {
+            return;
+        }
+
+        if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            moveActivePhoto(-1);
+        }
+
+        if (event.key === "ArrowRight") {
+            event.preventDefault();
+            moveActivePhoto(1);
+        }
+    });
+
     photoGrid.addEventListener("keydown", (event) => {
         if (event.key !== "Enter" && event.key !== " ") {
             return;
@@ -1058,6 +1456,12 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
     });
 
     window.addEventListener("beforeunload", () => {
+        autosaveCaption(activePhotoId);
+        captionRecords.forEach((record, photoId) => {
+            if (hasUnsavedCaption(record)) {
+                persistPhotoCaption(photoId, record, true);
+            }
+        });
         selectedPhotos.forEach((item) => {
             if (item.objectUrl) {
                 URL.revokeObjectURL(item.objectUrl);

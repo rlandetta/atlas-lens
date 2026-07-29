@@ -21,17 +21,7 @@
 
             <div class="form-field">
                 <label for="agency">Agencia</label>
-                <select id="agency" name="agency" required>
-                    <option value="" {% if not form_data.agency %}selected{% endif %} disabled>Selecciona una agencia</option>
-                    {% for agency in agency_options %}
-                    <option value="{{ agency }}" {% if form_data.agency == agency %}selected{% endif %}>{{ agency }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-field">
-                <label for="submit_date">Fecha de envío</label>
-                <input id="submit_date" name="submit_date" type="date" value="{{ form_data.submit_date or '' }}" required>
+                <input id="agency" name="agency" type="text" value="{{ form_data.agency or '' }}" list="agency-suggestions" required spellcheck="true">
             </div>
 
             <div class="form-field">
@@ -40,8 +30,13 @@
             </div>
 
             <div class="form-field">
+                <label for="submit_date">Fecha de envío</label>
+                <input id="submit_date" name="submit_date" type="date" value="{{ form_data.submit_date or '' }}" required>
+            </div>
+
+            <div class="form-field">
                 <label for="city">Ciudad</label>
-                <input id="city" name="city" type="text" value="{{ form_data.city or '' }}" required spellcheck="true">
+                <input id="city" name="city" type="text" value="{{ form_data.city or '' }}" list="city-suggestions" required spellcheck="true">
             </div>
 
             <div class="form-field">
@@ -60,15 +55,35 @@
 
             <div class="form-field">
                 <label for="photographer">Fotógrafo</label>
-                <input id="photographer" name="photographer" type="text" value="{{ form_data.photographer or '' }}" required spellcheck="true">
+                <input id="photographer" name="photographer" type="text" value="{{ form_data.photographer or '' }}" list="photographer-suggestions" required spellcheck="true">
             </div>
 
             <div class="form-field">
                 <label for="editor">Editor</label>
-                <input id="editor" name="editor" type="text" value="{{ form_data.editor or '' }}" required spellcheck="false">
+                <input id="editor" name="editor" type="text" value="{{ form_data.editor or '' }}" list="editor-suggestions" required spellcheck="false">
             </div>
         </div>
 
+        <datalist id="agency-suggestions">
+            {% for value in suggestions.agency %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
+        <datalist id="photographer-suggestions">
+            {% for value in suggestions.photographer %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
+        <datalist id="editor-suggestions">
+            {% for value in suggestions.editor %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
+        <datalist id="city-suggestions">
+            {% for value in suggestions.city %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
         <button type="submit" class="primary-button compact-action">Crear cobertura</button>
     </form>
 

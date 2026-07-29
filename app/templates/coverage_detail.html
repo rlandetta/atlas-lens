@@ -24,12 +24,12 @@
             <dd>{{ coverage.editor }}</dd>
         </div>
         <div>
-            <dt>Fecha de envío</dt>
-            <dd>{{ coverage.submit_date }}</dd>
-        </div>
-        <div>
             <dt>Fecha del evento</dt>
             <dd>{{ coverage.event_date }}</dd>
+        </div>
+        <div>
+            <dt>Fecha de envío</dt>
+            <dd>{{ coverage.submit_date }}</dd>
         </div>
         <div>
             <dt>Ciudad y país</dt>
@@ -54,9 +54,12 @@
             data-coverage-id="{{ coverage_id }}"
             data-photos-url="{{ url_for('web.add_coverage_photo', coverage_id=coverage_id) }}"
             data-photo-delete-url-template="{{ url_for('web.delete_coverage_photo', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+            data-photo-caption-url-template="{{ url_for('web.save_coverage_photo_caption', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
             data-caption-city="{{ coverage.city }}"
             data-caption-country="{{ coverage.country }}"
             data-caption-date="{{ coverage.event_date }}"
+            data-caption-send-date="{{ coverage.submit_date }}"
+            data-caption-event-date="{{ coverage.event_date }}"
             data-caption-photographer="{{ coverage.photographer }}"
             data-caption-agency="{{ coverage.agency }}"
             data-caption-editor="{{ coverage.editor_name or coverage.editor }}"
@@ -95,8 +98,15 @@
                     <img id="selected-photo-preview" class="selected-photo-preview" alt="" hidden>
                 </section>
 
-                <aside class="photo-info-panel" aria-label="Información de fotografía">
-                    <h3>Información</h3>
+                <aside class="photo-info-panel" aria-label="Editor de caption">
+                    <div class="caption-photo-nav">
+                        <span id="caption-photo-counter" class="caption-photo-counter">Foto 0 de 0</span>
+                        <span id="caption-photo-status-indicator" class="caption-status-indicator">Sin editar</span>
+                        <div class="caption-nav-buttons" aria-label="Navegación de fotografías">
+                            <button id="caption-prev-photo-button" type="button" class="caption-nav-button" aria-label="Fotografía anterior">←</button>
+                            <button id="caption-next-photo-button" type="button" class="caption-nav-button" aria-label="Fotografía siguiente">→</button>
+                        </div>
+                    </div>
                     <p id="photo-info-empty" class="photo-info-empty">Seleccione una fotografía para revisar sus datos.</p>
                     <dl id="photo-info-details" class="photo-info-details" hidden>
                         <div>
@@ -123,47 +133,39 @@
                     <div id="photo-caption-preview" class="caption-editor" hidden>
                         <div class="caption-editor-header">
                             <h4>Caption editorial</h4>
-                            <span>Base manual</span>
                         </div>
-                        <section class="caption-block">
-                            <h5>Datos generados</h5>
-                            <dl class="caption-generated-fields">
-                                <div>
-                                    <dt>Encabezado Xinhua</dt>
-                                    <dd id="caption-generated-header"></dd>
+                        <div class="caption-editor-top-row">
+                            <section class="caption-block caption-narrative-block">
+                                <div class="caption-section-heading">
+                                    <label for="caption-narrative-field">Narración</label>
+                                    <button id="caption-ai-button" type="button" class="secondary-button caption-ai-button" disabled>Próximamente</button>
                                 </div>
-                                <div>
-                                    <dt>Ciudad</dt>
-                                    <dd id="caption-generated-city"></dd>
-                                </div>
-                                <div>
-                                    <dt>País</dt>
-                                    <dd id="caption-generated-country"></dd>
-                                </div>
-                                <div>
-                                    <dt>Fecha</dt>
-                                    <dd id="caption-generated-date"></dd>
-                                </div>
-                                <div>
-                                    <dt>Crédito</dt>
-                                    <dd id="caption-generated-credit"></dd>
-                                </div>
-                                <div>
-                                    <dt>Iniciales del editor</dt>
-                                    <dd id="caption-generated-editor-initials"></dd>
-                                </div>
-                            </dl>
-                        </section>
-                        <section class="caption-block">
-                            <label for="caption-narrative-field">Narración editable</label>
-                            <textarea id="caption-narrative-field" rows="5" placeholder="Escriba aquí la narración editorial de esta fotografía."></textarea>
-                        </section>
-                        <section class="caption-block">
-                            <h5>Vista previa</h5>
+                                <textarea id="caption-narrative-field" rows="5" placeholder="Escriba aquí la narración editorial de esta fotografía."></textarea>
+                                <p class="caption-text-counter"><span id="caption-character-count">0 caracteres</span><span id="caption-word-count">0 palabras</span></p>
+                            </section>
+                            <section class="caption-block caption-status-block">
+                                <label for="caption-review-status-field">Estado del caption</label>
+                                <select id="caption-review-status-field">
+                                    <option value="Sin editar">Sin editar</option>
+                                    <option value="En edición">En edición</option>
+                                    <option value="Revisado">Revisado</option>
+                                    <option value="Aprobado">Aprobado</option>
+                                </select>
+                                <p class="caption-status-save-label">Autoguardado</p>
+                                <p id="caption-save-status" class="caption-status-save-pill">✓ Guardado</p>
+                            </section>
+                        </div>
+                        <section class="caption-block caption-preview-block">
+                            <h5>Vista previa del caption</h5>
                             <p id="caption-location-warning" class="caption-warning" hidden>La ciudad ingresada no coincide con la capital conocida del país seleccionado.</p>
+                            <h6>Caption generado</h6>
                             <p id="caption-full-preview" class="caption-full-preview" aria-live="polite"></p>
                         </section>
-                        <p class="caption-editor-note">La narración se mantiene temporalmente en esta página. La integración con IA se preparará en una próxima iteración.</p>
+                        <section class="caption-footer-bar" aria-label="Estado del caption editorial">
+                            <p><span>Plantilla:</span> Xinhua</p>
+                            <p><span>Estado:</span> <span id="caption-footer-status">Sin editar</span></p>
+                            <p id="caption-save-status-detail">✓ Guardado</p>
+                        </section>
                     </div>
                 </aside>
             </div>
@@ -206,16 +208,7 @@
 
             <div class="form-field">
                 <label for="edit_agency">Agencia</label>
-                <select id="edit_agency" name="agency" required>
-                    {% for agency in agency_options %}
-                    <option value="{{ agency }}" {% if coverage.agency == agency %}selected{% endif %}>{{ agency }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-field">
-                <label for="edit_submit_date">Fecha de envío</label>
-                <input id="edit_submit_date" name="submit_date" type="date" value="{{ coverage.submit_date }}" required>
+                <input id="edit_agency" name="agency" type="text" value="{{ coverage.agency }}" list="edit-agency-suggestions" required spellcheck="true">
             </div>
 
             <div class="form-field">
@@ -224,8 +217,13 @@
             </div>
 
             <div class="form-field">
+                <label for="edit_submit_date">Fecha de envío</label>
+                <input id="edit_submit_date" name="submit_date" type="date" value="{{ coverage.submit_date }}" required>
+            </div>
+
+            <div class="form-field">
                 <label for="edit_city">Ciudad</label>
-                <input id="edit_city" name="city" type="text" value="{{ coverage.city }}" required spellcheck="true">
+                <input id="edit_city" name="city" type="text" value="{{ coverage.city }}" list="edit-city-suggestions" required spellcheck="true">
             </div>
 
             <div class="form-field">
@@ -243,15 +241,35 @@
 
             <div class="form-field">
                 <label for="edit_photographer">Fotógrafo</label>
-                <input id="edit_photographer" name="photographer" type="text" value="{{ coverage.photographer }}" required spellcheck="true">
+                <input id="edit_photographer" name="photographer" type="text" value="{{ coverage.photographer }}" list="edit-photographer-suggestions" required spellcheck="true">
             </div>
 
             <div class="form-field">
                 <label for="edit_editor">Editor</label>
-                <input id="edit_editor" name="editor" type="text" value="{{ coverage.editor }}" required spellcheck="false">
+                <input id="edit_editor" name="editor" type="text" value="{{ coverage.editor }}" list="edit-editor-suggestions" required spellcheck="false">
             </div>
         </div>
 
+        <datalist id="edit-agency-suggestions">
+            {% for value in suggestions.agency %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
+        <datalist id="edit-photographer-suggestions">
+            {% for value in suggestions.photographer %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
+        <datalist id="edit-editor-suggestions">
+            {% for value in suggestions.editor %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
+        <datalist id="edit-city-suggestions">
+            {% for value in suggestions.city %}
+            <option value="{{ value }}"></option>
+            {% endfor %}
+        </datalist>
         <div class="dialog-actions">
             <button type="button" id="close-edit-dialog-button" class="secondary-button">Cancelar</button>
             <button type="submit" class="primary-button compact-action">Guardar cambios</button>
