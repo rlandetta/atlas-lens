@@ -24,6 +24,8 @@ const captionPhotoStatusIndicator = document.getElementById("caption-photo-statu
 const captionPrevPhotoButton = document.getElementById("caption-prev-photo-button");
 const captionNextPhotoButton = document.getElementById("caption-next-photo-button");
 const captionNarrativeField = document.getElementById("caption-narrative-field");
+const captionAiButton = document.getElementById("caption-ai-button");
+const captionAiStatus = document.getElementById("caption-ai-status");
 const captionReviewStatusField = document.getElementById("caption-review-status-field");
 const captionFooterStatus = document.getElementById("caption-footer-status");
 const captionCharacterCount = document.getElementById("caption-character-count");
@@ -37,6 +39,9 @@ const photoDeleteDialog = document.getElementById("photo-delete-dialog");
 const photoDeleteName = document.getElementById("photo-delete-name");
 const cancelPhotoDeleteButton = document.getElementById("cancel-photo-delete-button");
 const confirmPhotoDeleteButton = document.getElementById("confirm-photo-delete-button");
+const captionAiReplaceDialog = document.getElementById("caption-ai-replace-dialog");
+const cancelCaptionAiReplaceButton = document.getElementById("cancel-caption-ai-replace-button");
+const confirmCaptionAiReplaceButton = document.getElementById("confirm-caption-ai-replace-button");
 const photoViewerDialog = document.getElementById("photo-viewer-dialog");
 const photoViewerTitle = document.getElementById("photo-viewer-title");
 const photoViewerMeta = document.getElementById("photo-viewer-meta");
@@ -61,6 +66,7 @@ let dropZoneDragDepth = 0;
 let activePhotoProcessingCount = 0;
 let queuedPhotoCount = 0;
 let completedPhotoCount = 0;
+let activeAiGenerationPhotoId = null;
 const photoProcessingQueue = [];
 const captionRecords = new Map();
 const defaultDropZoneMainText = dropZoneMainText ? dropZoneMainText.textContent : "";
@@ -245,6 +251,14 @@ const buildPhotoCaptionUrl = (photoId) => (
     photoWorkspace.dataset.photoCaptionUrlTemplate.replace("__PHOTO_ID__", encodeURIComponent(photoId))
 );
 
+const buildPhotoAiUrl = (photoId) => (
+    photoWorkspace.dataset.photoAiUrlTemplate.replace("__PHOTO_ID__", encodeURIComponent(photoId))
+);
+
+const wait = (durationMs) => new Promise((resolve) => {
+    window.setTimeout(resolve, durationMs);
+});
+
 const persistPhoto = async (photo) => {
     const response = await fetch(photoWorkspace.dataset.photosUrl, {
         method: "POST",
@@ -291,6 +305,28 @@ const persistPhotoCaption = async (photoId, record, keepalive = false) => {
     }
 
     return response.json();
+};
+
+const requestAiNarration = async (photoId, options = {}) => {
+    const response = await fetch(buildPhotoAiUrl(photoId), {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            simulate_error: Boolean(options.simulateError)
+        })
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok || !payload.ok) {
+        const message = payload.error && payload.error.message
+            ? payload.error.message
+            : "No fue posible generar la narración. Intenta nuevamente.";
+        throw new Error(message);
+    }
+
+    return payload;
 };
 
 const createIcon = (type) => {
@@ -686,6 +722,16 @@ const setSaveStatus = (status) => {
     captionSaveStatusDetail.dataset.status = status;
 };
 
+const setAiStatus = (message = "", status = "idle") => {
+    captionAiStatus.textContent = message;
+    captionAiStatus.dataset.status = status;
+};
+
+const setAiButtonState = (label, disabled = false) => {
+    captionAiButton.textContent = label;
+    captionAiButton.disabled = disabled;
+};
+
 const hasUnsavedCaption = (record) => (
     record.narrative !== record.savedNarrative || record.status !== record.savedStatus
 );
@@ -766,6 +812,102 @@ const renderCaptionPreview = (photo = getActivePhoto()) => {
     captionLocationWarning.hidden = !location.warning;
 };
 
+const confirmAiNarrationReplacement = () => new Promise((resolve) => {
+    let isResolved = false;
+    const cleanup = (shouldReplace) => {
+        if (isResolved) {
+            return;
+        }
+        isResolved = true;
+        cancelCaptionAiReplaceButton.removeEventListener("click", handleCancel);
+        confirmCaptionAiReplaceButton.removeEventListener("click", handleConfirm);
+        captionAiReplaceDialog.removeEventListener("close", handleClose);
+        resolve(shouldReplace);
+    };
+    const handleCancel = () => {
+        captionAiReplaceDialog.close();
+        cleanup(false);
+    };
+    const handleConfirm = () => {
+        captionAiReplaceDialog.close();
+        cleanup(true);
+    };
+    const handleClose = () => cleanup(false);
+
+    if (typeof captionAiReplaceDialog.showModal !== "function") {
+        resolve(window.confirm("Esta fotografía ya tiene una narración. ¿Deseas reemplazarla con una nueva propuesta generada por IA?"));
+        return;
+    }
+
+    cancelCaptionAiReplaceButton.addEventListener("click", handleCancel, { once: true });
+    confirmCaptionAiReplaceButton.addEventListener("click", handleConfirm, { once: true });
+    captionAiReplaceDialog.addEventListener("close", handleClose, { once: true });
+    captionAiReplaceDialog.showModal();
+});
+
+const applyAiNarration = async (photoId, narration) => {
+    const record = getCaptionRecord(photoId);
+    record.narrative = narration;
+    record.status = "En edición";
+
+    const photo = getPhotoById(photoId);
+    if (photo) {
+        photo.captionNarrative = narration;
+        photo.captionStatus = "En edición";
+    }
+
+    if (activePhotoId === photoId) {
+        captionNarrativeField.value = narration;
+        captionReviewStatusField.value = "En edición";
+        updateCaptionTextCounters();
+        renderCaptionPreview(photo);
+        updateCaptionPhotoNavigation();
+        setSaveStatus("dirty");
+    }
+
+    await autosaveCaption(photoId);
+};
+
+const generateNarrationWithAi = async (options = {}) => {
+    const photo = getActivePhoto();
+    if (!photo || activeAiGenerationPhotoId !== null) {
+        return;
+    }
+
+    const photoId = photo.id;
+    const record = getCaptionRecord(photoId);
+    const hasExistingNarration = record.narrative.trim() || captionNarrativeField.value.trim();
+
+    if (hasExistingNarration) {
+        const shouldReplace = await confirmAiNarrationReplacement();
+        if (!shouldReplace) {
+            setAiStatus("Generación cancelada.");
+            setAiButtonState("Generar con IA");
+            return;
+        }
+    }
+
+    activeAiGenerationPhotoId = photoId;
+    setAiStatus("Analizando fotografía...");
+    setAiButtonState("Analizando...", true);
+
+    try {
+        await wait(320);
+        setAiStatus("Generando narración...");
+        setAiButtonState("Generando...", true);
+        const payload = await requestAiNarration(photoId, options);
+        await applyAiNarration(photoId, payload.narration);
+        setAiStatus("Narración generada. Revisa el texto antes de aprobar.");
+        setAiButtonState("Generar nuevamente");
+    } catch (error) {
+        setAiStatus("No fue posible generar la narración. Intenta nuevamente.", "error");
+        setAiButtonState("Reintentar");
+    } finally {
+        activeAiGenerationPhotoId = null;
+        captionAiButton.disabled = getActivePhoto() === null;
+    }
+};
+
 const syncCaptionRecordFromFields = () => {
     if (activePhotoId === null) {
         return;
@@ -786,6 +928,11 @@ const renderCaptionEditor = (photo) => {
         : "Sin editar";
     captionNarrativeField.disabled = false;
     captionReviewStatusField.disabled = false;
+    setAiStatus("");
+    setAiButtonState(
+        activeAiGenerationPhotoId === photo.id ? "Generando..." : "Generar con IA",
+        Boolean(activeAiGenerationPhotoId)
+    );
     updateCaptionTextCounters();
     renderCaptionPreview(photo);
     updateCaptionPhotoNavigation();
@@ -795,6 +942,8 @@ const renderCaptionEditor = (photo) => {
 const clearCaptionEditor = () => {
     captionNarrativeField.value = "";
     captionNarrativeField.disabled = true;
+    setAiStatus("");
+    setAiButtonState("Generar con IA", true);
     captionReviewStatusField.value = "Sin editar";
     captionReviewStatusField.disabled = true;
     captionLocationWarning.hidden = true;
@@ -1351,6 +1500,9 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
         syncCaptionRecordFromFields();
         updateCaptionTextCounters();
         renderCaptionPreview();
+    });
+    captionAiButton.addEventListener("click", (event) => {
+        generateNarrationWithAi({ simulateError: event.altKey });
     });
     captionNarrativeField.addEventListener("blur", () => {
         autosaveCaption(activePhotoId);

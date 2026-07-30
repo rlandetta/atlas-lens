@@ -55,6 +55,7 @@
             data-photos-url="{{ url_for('web.add_coverage_photo', coverage_id=coverage_id) }}"
             data-photo-delete-url-template="{{ url_for('web.delete_coverage_photo', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
             data-photo-caption-url-template="{{ url_for('web.save_coverage_photo_caption', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+            data-photo-ai-url-template="{{ url_for('web.generate_photo_narration', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
             data-caption-city="{{ coverage.city }}"
             data-caption-country="{{ coverage.country }}"
             data-caption-date="{{ coverage.event_date }}"
@@ -138,9 +139,11 @@
                             <section class="caption-block caption-narrative-block">
                                 <div class="caption-section-heading">
                                     <label for="caption-narrative-field">Narración</label>
-                                    <button id="caption-ai-button" type="button" class="secondary-button caption-ai-button" disabled>Próximamente</button>
+                                    <button id="caption-ai-button" type="button" class="secondary-button caption-ai-button">Generar con IA</button>
                                 </div>
                                 <textarea id="caption-narrative-field" rows="5" placeholder="Escriba aquí la narración editorial de esta fotografía."></textarea>
+                                <p id="caption-ai-status" class="caption-ai-status" role="status" aria-live="polite"></p>
+                                <p class="caption-ai-note">Revisa nombres, cargos y contexto antes de aprobar.</p>
                                 <p class="caption-text-counter"><span id="caption-character-count">0 caracteres</span><span id="caption-word-count">0 palabras</span></p>
                             </section>
                             <section class="caption-block caption-status-block">
@@ -275,7 +278,17 @@
             <button type="submit" class="primary-button compact-action">Guardar cambios</button>
         </div>
     </form>
-</dialog>
+    </dialog>
+
+    <dialog id="caption-ai-replace-dialog" class="confirm-dialog">
+        <form method="dialog">
+            <p>Esta fotografía ya tiene una narración. ¿Deseas reemplazarla con una nueva propuesta generada por IA?</p>
+            <div class="dialog-actions">
+                <button id="cancel-caption-ai-replace-button" type="button" class="secondary-button">Cancelar</button>
+                <button id="confirm-caption-ai-replace-button" type="button" class="danger-button">Reemplazar</button>
+            </div>
+        </form>
+    </dialog>
 <dialog id="photo-delete-dialog" class="delete-dialog" aria-labelledby="photo-delete-title">
     <form method="dialog" class="delete-dialog-form">
         <h2 id="photo-delete-title">Eliminar fotografía</h2>

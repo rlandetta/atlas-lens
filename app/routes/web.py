@@ -5,6 +5,7 @@ import unicodedata
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
+from app.ai import AIError, AIService
 from app.suggestion_store import get_all_suggestions, remember_coverage_values
 
 web_bp = Blueprint("web", __name__)
@@ -138,6 +139,17 @@ def parse_optional_int(value):
 def normalize_caption_status(value: str) -> str:
     allowed_statuses = {"Sin editar", "En edición", "Revisado", "Aprobado"}
     return value if value in allowed_statuses else "Sin editar"
+
+
+def find_coverage_photo(coverage: dict, photo_id: str) -> dict | None:
+    return next(
+        (
+            existing_photo
+            for existing_photo in ensure_coverage_photos(coverage)
+            if existing_photo.get("id") == photo_id
+        ),
+        None,
+    )
 
 
 def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
@@ -314,6 +326,46 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
         "photo_id": photo_id,
         "caption_narrative": photo["caption_narrative"],
         "caption_status": photo["caption_status"],
+    })
+
+
+@web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/generate-narration")
+def generate_photo_narration(coverage_id: str, photo_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    photo = find_coverage_photo(coverage, photo_id)
+    if photo is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    service = AIService()
+
+    try:
+        result = service.generate_narration(
+            coverage_id=coverage_id,
+            photo_id=photo_id,
+            coverage=coverage,
+            photo=photo,
+            simulate_error=bool(payload.get("simulate_error")),
+        )
+    except AIError as error:
+        return jsonify({
+            "ok": False,
+            "error": {
+                "code": error.code,
+                "message": error.message,
+            },
+            "provider": error.provider,
+        }), error.status_code
+
+    return jsonify({
+        "ok": True,
+        "narration": result.narration,
+        "provider": result.provider,
+        "model": result.model,
+        "warnings": result.warnings,
     })
 
 
