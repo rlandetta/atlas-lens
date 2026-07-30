@@ -6,6 +6,8 @@ import unicodedata
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
 from app.ai import AIError, AIService
+from app.ai.context_engine import get_coverage_context_data, normalize_context_payload
+from app.config import AI_ENABLED
 from app.suggestion_store import get_all_suggestions, remember_coverage_values
 
 web_bp = Blueprint("web", __name__)
@@ -124,6 +126,15 @@ def attach_editor_metadata(form_data: dict) -> dict:
     return form_data
 
 
+def attach_default_ai_context(coverage: dict) -> dict:
+    context = get_coverage_context_data(coverage)
+    context.setdefault("known_people", "")
+    context.setdefault("organizations", "")
+    context.setdefault("keywords", "")
+    context.setdefault("notes", "")
+    return coverage
+
+
 def ensure_coverage_photos(coverage: dict) -> list[dict]:
     photos = coverage.setdefault("photos", [])
     return photos if isinstance(photos, list) else []
@@ -152,8 +163,26 @@ def find_coverage_photo(coverage: dict, photo_id: str) -> dict | None:
     )
 
 
+def ai_disabled_response():
+    return jsonify({
+        "ok": False,
+        "error": {
+            "code": "AI_DISABLED",
+            "message": "La generación mediante IA no está habilitada.",
+        },
+    }), 403
+
+
+def get_photo_sequence(coverage: dict, photo_id: str) -> int:
+    for index, photo in enumerate(ensure_coverage_photos(coverage), start=1):
+        if photo.get("id") == photo_id:
+            return index
+    return 0
+
+
 def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
     photos = ensure_coverage_photos(coverage)
+    attach_default_ai_context(coverage)
     return {
         "coverage_id": coverage_id,
         "coverage": coverage,
@@ -161,6 +190,7 @@ def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | Non
         "photos": photos,
         "country_groups": COUNTRY_GROUPS,
         "suggestions": get_all_suggestions(),
+        "ai_enabled": AI_ENABLED,
         "edit_error": edit_error,
         "open_edit_dialog": open_edit_dialog,
     }
@@ -207,6 +237,7 @@ def new_coverage() -> str:
     coverage_id = build_coverage_id(form_data["coverage_name"])
     form_data["photos"] = []
     attach_editor_metadata(form_data)
+    attach_default_ai_context(form_data)
     remember_coverage_values(form_data)
     coverages[coverage_id] = form_data
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
@@ -239,6 +270,7 @@ def edit_coverage(coverage_id: str) -> str:
 
     if error_message:
         form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
+        form_data["ai_context"] = get_coverage_context_data(coverages[coverage_id])
         attach_editor_metadata(form_data)
         return render_template(
             "coverage_detail.html",
@@ -251,9 +283,23 @@ def edit_coverage(coverage_id: str) -> str:
         )
 
     form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
+    form_data["ai_context"] = get_coverage_context_data(coverages[coverage_id])
     attach_editor_metadata(form_data)
     remember_coverage_values(form_data)
     coverages[coverage_id] = form_data
+    return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
+
+
+@web_bp.post("/coverages/<coverage_id>/ai-context")
+def save_coverage_ai_context(coverage_id: str) -> str:
+    if not AI_ENABLED:
+        return ai_disabled_response()
+
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    coverage["ai_context"] = normalize_context_payload(request.form)
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 
@@ -331,6 +377,9 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
 
 @web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/generate-narration")
 def generate_photo_narration(coverage_id: str, photo_id: str):
+    if not AI_ENABLED:
+        return ai_disabled_response()
+
     coverage = coverages.get(coverage_id)
     if coverage is None:
         abort(404)
@@ -348,6 +397,7 @@ def generate_photo_narration(coverage_id: str, photo_id: str):
             photo_id=photo_id,
             coverage=coverage,
             photo=photo,
+            photo_sequence=get_photo_sequence(coverage, photo_id),
             simulate_error=bool(payload.get("simulate_error")),
         )
     except AIError as error:
@@ -366,6 +416,32 @@ def generate_photo_narration(coverage_id: str, photo_id: str):
         "provider": result.provider,
         "model": result.model,
         "warnings": result.warnings,
+    })
+
+
+@web_bp.get("/coverages/<coverage_id>/photos/<photo_id>/ai-context")
+def get_photo_ai_context(coverage_id: str, photo_id: str):
+    if not AI_ENABLED:
+        return ai_disabled_response()
+
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    photo = find_coverage_photo(coverage, photo_id)
+    if photo is None:
+        abort(404)
+
+    service = AIService()
+    return jsonify({
+        "ok": True,
+        "context": service.build_context_preview(
+            coverage_id=coverage_id,
+            photo_id=photo_id,
+            coverage=coverage,
+            photo=photo,
+            photo_sequence=get_photo_sequence(coverage, photo_id),
+        ),
     })
 
 

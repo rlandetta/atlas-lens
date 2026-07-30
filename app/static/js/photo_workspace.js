@@ -25,6 +25,7 @@ const captionPrevPhotoButton = document.getElementById("caption-prev-photo-butto
 const captionNextPhotoButton = document.getElementById("caption-next-photo-button");
 const captionNarrativeField = document.getElementById("caption-narrative-field");
 const captionAiButton = document.getElementById("caption-ai-button");
+const captionAiContextButton = document.getElementById("caption-ai-context-button");
 const captionAiStatus = document.getElementById("caption-ai-status");
 const captionReviewStatusField = document.getElementById("caption-review-status-field");
 const captionFooterStatus = document.getElementById("caption-footer-status");
@@ -42,6 +43,9 @@ const confirmPhotoDeleteButton = document.getElementById("confirm-photo-delete-b
 const captionAiReplaceDialog = document.getElementById("caption-ai-replace-dialog");
 const cancelCaptionAiReplaceButton = document.getElementById("cancel-caption-ai-replace-button");
 const confirmCaptionAiReplaceButton = document.getElementById("confirm-caption-ai-replace-button");
+const captionAiContextDialog = document.getElementById("caption-ai-context-dialog");
+const captionAiContextJson = document.getElementById("caption-ai-context-json");
+const closeCaptionAiContextButton = document.getElementById("close-caption-ai-context-button");
 const photoViewerDialog = document.getElementById("photo-viewer-dialog");
 const photoViewerTitle = document.getElementById("photo-viewer-title");
 const photoViewerMeta = document.getElementById("photo-viewer-meta");
@@ -70,6 +74,12 @@ let activeAiGenerationPhotoId = null;
 const photoProcessingQueue = [];
 const captionRecords = new Map();
 const defaultDropZoneMainText = dropZoneMainText ? dropZoneMainText.textContent : "";
+const isAiInterfaceEnabled = Boolean(
+    photoWorkspace &&
+    photoWorkspace.dataset.aiEnabled === "true" &&
+    captionAiButton &&
+    captionAiContextButton
+);
 
 function generatePhotoId() {
     if (
@@ -252,7 +262,15 @@ const buildPhotoCaptionUrl = (photoId) => (
 );
 
 const buildPhotoAiUrl = (photoId) => (
-    photoWorkspace.dataset.photoAiUrlTemplate.replace("__PHOTO_ID__", encodeURIComponent(photoId))
+    photoWorkspace.dataset.photoAiUrlTemplate
+        ? photoWorkspace.dataset.photoAiUrlTemplate.replace("__PHOTO_ID__", encodeURIComponent(photoId))
+        : ""
+);
+
+const buildPhotoAiContextUrl = (photoId) => (
+    photoWorkspace.dataset.photoAiContextUrlTemplate
+        ? photoWorkspace.dataset.photoAiContextUrlTemplate.replace("__PHOTO_ID__", encodeURIComponent(photoId))
+        : ""
 );
 
 const wait = (durationMs) => new Promise((resolve) => {
@@ -327,6 +345,17 @@ const requestAiNarration = async (photoId, options = {}) => {
     }
 
     return payload;
+};
+
+const requestAiContext = async (photoId) => {
+    const response = await fetch(buildPhotoAiContextUrl(photoId));
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok || !payload.ok) {
+        throw new Error("No fue posible cargar el contexto IA.");
+    }
+
+    return payload.context || {};
 };
 
 const createIcon = (type) => {
@@ -723,13 +752,66 @@ const setSaveStatus = (status) => {
 };
 
 const setAiStatus = (message = "", status = "idle") => {
+    if (!captionAiStatus) {
+        return;
+    }
+
     captionAiStatus.textContent = message;
     captionAiStatus.dataset.status = status;
 };
 
 const setAiButtonState = (label, disabled = false) => {
+    if (!captionAiButton || !captionAiContextButton) {
+        return;
+    }
+
     captionAiButton.textContent = label;
     captionAiButton.disabled = disabled;
+    captionAiContextButton.disabled = activePhotoId === null;
+};
+
+const showAiContext = async () => {
+    if (!isAiInterfaceEnabled) {
+        return;
+    }
+
+    const photo = getActivePhoto();
+    if (!photo) {
+        return;
+    }
+
+    captionAiContextButton.disabled = true;
+    captionAiContextJson.textContent = "Cargando contexto IA...";
+
+    try {
+        const context = await requestAiContext(photo.id);
+        captionAiContextJson.textContent = JSON.stringify(context, null, 2);
+    } catch (error) {
+        captionAiContextJson.textContent = JSON.stringify({
+            ok: false,
+            error: "No fue posible cargar el contexto IA."
+        }, null, 2);
+    } finally {
+        captionAiContextButton.disabled = activePhotoId === null;
+    }
+
+    if (typeof captionAiContextDialog.showModal === "function") {
+        captionAiContextDialog.showModal();
+    } else {
+        captionAiContextDialog.setAttribute("open", "open");
+    }
+};
+
+const closeAiContext = () => {
+    if (!captionAiContextDialog) {
+        return;
+    }
+
+    if (typeof captionAiContextDialog.close === "function") {
+        captionAiContextDialog.close();
+    } else {
+        captionAiContextDialog.removeAttribute("open");
+    }
 };
 
 const hasUnsavedCaption = (record) => (
@@ -813,6 +895,11 @@ const renderCaptionPreview = (photo = getActivePhoto()) => {
 };
 
 const confirmAiNarrationReplacement = () => new Promise((resolve) => {
+    if (!isAiInterfaceEnabled || !captionAiReplaceDialog) {
+        resolve(false);
+        return;
+    }
+
     let isResolved = false;
     const cleanup = (shouldReplace) => {
         if (isResolved) {
@@ -869,6 +956,10 @@ const applyAiNarration = async (photoId, narration) => {
 };
 
 const generateNarrationWithAi = async (options = {}) => {
+    if (!isAiInterfaceEnabled) {
+        return;
+    }
+
     const photo = getActivePhoto();
     if (!photo || activeAiGenerationPhotoId !== null) {
         return;
@@ -904,7 +995,9 @@ const generateNarrationWithAi = async (options = {}) => {
         setAiButtonState("Reintentar");
     } finally {
         activeAiGenerationPhotoId = null;
-        captionAiButton.disabled = getActivePhoto() === null;
+        if (captionAiButton) {
+            captionAiButton.disabled = getActivePhoto() === null;
+        }
     }
 };
 
@@ -1501,9 +1594,12 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
         updateCaptionTextCounters();
         renderCaptionPreview();
     });
-    captionAiButton.addEventListener("click", (event) => {
-        generateNarrationWithAi({ simulateError: event.altKey });
-    });
+    if (isAiInterfaceEnabled) {
+        captionAiButton.addEventListener("click", (event) => {
+            generateNarrationWithAi({ simulateError: event.altKey });
+        });
+        captionAiContextButton.addEventListener("click", showAiContext);
+    }
     captionNarrativeField.addEventListener("blur", () => {
         autosaveCaption(activePhotoId);
     });
@@ -1524,6 +1620,9 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
         pendingDeletePhotoId = null;
         await removePhotoById(photoId);
     });
+    if (isAiInterfaceEnabled) {
+        closeCaptionAiContextButton.addEventListener("click", closeAiContext);
+    }
 
     photoDeleteDialog.addEventListener("close", () => {
         if (deleteTriggerButton) {

@@ -36,6 +36,35 @@
             <dd>{{ coverage.city }}, {{ coverage.country }}</dd>
         </div>
     </dl>
+    {% if ai_enabled %}
+    <form method="post" action="{{ url_for('web.save_coverage_ai_context', coverage_id=coverage_id) }}" class="ai-context-panel">
+        <div class="ai-context-header">
+            <div>
+                <h2>Contexto de IA</h2>
+                <p>Información editorial disponible para futuras propuestas de narración.</p>
+            </div>
+            <button type="submit" class="secondary-button compact-action">Guardar contexto</button>
+        </div>
+        <div class="ai-context-grid">
+            <div class="form-field">
+                <label for="ai_known_people">Personas conocidas</label>
+                <textarea id="ai_known_people" name="known_people" rows="4" placeholder="Embajador Sun Xiangyang&#10;Ministra de Cultura">{{ coverage.ai_context.known_people }}</textarea>
+            </div>
+            <div class="form-field">
+                <label for="ai_organizations">Organizaciones</label>
+                <textarea id="ai_organizations" name="organizations" rows="4" placeholder="Embajada China&#10;Municipio de Quito">{{ coverage.ai_context.organizations }}</textarea>
+            </div>
+            <div class="form-field">
+                <label for="ai_keywords">Palabras clave</label>
+                <textarea id="ai_keywords" name="keywords" rows="4" placeholder="cine foro&#10;cooperación&#10;cultura">{{ coverage.ai_context.keywords }}</textarea>
+            </div>
+            <div class="form-field">
+                <label for="ai_notes">Notas editoriales</label>
+                <textarea id="ai_notes" name="notes" rows="4" placeholder="Contexto libre para orientar la narración.">{{ coverage.ai_context.notes }}</textarea>
+            </div>
+        </div>
+    </form>
+    {% endif %}
     <a href="{{ url_for('web.home') }}" class="back-link compact-link">Volver a coberturas</a>
 </section>
 
@@ -55,7 +84,11 @@
             data-photos-url="{{ url_for('web.add_coverage_photo', coverage_id=coverage_id) }}"
             data-photo-delete-url-template="{{ url_for('web.delete_coverage_photo', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
             data-photo-caption-url-template="{{ url_for('web.save_coverage_photo_caption', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+            data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}"
+            {% if ai_enabled %}
             data-photo-ai-url-template="{{ url_for('web.generate_photo_narration', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+            data-photo-ai-context-url-template="{{ url_for('web.get_photo_ai_context', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+            {% endif %}
             data-caption-city="{{ coverage.city }}"
             data-caption-country="{{ coverage.country }}"
             data-caption-date="{{ coverage.event_date }}"
@@ -139,11 +172,18 @@
                             <section class="caption-block caption-narrative-block">
                                 <div class="caption-section-heading">
                                     <label for="caption-narrative-field">Narración</label>
-                                    <button id="caption-ai-button" type="button" class="secondary-button caption-ai-button">Generar con IA</button>
+                                    {% if ai_enabled %}
+                                    <span class="caption-ai-actions">
+                                        <button id="caption-ai-context-button" type="button" class="secondary-button caption-ai-button">Ver contexto IA</button>
+                                        <button id="caption-ai-button" type="button" class="secondary-button caption-ai-button">Generar con IA</button>
+                                    </span>
+                                    {% endif %}
                                 </div>
                                 <textarea id="caption-narrative-field" rows="5" placeholder="Escriba aquí la narración editorial de esta fotografía."></textarea>
+                                {% if ai_enabled %}
                                 <p id="caption-ai-status" class="caption-ai-status" role="status" aria-live="polite"></p>
                                 <p class="caption-ai-note">Revisa nombres, cargos y contexto antes de aprobar.</p>
+                                {% endif %}
                                 <p class="caption-text-counter"><span id="caption-character-count">0 caracteres</span><span id="caption-word-count">0 palabras</span></p>
                             </section>
                             <section class="caption-block caption-status-block">
@@ -280,6 +320,7 @@
     </form>
     </dialog>
 
+    {% if ai_enabled %}
     <dialog id="caption-ai-replace-dialog" class="confirm-dialog">
         <form method="dialog">
             <p>Esta fotografía ya tiene una narración. ¿Deseas reemplazarla con una nueva propuesta generada por IA?</p>
@@ -289,6 +330,16 @@
             </div>
         </form>
     </dialog>
+    <dialog id="caption-ai-context-dialog" class="ai-context-dialog" aria-labelledby="caption-ai-context-title">
+        <div class="ai-context-dialog-shell">
+            <div class="ai-context-dialog-header">
+                <h2 id="caption-ai-context-title">Contexto IA</h2>
+                <button id="close-caption-ai-context-button" type="button" class="secondary-button">Cerrar</button>
+            </div>
+            <pre id="caption-ai-context-json" class="ai-context-json">{}</pre>
+        </div>
+    </dialog>
+    {% endif %}
 <dialog id="photo-delete-dialog" class="delete-dialog" aria-labelledby="photo-delete-title">
     <form method="dialog" class="delete-dialog-form">
         <h2 id="photo-delete-title">Eliminar fotografía</h2>

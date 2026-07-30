@@ -2,7 +2,7 @@ from app.ai.models import AIRequest, CoverageContext
 
 
 class PromptBuilder:
-    def build_editorial_instructions(self, context: CoverageContext, template: str = "xinhua") -> str:
+    def build_editorial_instructions(self, context: CoverageContext) -> str:
         rules = [
             "Escribir en español.",
             "Usar tono objetivo, estilo de agencia, tercera persona y tiempo presente.",
@@ -15,15 +15,18 @@ class PromptBuilder:
             "No incluir fecha, ciudad, país, fotógrafo, agencia, iniciales ni caption completo.",
         ]
         context_bits = [
-            f"Título de cobertura: {context.title}",
-            f"Contexto de evento: {context.event_context or 'No especificado'}",
+            f"Título de cobertura: {context.coverage_title}",
+            f"Descripción: {context.description or 'No especificada'}",
             f"Personas conocidas explícitamente: {', '.join(context.known_people) if context.known_people else 'No especificadas'}",
+            f"Organizaciones: {', '.join(context.organizations) if context.organizations else 'No especificadas'}",
+            f"Palabras clave: {', '.join(context.keywords) if context.keywords else 'No especificadas'}",
+            f"Notas editoriales: {context.notes or 'No especificadas'}",
         ]
         return "\n".join([*rules, "", "Contexto permitido:", *context_bits])
 
     def build_request(self, request: AIRequest) -> str:
         return "\n".join([
-            self.build_editorial_instructions(request.coverage_context, request.template),
+            self.build_editorial_instructions(request.coverage_context),
             "",
             f"Archivo de referencia: {request.image.filename}",
             f"Idioma: {request.language}",

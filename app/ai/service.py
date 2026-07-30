@@ -1,26 +1,28 @@
 import logging
-import os
 import time
 
 from app.ai.base import AIProvider
-from app.ai.models import AIError, AIRequest, AIResult, CoverageContext, ImageReference
+from app.ai.context_engine import ContextEngine
+from app.ai.models import AIError, AIRequest, AIResult, ImageReference
 from app.ai.prompt_builder import PromptBuilder
 from app.ai.providers import MockProvider
+from app.config import AI_PROVIDER
 
 logger = logging.getLogger(__name__)
 
 
 class AIService:
-    def __init__(self, provider: AIProvider | None = None, prompt_builder: PromptBuilder | None = None):
+    def __init__(self, provider: AIProvider | None = None, prompt_builder: PromptBuilder | None = None, context_engine: ContextEngine | None = None):
         self.prompt_builder = prompt_builder or PromptBuilder()
+        self.context_engine = context_engine or ContextEngine()
         self.provider = provider or self._build_provider()
 
-    def generate_narration(self, coverage_id: str, photo_id: str, coverage: dict, photo: dict, simulate_error: bool = False) -> AIResult:
+    def generate_narration(self, coverage_id: str, photo_id: str, coverage: dict, photo: dict, photo_sequence: int = 0, simulate_error: bool = False) -> AIResult:
         started_at = time.perf_counter()
         provider_name = getattr(self.provider, "provider_name", "unknown")
 
         try:
-            request = self._build_request(photo_id, coverage, photo, simulate_error)
+            request = self._build_request(coverage_id, photo_id, coverage, photo, photo_sequence, simulate_error)
             result = self.provider.generate_narration(request)
             duration_ms = round((time.perf_counter() - started_at) * 1000)
             logger.info(
@@ -50,7 +52,7 @@ class AIService:
             ) from error
 
     def _build_provider(self) -> AIProvider:
-        provider_name = os.getenv("AI_PROVIDER", "mock").strip().lower()
+        provider_name = AI_PROVIDER
         if provider_name == "mock":
             return MockProvider()
         raise AIError(
@@ -60,7 +62,11 @@ class AIService:
             provider=provider_name,
         )
 
-    def _build_request(self, photo_id: str, coverage: dict, photo: dict, simulate_error: bool) -> AIRequest:
+    def build_context_preview(self, coverage_id: str, photo_id: str, coverage: dict, photo: dict, photo_sequence: int = 0) -> dict:
+        context = self.context_engine.build(coverage_id, coverage, photo, photo_sequence)
+        return self.context_engine.to_json_payload(context)
+
+    def _build_request(self, coverage_id: str, photo_id: str, coverage: dict, photo: dict, photo_sequence: int, simulate_error: bool) -> AIRequest:
         image = ImageReference(
             photo_id=photo_id,
             filename=str(photo.get("name", "")),
@@ -70,23 +76,13 @@ class AIService:
             height=photo.get("height"),
             data_url=photo.get("data_url"),
         )
-        context = CoverageContext(
-            title=str(coverage.get("coverage_name", "")),
-            city=str(coverage.get("city", "")),
-            country=str(coverage.get("country", "")),
-            agency=str(coverage.get("agency", "")),
-            event_date=str(coverage.get("event_date", "")),
-            send_date=str(coverage.get("submit_date", "")),
-            photographer=str(coverage.get("photographer", "")),
-            known_people=tuple(coverage.get("known_people", ()) or ()),
-            event_context=str(coverage.get("event_context", coverage.get("coverage_name", ""))),
-        )
+        context = self.context_engine.build(coverage_id, coverage, photo, photo_sequence)
         return AIRequest(
             image=image,
             coverage_context=context,
-            editorial_instructions=self.prompt_builder.build_editorial_instructions(context, "xinhua"),
-            language="es",
+            editorial_instructions=self.prompt_builder.build_editorial_instructions(context),
+            language=context.language,
             max_words=60,
-            template="xinhua",
+            template=context.editorial_template,
             simulate_error=simulate_error,
         )

@@ -610,6 +610,45 @@ h1 {
     overflow-wrap: anywhere;
 }
 
+.ai-context-panel {
+    margin-top: 0.72rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: rgba(18, 28, 39, 0.58);
+    padding: 0.72rem;
+}
+
+.ai-context-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+    margin-bottom: 0.66rem;
+}
+
+.ai-context-header h2 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.94rem;
+}
+
+.ai-context-header p {
+    margin: 0.18rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.74rem;
+}
+
+.ai-context-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.64rem;
+}
+
+.ai-context-grid textarea {
+    min-height: 92px;
+    resize: vertical;
+}
+
 .compact-link {
     margin-top: 0.1rem;
 }
@@ -1190,6 +1229,14 @@ h1 {
     cursor: pointer;
 }
 
+.caption-ai-actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.34rem;
+}
+
 .caption-ai-button:disabled {
     cursor: wait;
     opacity: 0.72;
@@ -1212,6 +1259,51 @@ h1 {
     color: var(--text-secondary);
     font-size: 0.7rem;
     line-height: 1.35;
+}
+
+.ai-context-dialog {
+    width: min(760px, calc(100vw - 1.4rem));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-panel);
+    color: var(--text-main);
+    padding: 0;
+}
+
+.ai-context-dialog::backdrop {
+    background: rgba(8, 12, 16, 0.64);
+}
+
+.ai-context-dialog-shell {
+    display: grid;
+    gap: 0.72rem;
+    padding: 0.9rem;
+}
+
+.ai-context-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.72rem;
+}
+
+.ai-context-dialog-header h2 {
+    margin: 0;
+    font-size: 1rem;
+}
+
+.ai-context-json {
+    max-height: min(62vh, 560px);
+    margin: 0;
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: #0b121a;
+    color: var(--text-secondary);
+    padding: 0.86rem;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
 }
 
 .caption-generated-fields {

@@ -18,10 +18,14 @@ class MockProvider(AIProvider):
 
         context = request.coverage_context
         filename = request.image.filename
-        event_context = context.event_context or context.title or "la cobertura seleccionada"
+        subject = context.known_people[0] if context.known_people else "Una persona"
+        organization = context.organizations[0] if context.organizations else ""
+        city_phrase = f" en {context.city}" if context.city else ""
+        coverage_title = context.coverage_title or "la cobertura seleccionada"
+        organization_phrase = f" vinculada con {organization}" if organization else ""
         narration = (
-            "Una persona participa durante una actividad pública relacionada "
-            f"con {event_context}, según la fotografía {filename}."
+            f"{subject} participa en una actividad pública{organization_phrase}{city_phrase}, "
+            f"relacionada con {coverage_title}, según la fotografía {filename}."
         )
 
         return AIResult(
@@ -35,6 +39,9 @@ class MockProvider(AIProvider):
             raw_metadata={
                 "source": "mock",
                 "filename": filename,
+                "known_people": list(context.known_people),
+                "organizations": list(context.organizations),
+                "keywords": list(context.keywords),
             },
         )
 

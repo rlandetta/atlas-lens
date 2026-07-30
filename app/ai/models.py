@@ -15,15 +15,25 @@ class ImageReference:
 
 @dataclass(frozen=True)
 class CoverageContext:
-    title: str
+    coverage_id: str
+    coverage_title: str
+    description: str
     city: str
     country: str
-    agency: str
     event_date: str
     send_date: str
+    agency: str
     photographer: str
-    known_people: tuple[str, ...] = ()
-    event_context: str = ""
+    editor: str
+    known_people: tuple[str, ...]
+    organizations: tuple[str, ...]
+    keywords: tuple[str, ...]
+    event_type: str
+    notes: str
+    photo_filename: str
+    photo_sequence: int
+    language: str
+    editorial_template: str
 
 
 @dataclass(frozen=True)
