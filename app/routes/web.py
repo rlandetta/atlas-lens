@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import base64
 import random
 import re
 import unicodedata
@@ -8,6 +9,10 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 from app.ai import AIError, AIService
 from app.ai.context_engine import get_coverage_context_data, normalize_context_payload
 from app.config import AI_ENABLED
+from app.dispatch import DispatchHandoffService
+from app.export.models import ExportRequest, ExportResult
+from app.export.naming import ExportNamingService
+from app.export.service import ExportService, ExportValidationError, ExportWarningRequired
 from app.suggestion_store import get_all_suggestions, remember_coverage_values
 
 web_bp = Blueprint("web", __name__)
@@ -180,6 +185,74 @@ def get_photo_sequence(coverage: dict, photo_id: str) -> int:
     return 0
 
 
+
+def build_export_request(payload: dict, coverage_id: str, coverage: dict) -> ExportRequest:
+    formats = payload.get("formats", ["docx"])
+    if isinstance(formats, str):
+        formats = [formats]
+
+    return ExportRequest(
+        coverage_id=coverage_id,
+        formats=tuple(str(export_format).lower() for export_format in formats if export_format),
+        include_photos=bool(payload.get("include_photos", True)),
+        include_captions=bool(payload.get("include_captions", True)),
+        include_metadata=bool(payload.get("include_metadata", False)),
+        include_manifest=bool(payload.get("include_manifest", False)),
+        output_name=str(payload.get("output_name", "")),
+        template="xinhua",
+        scope="coverage",
+        requested_by=str(coverage.get("editor", "Sistema")),
+        destination=str(payload.get("destination", "download")),
+    )
+
+
+def serialize_export_result(result: ExportResult) -> dict:
+    return {
+        "filename": result.filename,
+        "formats_generated": list(result.formats_generated),
+        "files_created": list(result.files_created),
+        "archive_path": result.archive_path,
+        "zip": result.zip_filename,
+        "destination": result.destination,
+        "photo_count": result.photo_count,
+        "total_size": result.total_size,
+        "warnings": list(result.warnings),
+        "duration": result.duration,
+        "files": [
+            {
+                "filename": export_file.filename,
+                "format": export_file.format,
+                "type": export_file.type,
+                "mimetype": export_file.mimetype,
+                "size": export_file.size,
+                "path": export_file.path,
+            }
+            for export_file in result.files
+        ],
+    }
+
+
+def serialize_export_download(result: ExportResult) -> dict:
+    payload = serialize_export_result(result)
+    payload["files"] = [
+        {
+            "filename": export_file.filename,
+            "format": export_file.format,
+            "type": export_file.type,
+            "mimetype": export_file.mimetype,
+            "size": export_file.size,
+            "path": export_file.path,
+            "content_base64": base64.b64encode(export_file.content).decode("ascii"),
+        }
+        for export_file in result.files
+    ]
+    return payload
+
+
+def build_export_history(coverage: dict) -> list[dict]:
+    history = coverage.setdefault("export_history", [])
+    return history if isinstance(history, list) else []
+
 def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
     photos = ensure_coverage_photos(coverage)
     attach_default_ai_context(coverage)
@@ -188,6 +261,8 @@ def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | Non
         "coverage": coverage,
         "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
         "photos": photos,
+        "export_history": build_export_history(coverage),
+        "export_default_name": ExportNamingService().build_names(coverage).base_name,
         "country_groups": COUNTRY_GROUPS,
         "suggestions": get_all_suggestions(),
         "ai_enabled": AI_ENABLED,
@@ -310,6 +385,51 @@ def delete_coverage(coverage_id: str) -> str:
 
     del coverages[coverage_id]
     return redirect(url_for("web.home"))
+
+
+@web_bp.post("/coverages/<coverage_id>/exports")
+def create_coverage_export(coverage_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    export_request = build_export_request(payload, coverage_id, coverage)
+    service = ExportService()
+
+    try:
+        result = service.create_export(
+            coverage_id=coverage_id,
+            coverage=coverage,
+            request=export_request,
+            confirm_warnings=bool(payload.get("confirm_warnings", False)),
+        )
+    except ExportWarningRequired as warning:
+        return jsonify({
+            "ok": False,
+            "requires_confirmation": True,
+            "warnings": warning.warnings,
+        }), 409
+    except ExportValidationError as error:
+        return jsonify({
+            "ok": False,
+            "error": error.message,
+        }), error.status_code
+
+    if export_request.destination == "dispatch":
+        dispatch_payload = DispatchHandoffService().prepare(coverage, result)
+        return jsonify({
+            "ok": True,
+            "destination": "dispatch",
+            "result": serialize_export_result(result),
+            "dispatch": dispatch_payload,
+        })
+
+    return jsonify({
+        "ok": True,
+        "destination": "download",
+        "result": serialize_export_download(result),
+    })
 
 
 @web_bp.post("/coverages/<coverage_id>/photos")

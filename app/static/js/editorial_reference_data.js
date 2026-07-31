@@ -188,7 +188,7 @@ window.ATLAS_EDITORIAL_REFERENCE = {
         return {
             is_capital: isCapital,
             city_country_warning: hasWarning
-                ? `La ciudad ingresada es conocida como capital de ${capitalCountry}, pero el país seleccionado es ${country}.`
+                ? `${city} es capital de ${capitalCountry}.`
                 : "",
             capital_country: capitalCountry
         };

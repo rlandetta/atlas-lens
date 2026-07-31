@@ -72,6 +72,7 @@
     <nav class="coverage-tabs" role="tablist" aria-label="Secciones de cobertura">
         <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-button data-tab-target="tab-fotografias">Fotografías</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-captions">Captions</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-preview">Preview / Marca</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-exportaciones">Exportaciones</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-entregas">Entregas</button>
     </nav>
@@ -220,9 +221,177 @@
         <p>Sección reservada para edición de captions.</p>
     </section>
 
-    <section id="tab-exportaciones" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
-        <h2>Exportaciones</h2>
-        <p>Sección reservada para exportaciones editoriales.</p>
+
+    <section
+        id="tab-preview"
+        class="tab-panel coverage-section watermark-section"
+        role="tabpanel"
+        data-tab-panel
+        data-watermark-panel
+        data-coverage-id="{{ coverage_id }}"
+        data-agency="{{ coverage.agency }}"
+        data-photographer="{{ coverage.photographer }}"
+        hidden
+    >
+        <div class="watermark-panel">
+            <aside class="watermark-config-panel" aria-label="Configuración de marca de agua">
+                <div class="watermark-panel-header">
+                    <div>
+                        <h2>Preview / Marca de agua</h2>
+                        <p>Genera copias JPG para aprobación. Nunca modifica los originales.</p>
+                    </div>
+                    <span class="export-engine-badge">Preview v2</span>
+                </div>
+
+                <div class="watermark-form-grid">
+                    <label class="form-field" for="watermark-image-select">
+                        <span>Imagen</span>
+                        <select id="watermark-image-select"></select>
+                    </label>
+                    <label class="form-field" for="watermark-agency">
+                        <span>Agencia</span>
+                        <input id="watermark-agency" type="text" spellcheck="true">
+                    </label>
+                    <label class="form-field" for="watermark-photographer">
+                        <span>Fotógrafo</span>
+                        <input id="watermark-photographer" type="text" spellcheck="true">
+                    </label>
+                    <label class="form-field" for="watermark-reference">
+                        <span>Código de referencia</span>
+                        <input id="watermark-reference" type="text" spellcheck="false">
+                    </label>
+                    <div class="form-field watermark-resolution-field">
+                        <label for="watermark-resolution">Resolución de salida</label>
+                        <select id="watermark-resolution">
+                            <option value="2000">2000 px</option>
+                            <option value="2500">2500 px</option>
+                            <option value="3000" selected>3000 px</option>
+                            <option value="custom">Personalizada</option>
+                        </select>
+                        <input id="watermark-custom-resolution" type="number" min="600" max="6000" step="100" value="3000" hidden aria-label="Resolución personalizada">
+                    </div>
+                    <label class="form-field" for="watermark-position">
+                        <span>Posición</span>
+                        <select id="watermark-position">
+                            <option value="bottom-right" selected>Inferior derecha</option>
+                            <option value="bottom-left">Inferior izquierda</option>
+                        </select>
+                    </label>
+                </div>
+
+                <div class="watermark-compact-controls" aria-label="Controles visuales de la marca">
+                    <label class="watermark-compact-row" for="watermark-opacity">
+                        <span>Opacidad</span>
+                        <input id="watermark-opacity" type="range" min="20" max="95" value="80">
+                        <output id="watermark-opacity-value" for="watermark-opacity">80 %</output>
+                    </label>
+                    <label class="watermark-compact-row" for="watermark-band-color">
+                        <span>Color banda</span>
+                        <input id="watermark-band-color" type="color" value="#001450" aria-label="Color de la banda">
+                        <code id="watermark-band-color-value">#001450</code>
+                    </label>
+                    <label class="watermark-compact-row" for="watermark-text-color">
+                        <span>Color texto</span>
+                        <input id="watermark-text-color" type="color" value="#ffffff" aria-label="Color del texto">
+                        <code id="watermark-text-color-value">#FFFFFF</code>
+                    </label>
+                </div>
+
+                <fieldset class="watermark-card">
+                    <legend>Metadatos</legend>
+                    <label><input id="watermark-preserve-exif" type="checkbox" checked> Conservar EXIF</label>
+                    <label><input id="watermark-preserve-iptc" type="checkbox" checked> Conservar IPTC</label>
+                    <label><input id="watermark-preserve-icc" type="checkbox" checked> Conservar perfil ICC</label>
+                </fieldset>
+
+                <fieldset class="watermark-card">
+                    <legend>Aplicar a</legend>
+                    <label><input type="radio" name="watermark_scope" value="current" checked> Fotografía actual</label>
+                    <label><input type="radio" name="watermark_scope" value="selected"> Fotografías seleccionadas</label>
+                    <label><input type="radio" name="watermark_scope" value="coverage"> Toda la cobertura</label>
+                </fieldset>
+
+                <div class="watermark-card watermark-selection-card">
+                    <div class="watermark-card-title-row">
+                        <span>Selección múltiple</span>
+                        <span>
+                            <button id="watermark-select-all-button" type="button" class="secondary-button compact-action">Todas</button>
+                            <button id="watermark-clear-selection-button" type="button" class="secondary-button compact-action">Limpiar</button>
+                        </span>
+                    </div>
+                    <ul id="watermark-selected-list" class="watermark-selected-list"></ul>
+                </div>
+
+                <div class="watermark-actions">
+                    <button id="watermark-export-button" type="button" class="primary-button compact-action" disabled>Generar JPG</button>
+                    <p id="watermark-message" class="export-message" role="status" aria-live="polite"></p>
+                </div>
+            </aside>
+
+            <section class="watermark-preview-panel" aria-label="Vista previa de marca de agua">
+                <div class="watermark-preview-stage">
+                    <p id="watermark-preview-empty" class="photo-preview-empty">Seleccione una fotografía para ver la marca editorial.</p>
+                    <canvas id="watermark-preview-canvas" class="watermark-preview-canvas" hidden></canvas>
+                </div>
+                <div class="watermark-preview-footer">
+                    <p><strong>Plantilla:</strong> Xinhua</p>
+                    <p><strong>Marca:</strong> XINHUA News Agency / [Fotógrafo] / XINHUA News Agency</p>
+                    <p id="watermark-preview-meta">Sin fotografía seleccionada.</p>
+                </div>
+            </section>
+        </div>
+    </section>
+
+    <section
+        id="tab-exportaciones"
+        class="tab-panel coverage-section export-section"
+        role="tabpanel"
+        data-tab-panel
+        data-export-url="{{ url_for('web.create_coverage_export', coverage_id=coverage_id) }}"
+        data-export-date="{{ coverage.submit_date }}"
+        data-export-coverage="{{ coverage.coverage_name }}"
+        data-export-country="{{ coverage.country }}"
+        hidden
+    >
+        <div class="export-panel">
+            <div class="export-panel-header">
+                <div>
+                    <h2>Exportaciones</h2>
+                    <p>Genera documentos editoriales, descárgalos localmente o déjalos preparados para DISPATCH.</p>
+                </div>
+                <span class="export-engine-badge">Export Engine v2</span>
+            </div>
+
+            <form id="export-form" class="export-form">
+                <fieldset class="export-card export-format-card">
+                    <legend>Formatos</legend>
+                    <label><input type="checkbox" name="formats" value="zip"> ZIP</label>
+                    <label><input type="checkbox" name="formats" value="docx" checked> DOCX</label>
+                    <label><input type="checkbox" name="formats" value="html"> HTML</label>
+                    <label><input type="checkbox" name="formats" value="pdf"> PDF</label>
+                </fieldset>
+
+                <fieldset id="export-content-card" class="export-card export-content-card" hidden>
+                    <legend>Contenido del paquete</legend>
+                    <label><input type="checkbox" name="include_photos" checked> Incluir fotografías</label>
+                    <label><input type="checkbox" name="include_captions" checked> Incluir captions</label>
+                    <label><input type="checkbox" name="include_metadata"> Incluir metadatos</label>
+                    <label><input type="checkbox" name="include_manifest"> Incluir manifiesto</label>
+                </fieldset>
+
+                <label class="export-card export-filename-card" for="export-output-name">
+                    <span>Nombre base</span>
+                    <input id="export-output-name" name="output_name" type="text" value="{{ export_default_name }}" spellcheck="false">
+                </label>
+
+                <input id="export-confirm-warnings" type="hidden" value="false">
+                <div id="export-message" class="export-message" role="status" aria-live="polite"></div>
+                <div class="export-actions export-actions-v2">
+                    <button id="export-download-button" type="submit" name="destination" value="download" class="primary-button compact-action">Descargar</button>
+                    <button id="export-dispatch-button" type="submit" name="destination" value="dispatch" class="secondary-button compact-action">Enviar a DISPATCH</button>
+                </div>
+            </form>
+        </div>
     </section>
 
     <section id="tab-entregas" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
@@ -384,4 +553,6 @@
 <script src="{{ url_for('static', filename='js/photo_workspace.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_edit.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_tabs.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/export_panel.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/preview_watermark.js') }}" defer></script>
 {% endblock %}

@@ -127,6 +127,24 @@ const getPhotoIndex = (photoId) => (
     selectedPhotos.findIndex((photo) => photo.id === photoId)
 );
 
+const emitPhotoWorkspaceChange = () => {
+    window.dispatchEvent(new CustomEvent("atlas:photos-changed", {
+        detail: {
+            activePhotoId,
+            total: selectedPhotos.length
+        }
+    }));
+};
+
+window.ATLAS_LENS_PHOTO_API = {
+    getPhotos: () => selectedPhotos.map((photo) => ({ ...photo })),
+    getActivePhoto: () => {
+        const photo = getActivePhoto();
+        return photo ? { ...photo } : null;
+    },
+    getActivePhotoId: () => activePhotoId
+};
+
 const getCoverageCaptionData = () => ({
     template: photoWorkspace.dataset.captionTemplate || "xinhua",
     city: photoWorkspace.dataset.captionCity || "",
@@ -540,10 +558,13 @@ const resolveLocationPhrase = (city, country) => {
             is_capital: false,
             city_country_warning: ""
         };
+    const isCapital = Boolean(validation.is_capital);
 
     return {
-        text: `en ${safeCity}, en ${safeCountry},`,
-        isCapital: Boolean(validation.is_capital),
+        text: isCapital
+            ? `en ${safeCity}, capital de ${safeCountry},`
+            : `en ${safeCity}, en ${safeCountry},`,
+        isCapital,
         warning: Boolean(validation.city_country_warning),
         warningText: validation.city_country_warning || ""
     };
@@ -894,6 +915,24 @@ const renderCaptionPreview = (photo = getActivePhoto()) => {
     captionLocationWarning.hidden = !location.warning;
 };
 
+const bindCoverageCaptionMetadataUpdates = () => {
+    const editCityField = document.getElementById("edit_city");
+    const editCountryField = document.getElementById("edit_country");
+
+    const syncCaptionMetadata = () => {
+        if (editCityField) {
+            photoWorkspace.dataset.captionCity = editCityField.value;
+        }
+        if (editCountryField) {
+            photoWorkspace.dataset.captionCountry = editCountryField.value;
+        }
+        renderCaptionPreview();
+    };
+
+    editCityField?.addEventListener("input", syncCaptionMetadata);
+    editCountryField?.addEventListener("change", syncCaptionMetadata);
+};
+
 const confirmAiNarrationReplacement = () => new Promise((resolve) => {
     if (!isAiInterfaceEnabled || !captionAiReplaceDialog) {
         resolve(false);
@@ -1185,6 +1224,7 @@ const renderWorkspace = () => {
     updateCounters();
     renderSelectionState();
     renderPhotoGridProgressively();
+    emitPhotoWorkspaceChange();
 };
 
 const focusCaptionField = () => {
@@ -1611,6 +1651,7 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
         syncCaptionRecordFromFields();
         autosaveCaption(activePhotoId);
     });
+    bindCoverageCaptionMetadataUpdates();
     captionPrevPhotoButton.addEventListener("click", () => moveActivePhoto(-1));
     captionNextPhotoButton.addEventListener("click", () => moveActivePhoto(1));
     cancelPhotoDeleteButton.addEventListener("click", closeDeleteDialog);

@@ -1,0 +1,75 @@
+# Export Engine v1 de ATLAS LENS
+
+El Export Engine genera un paquete editorial ZIP listo para descargar o entregar posteriormente mediante DISPATCH. Esta capa no envía archivos y no contiene lógica de interfaz.
+
+## Arquitectura
+
+- `app/export/models.py`: define `ExportRequest`, `ExportResult` y `ExportPhoto`.
+- `app/export/naming.py`: centraliza el nombre `AAAAMMDD-Cobertura-Pais.zip`.
+- `app/export/service.py`: valida solicitudes, selecciona cobertura completa, emite advertencias y registra historial.
+- `app/export/engine.py`: orquesta metadatos, manifest y construcción del paquete.
+- `app/export/builders/zip_builder.py`: genera el ZIP final sin carpetas vacías.
+- `app/export/builders/docx_builder.py`: genera `captions.docx` con el formato existente.
+- `app/export/builders/html_builder.py`: genera `captions.html` offline con HTML y CSS locales.
+- `app/export/builders/pdf_builder.py`: genera `captions.pdf` con la misma información base del DOCX.
+
+## Formatos visibles
+
+La interfaz muestra únicamente:
+
+- ZIP
+- DOCX
+- HTML
+- PDF
+
+El resultado descargado es siempre un ZIP. DOCX, HTML y PDF controlan qué documentos de captions se incluyen dentro del paquete cuando `Incluir captions` está activo.
+
+## Contenido del paquete
+
+Valores predeterminados:
+
+- Incluir fotografías: activo.
+- Incluir captions: activo.
+- Incluir metadatos: inactivo.
+- Incluir manifiesto: inactivo.
+
+El ZIP incluye únicamente los elementos seleccionados. No se crean carpetas vacías.
+
+## Estructura del ZIP
+
+```text
+20260729-Capacitacion-Policia-Ecuador.zip
+├── Fotografias/
+│   ├── IMG0001.CR3
+│   └── IMG0002.CR3
+├── captions.docx
+├── captions.pdf
+├── captions.html
+├── metadata.json
+└── manifest.json
+```
+
+Las fotografías conservan exactamente el nombre original importado.
+
+## Nomenclatura
+
+`ExportNamingService` normaliza automáticamente:
+
+- tildes;
+- caracteres inválidos;
+- espacios a guiones;
+- dobles guiones;
+- símbolos no compatibles.
+
+Formato final: `AAAAMMDD-Cobertura-Pais.zip`.
+
+## Agregar nuevos formatos
+
+1. Crear un builder en `app/export/builders/`.
+2. Agregar el formato al contrato de `ExportRequest` si debe ser visible.
+3. Conectarlo en `zip_builder.py` para que se escriba solo cuando el usuario lo seleccione.
+4. Agregar su checkbox en la pestaña `Exportaciones` si aplica al usuario final.
+
+## Uso futuro por DISPATCH
+
+DISPATCH debe consumir el `ExportResult.archive_path`/archivo ZIP generado por LENS. No debe regenerar documentos ni reconstruir el paquete; solo tomar el ZIP final y entregarlo por el canal configurado.
