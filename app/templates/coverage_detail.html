@@ -70,14 +70,15 @@
 
 <section class="ui-card coverage-tabs-card">
     <nav class="coverage-tabs" role="tablist" aria-label="Secciones de cobertura">
-        <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-button data-tab-target="tab-fotografias">Fotografías</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-captions">Captions</button>
-        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-preview">Preview / Marca</button>
+        <a class="tab-link" href="{{ url_for('web.home') }}">Coberturas</a>
+        <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-button data-tab-target="tab-captions">Captions</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-watermark">Marca de agua</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-exportaciones">Exportaciones</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-entregas">Entregas</button>
+        <a class="tab-link" href="#">Configuración</a>
     </nav>
 
-    <section id="tab-fotografias" class="tab-panel is-active coverage-section photo-section" role="tabpanel" data-tab-panel>
+    <section id="tab-captions" class="tab-panel is-active coverage-section photo-section" role="tabpanel" data-tab-panel>
         <div
             class="photo-workspace"
             aria-labelledby="photo-section-title"
@@ -85,6 +86,7 @@
             data-photos-url="{{ url_for('web.add_coverage_photo', coverage_id=coverage_id) }}"
             data-photo-delete-url-template="{{ url_for('web.delete_coverage_photo', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
             data-photo-caption-url-template="{{ url_for('web.save_coverage_photo_caption', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
+            data-copy-caption-url="{{ url_for('web.copy_caption_to_empty_photos', coverage_id=coverage_id) }}"
             data-ai-enabled="{{ 'true' if ai_enabled else 'false' }}"
             {% if ai_enabled %}
             data-photo-ai-url-template="{{ url_for('web.generate_photo_narration', coverage_id=coverage_id, photo_id='__PHOTO_ID__') }}"
@@ -102,14 +104,16 @@
             data-caption-template="xinhua"
         >
             <div class="photo-workspace-toolbar">
-                <h2 id="photo-section-title">Fotografías</h2>
+                <h2 id="photo-section-title">Captions</h2>
                 <div class="photo-toolbar-actions">
                     <button id="select-photos-button" type="button" class="primary-button compact-action">Importar fotografías</button>
+                    <button id="copy-caption-empty-button" type="button" class="primary-button compact-action">Copiar caption a fotografías sin caption</button>
                     <span id="photo-total-count" class="toolbar-counter" aria-live="polite">Total: 0</span>
                     <span id="photo-selected-count" class="toolbar-counter" aria-live="polite">Seleccionadas: 0</span>
                     <button id="remove-selected-photo-button" type="button" class="secondary-button" disabled>Quitar seleccionada</button>
                     <button id="clear-photo-selection-button" type="button" class="secondary-button">Limpiar selección</button>
                 </div>
+                <p id="copy-caption-status" class="caption-copy-status" role="status" aria-live="polite"></p>
             </div>
 
             <div id="drop-zone" class="drop-zone">
@@ -216,14 +220,8 @@
         </div>
     </section>
 
-    <section id="tab-captions" class="tab-panel coverage-section" role="tabpanel" data-tab-panel hidden>
-        <h2>Captions</h2>
-        <p>Sección reservada para edición de captions.</p>
-    </section>
-
-
     <section
-        id="tab-preview"
+        id="tab-watermark"
         class="tab-panel coverage-section watermark-section"
         role="tabpanel"
         data-tab-panel
@@ -237,10 +235,10 @@
             <aside class="watermark-config-panel" aria-label="Configuración de marca de agua">
                 <div class="watermark-panel-header">
                     <div>
-                        <h2>Preview / Marca de agua</h2>
+                        <h2>Marca de agua</h2>
                         <p>Genera copias JPG para aprobación. Nunca modifica los originales.</p>
                     </div>
-                    <span class="export-engine-badge">Preview v2</span>
+                    <span class="export-engine-badge">Marca de agua v2</span>
                 </div>
 
                 <div class="watermark-form-grid">
@@ -255,10 +253,6 @@
                     <label class="form-field" for="watermark-photographer">
                         <span>Fotógrafo</span>
                         <input id="watermark-photographer" type="text" spellcheck="true">
-                    </label>
-                    <label class="form-field" for="watermark-reference">
-                        <span>Código de referencia</span>
-                        <input id="watermark-reference" type="text" spellcheck="false">
                     </label>
                     <div class="form-field watermark-resolution-field">
                         <label for="watermark-resolution">Resolución de salida</label>
@@ -487,6 +481,17 @@
             <button type="submit" class="primary-button compact-action">Guardar cambios</button>
         </div>
     </form>
+    </dialog>
+
+    <dialog id="copy-caption-confirm-dialog" class="confirm-dialog" aria-labelledby="copy-caption-confirm-title">
+        <form method="dialog">
+            <h2 id="copy-caption-confirm-title">Copiar caption</h2>
+            <p id="copy-caption-confirm-message">Se copiará este caption a las fotografías que aún no tienen caption.</p>
+            <div class="dialog-actions">
+                <button id="cancel-copy-caption-button" type="button" class="secondary-button">Cancelar</button>
+                <button id="confirm-copy-caption-button" type="button" class="primary-button compact-action">Continuar</button>
+            </div>
+        </form>
     </dialog>
 
     {% if ai_enabled %}

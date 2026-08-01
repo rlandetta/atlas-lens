@@ -495,6 +495,40 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
     })
 
 
+@web_bp.post("/coverages/<coverage_id>/captions/copy-caption-empty")
+def copy_caption_to_empty_photos(coverage_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    source_photo_id = str(payload.get("source_photo_id", ""))
+    source_caption = str(payload.get("caption_narrative", "")).strip()
+    source_status = normalize_caption_status(str(payload.get("caption_status", "Revisado")))
+
+    if not source_photo_id or not source_caption:
+        return jsonify({"error": "Source photo caption is required."}), 400
+
+    photos = ensure_coverage_photos(coverage)
+    if not any(photo.get("id") == source_photo_id for photo in photos):
+        abort(404)
+
+    updated_photo_ids = []
+    for photo in photos:
+        current_caption = str(photo.get("caption_narrative", "")).strip()
+        if photo.get("id") == source_photo_id or current_caption:
+            continue
+
+        photo["caption_narrative"] = source_caption
+        photo["caption_status"] = source_status
+        updated_photo_ids.append(str(photo.get("id")))
+
+    return jsonify({
+        "updated_photo_ids": updated_photo_ids,
+        "updated_count": len(updated_photo_ids),
+    })
+
+
 @web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/generate-narration")
 def generate_photo_narration(coverage_id: str, photo_id: str):
     if not AI_ENABLED:

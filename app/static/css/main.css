@@ -4,6 +4,7 @@
     --bg-panel-soft: #1a2633;
     --accent: #a36b2c;
     --accent-hover: #8b5a22;
+    --editorial-blue: #001450;
     --text-main: #e6e6e6;
     --text-secondary: #8a94a6;
     --border: #2b3642;
@@ -40,82 +41,7 @@ a {
 .app-layout {
     min-height: 100vh;
     display: grid;
-    grid-template-columns: 240px minmax(0, 1fr);
-}
-
-.app-sidebar {
-    position: sticky;
-    top: 0;
-    min-height: 100vh;
-    padding: 1rem 0.8rem;
-    background: var(--bg-panel);
-    border-right: 1px solid var(--border);
-    display: grid;
-    align-content: start;
-    gap: 1rem;
-}
-
-.sidebar-brand {
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    font-size: 0.84rem;
-    color: var(--text-secondary);
-    padding: 0.1rem 0.45rem;
-}
-
-.sidebar-nav {
-    display: grid;
-    gap: 0.2rem;
-}
-
-.sidebar-link {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    text-decoration: none;
-    color: var(--text-secondary);
-    border-radius: var(--radius-md);
-    border: 1px solid transparent;
-    padding: 0.5rem 0.55rem;
-    transition: border-color var(--transition-fast), color var(--transition-fast), background-color var(--transition-fast);
-}
-
-.sidebar-link:hover {
-    color: var(--text-main);
-    border-color: var(--border);
-    background-color: #17222e;
-}
-
-.sidebar-link.is-active {
-    color: var(--accent);
-    border-color: rgba(163, 107, 44, 0.46);
-    background-color: rgba(163, 107, 44, 0.08);
-}
-
-.sidebar-link.is-active::before {
-    content: "";
-    position: absolute;
-    left: -0.35rem;
-    top: 0.45rem;
-    bottom: 0.45rem;
-    width: 2px;
-    border-radius: 999px;
-    background: var(--accent);
-}
-
-.sidebar-icon {
-    width: 18px;
-    height: 18px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 18px;
-}
-
-.sidebar-icon svg {
-    width: 18px;
-    height: 18px;
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .app-workspace {
@@ -236,6 +162,7 @@ h1 {
     background-color: var(--accent);
     color: #f2ebdf;
     cursor: pointer;
+    text-decoration: none;
     transition: background-color var(--transition-fast), transform var(--transition-fast), border-color var(--transition-fast);
     text-decoration: none;
 }
@@ -258,6 +185,7 @@ h1 {
     font-size: 0.84rem;
     font-weight: 500;
     cursor: pointer;
+    text-decoration: none;
     transition: border-color var(--transition-fast), color var(--transition-fast), background-color var(--transition-fast);
 }
 
@@ -674,7 +602,8 @@ h1 {
     padding-bottom: 0.48rem;
 }
 
-.tab-button {
+.tab-button,
+.tab-link {
     border: 1px solid var(--border);
     background: #131c27;
     color: var(--text-secondary);
@@ -683,10 +612,12 @@ h1 {
     font: inherit;
     font-size: 0.82rem;
     cursor: pointer;
+    text-decoration: none;
     transition: border-color var(--transition-fast), color var(--transition-fast), background-color var(--transition-fast);
 }
 
-.tab-button:hover {
+.tab-button:hover,
+.tab-link:hover {
     color: var(--text-main);
     border-color: #3a4653;
 }
@@ -810,6 +741,12 @@ h1 {
 
 .photo-grid-item {
     text-align: left;
+    border-color: #46515e;
+    transition: border-color var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.photo-grid-item.has-caption {
+    border-color: var(--editorial-blue);
 }
 
 .photo-thumb-select {
@@ -825,7 +762,7 @@ h1 {
 }
 
 .photo-grid-item:hover {
-    border-color: #3d4956;
+    border-color: #66727f;
     background: #16212c;
 }
 
@@ -838,6 +775,11 @@ h1 {
 .photo-grid-item.is-active {
     border-color: var(--accent);
     background: rgba(163, 107, 44, 0.08);
+}
+
+.photo-grid-item.has-caption.is-active {
+    border-color: var(--editorial-blue);
+    box-shadow: 0 0 0 1px rgba(0, 20, 80, 0.58);
 }
 
 .photo-grid-item:active {
@@ -912,15 +854,17 @@ h1 {
 
 .photo-status-pill {
     position: absolute;
-    left: 0.38rem;
-    bottom: 0.38rem;
-    border: 1px solid rgba(43, 54, 66, 0.9);
+    left: 0.36rem;
+    top: 0.36rem;
+    border: 1px solid rgba(255, 255, 255, 0.16);
     border-radius: 999px;
-    background: rgba(15, 23, 32, 0.86);
-    color: var(--text-secondary);
-    font-size: 0.68rem;
+    background: var(--editorial-blue);
+    color: #fff;
+    font-size: 0.62rem;
+    font-weight: 750;
+    letter-spacing: 0.04em;
     line-height: 1;
-    padding: 0.26rem 0.4rem;
+    padding: 0.22rem 0.38rem;
 }
 
 .photo-thumb-actions {
@@ -970,26 +914,8 @@ h1 {
     height: 15px;
 }
 
-.photo-grid-item.is-active .photo-status-pill {
-    color: var(--accent);
-    border-color: rgba(163, 107, 44, 0.62);
-}
-
-.photo-status-pill[data-status="En cola"],
-.photo-status-pill[data-status="Procesando"],
-.photo-status-pill[data-status="Subiendo"] {
-    color: #f2c17d;
-    border-color: rgba(163, 107, 44, 0.68);
-}
-
-.photo-status-pill[data-status="Lista"] {
-    color: #89d39b;
-    border-color: rgba(137, 211, 155, 0.56);
-}
-
-.photo-status-pill[data-status="Error"] {
-    color: #ff9a9a;
-    border-color: rgba(255, 116, 116, 0.58);
+.photo-status-pill[hidden] {
+    display: none;
 }
 
 .photo-grid-name,
@@ -1676,10 +1602,6 @@ h1 {
 }
 
 @media (max-width: 1040px) {
-    .app-layout {
-        grid-template-columns: 210px minmax(0, 1fr);
-    }
-
     .coverage-meta-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -1699,23 +1621,6 @@ h1 {
     .coverage-tabs-card,
     .photo-workspace {
         overflow: visible;
-    }
-
-    .app-layout {
-        grid-template-columns: 1fr;
-    }
-
-    .app-sidebar {
-        position: static;
-        height: auto;
-        border-right: 0;
-        border-bottom: 1px solid var(--border);
-        padding: 0.65rem;
-    }
-
-    .sidebar-nav {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.34rem;
     }
 
     .app-header {
@@ -1818,20 +1723,6 @@ h1 {
         padding: 0.22rem 0.5rem;
     }
 
-    .sidebar-nav {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .sidebar-link {
-        padding: 0.48rem;
-        gap: 0.45rem;
-        font-size: 0.82rem;
-    }
-
-    .sidebar-link.is-active::before {
-        left: -0.22rem;
-    }
-
     .page-heading {
         align-items: flex-start;
         flex-direction: column;
@@ -1869,7 +1760,8 @@ h1 {
         padding-bottom: 0.34rem;
     }
 
-    .tab-button {
+    .tab-button,
+.tab-link {
         white-space: normal;
     }
 

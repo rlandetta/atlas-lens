@@ -56,6 +56,12 @@ const photoViewerCloseButton = document.getElementById("photo-viewer-close-butto
 const photoViewerPrevButton = document.getElementById("photo-viewer-prev-button");
 const photoViewerNextButton = document.getElementById("photo-viewer-next-button");
 const photoViewerImage = document.getElementById("photo-viewer-image");
+const copyCaptionEmptyButton = document.getElementById("copy-caption-empty-button");
+const copyCaptionStatus = document.getElementById("copy-caption-status");
+const copyCaptionConfirmDialog = document.getElementById("copy-caption-confirm-dialog");
+const copyCaptionConfirmMessage = document.getElementById("copy-caption-confirm-message");
+const cancelCopyCaptionButton = document.getElementById("cancel-copy-caption-button");
+const confirmCopyCaptionButton = document.getElementById("confirm-copy-caption-button");
 
 const selectedPhotos = [];
 const captionStatusOptions = ["Sin editar", "En edición", "Revisado", "Aprobado"];
@@ -341,6 +347,27 @@ const persistPhotoCaption = async (photoId, record, keepalive = false) => {
     }
 
     return response.json();
+};
+
+const copyCaptionToEmptyPhotos = async (sourcePhotoId, record) => {
+    const response = await fetch(photoWorkspace.dataset.copyCaptionUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            source_photo_id: sourcePhotoId,
+            caption_narrative: record.narrative,
+            caption_status: record.status
+        })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(payload.error || "No fue posible copiar el caption.");
+    }
+
+    return payload;
 };
 
 const requestAiNarration = async (photoId, options = {}) => {
@@ -758,6 +785,51 @@ const getCaptionRecord = (photoId) => {
     return captionRecords.get(photoId);
 };
 
+const hasCaptionContent = (photoId) => {
+    if (photoId === null || photoId === undefined) {
+        return false;
+    }
+
+    const record = getCaptionRecord(photoId);
+    return Boolean(record.narrative.trim());
+};
+
+const setCopyCaptionStatus = (message = "", status = "idle") => {
+    if (!copyCaptionStatus) {
+        return;
+    }
+
+    copyCaptionStatus.textContent = message;
+    copyCaptionStatus.dataset.status = status;
+};
+
+const getEmptyCaptionTargets = (sourcePhotoId) => (
+    selectedPhotos.filter((photo) => photo.id !== sourcePhotoId && !hasCaptionContent(photo.id))
+);
+
+const updatePhotoCaptionBadge = (photoId) => {
+    if (photoId === null || photoId === undefined) {
+        return;
+    }
+
+    const card = photoGrid.querySelector(`.photo-grid-item[data-photo-id="${CSS.escape(photoId)}"]`);
+    if (!card) {
+        return;
+    }
+
+    const hasCaption = hasCaptionContent(photoId);
+    card.classList.toggle("has-caption", hasCaption);
+
+    const statusPill = card.querySelector(".photo-status-pill");
+    if (!statusPill) {
+        return;
+    }
+
+    statusPill.hidden = !hasCaption;
+    statusPill.textContent = hasCaption ? "CAPTION" : "";
+    statusPill.dataset.status = hasCaption ? "CAPTION" : "empty";
+};
+
 const setSaveStatus = (status) => {
     const labels = {
         dirty: "● Sin guardar",
@@ -897,12 +969,7 @@ const updateCaptionPhotoNavigation = () => {
     captionPhotoStatusIndicator.textContent = status;
     captionPhotoStatusIndicator.dataset.status = status;
     captionFooterStatus.textContent = status;
-    const activeStatusPill = photoGrid.querySelector(`.photo-grid-item[data-photo-id="${CSS.escape(activePhotoId || "")}"] .photo-status-pill`);
-    const activePhoto = getActivePhoto();
-    if (activeStatusPill && (!activePhoto || !activePhoto.importStatus || activePhoto.importStatus === "Lista")) {
-        activeStatusPill.textContent = status;
-        activeStatusPill.dataset.status = status;
-    }
+    updatePhotoCaptionBadge(activePhotoId);
     captionPrevPhotoButton.disabled = !hasPhotos || selectedPhotos.length < 2;
     captionNextPhotoButton.disabled = !hasPhotos || selectedPhotos.length < 2;
 };
@@ -981,6 +1048,8 @@ const applyAiNarration = async (photoId, narration) => {
         photo.captionNarrative = narration;
         photo.captionStatus = "En edición";
     }
+
+    updatePhotoCaptionBadge(photoId);
 
     if (activePhotoId === photoId) {
         captionNarrativeField.value = narration;
@@ -1140,11 +1209,12 @@ const createPhotoCard = (item) => {
     }
 
     const status = document.createElement("span");
-    const captionRecord = getCaptionRecord(item.id);
-    const displayStatus = item.importStatus || captionRecord.status;
+    const hasCaption = hasCaptionContent(item.id);
+    card.classList.toggle("has-caption", hasCaption);
     status.className = "photo-status-pill";
-    status.textContent = displayStatus;
-    status.dataset.status = displayStatus;
+    status.textContent = hasCaption ? "CAPTION" : "";
+    status.dataset.status = hasCaption ? "CAPTION" : "empty";
+    status.hidden = !hasCaption;
 
     const actions = document.createElement("span");
     actions.className = "photo-thumb-actions";
@@ -1217,14 +1287,114 @@ const renderPhotoGridProgressively = () => {
         return;
     }
 
-    window.requestAnimationFrame(renderBatch);
+    renderBatch();
 };
 
 const renderWorkspace = () => {
     updateCounters();
     renderSelectionState();
     renderPhotoGridProgressively();
+    setCopyCaptionStatus();
     emitPhotoWorkspaceChange();
+};
+
+const runCopyCaptionToEmptyPhotos = async () => {
+    if (!copyCaptionEmptyButton || activePhotoId === null) {
+        setCopyCaptionStatus("Seleccione una fotografía con caption para copiar.", "error");
+        return;
+    }
+
+    syncCaptionRecordFromFields();
+    const sourceRecord = getCaptionRecord(activePhotoId);
+    if (!sourceRecord.narrative.trim()) {
+        setCopyCaptionStatus("La fotografía seleccionada no tiene caption para copiar.", "error");
+        return;
+    }
+
+    const targets = getEmptyCaptionTargets(activePhotoId);
+    if (targets.length === 0) {
+        setCopyCaptionStatus("No hay fotografías sin caption para completar.", "saved");
+        return;
+    }
+
+    const message = `Se copiará este caption a ${targets.length} fotografía${targets.length === 1 ? "" : "s"} que aún no tienen caption.`;
+    copyCaptionConfirmMessage.textContent = message;
+
+    const confirmed = await new Promise((resolve) => {
+        const cleanup = () => {
+            cancelCopyCaptionButton.removeEventListener("click", cancel);
+            confirmCopyCaptionButton.removeEventListener("click", confirm);
+            copyCaptionConfirmDialog.removeEventListener("close", close);
+        };
+        const cancel = () => {
+            cleanup();
+            if (typeof copyCaptionConfirmDialog.close === "function") {
+                copyCaptionConfirmDialog.close();
+            } else {
+                copyCaptionConfirmDialog.removeAttribute("open");
+            }
+            resolve(false);
+        };
+        const confirm = () => {
+            cleanup();
+            if (typeof copyCaptionConfirmDialog.close === "function") {
+                copyCaptionConfirmDialog.close();
+            } else {
+                copyCaptionConfirmDialog.removeAttribute("open");
+            }
+            resolve(true);
+        };
+        const close = () => {
+            cleanup();
+            resolve(false);
+        };
+
+        cancelCopyCaptionButton.addEventListener("click", cancel);
+        confirmCopyCaptionButton.addEventListener("click", confirm);
+        copyCaptionConfirmDialog.addEventListener("close", close, { once: true });
+
+        if (typeof copyCaptionConfirmDialog.showModal === "function") {
+            copyCaptionConfirmDialog.showModal();
+        } else {
+            copyCaptionConfirmDialog.setAttribute("open", "open");
+        }
+    });
+
+    if (!confirmed) {
+        setCopyCaptionStatus("Copia cancelada.", "idle");
+        return;
+    }
+
+    copyCaptionEmptyButton.disabled = true;
+    setCopyCaptionStatus("Copiando caption...", "saving");
+
+    try {
+        await autosaveCaption(activePhotoId);
+        const payload = await copyCaptionToEmptyPhotos(activePhotoId, sourceRecord);
+        const updatedPhotoIds = payload.updated_photo_ids || [];
+
+        updatedPhotoIds.forEach((photoId) => {
+            const record = getCaptionRecord(photoId);
+            record.narrative = sourceRecord.narrative;
+            record.status = sourceRecord.status;
+            record.savedNarrative = sourceRecord.narrative;
+            record.savedStatus = sourceRecord.status;
+
+            const photo = getPhotoById(photoId);
+            if (photo) {
+                photo.captionNarrative = sourceRecord.narrative;
+                photo.captionStatus = sourceRecord.status;
+            }
+            updatePhotoCaptionBadge(photoId);
+        });
+
+        setCopyCaptionStatus(`Caption copiado a ${updatedPhotoIds.length} fotografía${updatedPhotoIds.length === 1 ? "" : "s"}.`, "saved");
+        emitPhotoWorkspaceChange();
+    } catch (error) {
+        setCopyCaptionStatus(error.message || "No fue posible copiar el caption.", "error");
+    } finally {
+        copyCaptionEmptyButton.disabled = false;
+    }
 };
 
 const focusCaptionField = () => {
@@ -1275,11 +1445,7 @@ const updatePhotoImportStatus = (photo, status, errorMessage = "") => {
     photo.importStatus = status;
     photo.processingError = errorMessage;
 
-    const statusPill = photoGrid.querySelector(`.photo-grid-item[data-photo-id="${CSS.escape(photo.id)}"] .photo-status-pill`);
-    if (statusPill) {
-        statusPill.textContent = status;
-        statusPill.dataset.status = status;
-    }
+    updatePhotoCaptionBadge(photo.id);
 
     if (activePhotoId === photo.id) {
         renderSelectionState();
@@ -1625,12 +1791,16 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
 
     removeSelectedButton.addEventListener("click", removeActivePhoto);
     clearSelectionButton.addEventListener("click", clearSelection);
+    if (copyCaptionEmptyButton) {
+        copyCaptionEmptyButton.addEventListener("click", runCopyCaptionToEmptyPhotos);
+    }
     captionNarrativeField.addEventListener("input", () => {
         if (activePhotoId === null) {
             return;
         }
 
         syncCaptionRecordFromFields();
+        updatePhotoCaptionBadge(activePhotoId);
         updateCaptionTextCounters();
         renderCaptionPreview();
     });
@@ -1649,6 +1819,7 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
         }
 
         syncCaptionRecordFromFields();
+        updatePhotoCaptionBadge(activePhotoId);
         autosaveCaption(activePhotoId);
     });
     bindCoverageCaptionMetadataUpdates();

@@ -4,7 +4,6 @@ if (watermarkPanel) {
     const imageSelect = document.getElementById("watermark-image-select");
     const agencyField = document.getElementById("watermark-agency");
     const photographerField = document.getElementById("watermark-photographer");
-    const referenceField = document.getElementById("watermark-reference");
     const resolutionSelect = document.getElementById("watermark-resolution");
     const customResolutionField = document.getElementById("watermark-custom-resolution");
     const positionField = document.getElementById("watermark-position");
@@ -40,8 +39,9 @@ if (watermarkPanel) {
             measure(canvas, settings) {
                 const width = canvas.width;
                 const height = canvas.height;
-                const bandWidth = Math.max(1, Math.round(width * 0.25));
+                const bandWidth = Math.max(1, Math.round(width * 0.425));
                 const margin = Math.max(18, Math.round(Math.min(width, height) * 0.035));
+                const verticalLift = Math.max(96, Math.round(width * 0.05));
                 const firstLineSize = Math.max(12, Math.round(bandWidth * 0.07));
                 const secondLineSize = Math.max(9, Math.round(bandWidth * 0.045));
                 const lineGap = Math.max(4, Math.round(secondLineSize * 0.42));
@@ -49,9 +49,9 @@ if (watermarkPanel) {
                 const paddingY = Math.max(8, Math.round(secondLineSize * 0.8));
                 const bandHeight = Math.round(paddingY * 2 + firstLineSize + lineGap + secondLineSize);
                 const left = settings.position === "bottom-left"
-                    ? margin
-                    : width - bandWidth - margin;
-                const top = height - bandHeight - margin;
+                    ? 0
+                    : width - bandWidth;
+                const top = height - bandHeight - margin - verticalLift;
 
                 return {
                     width,
@@ -59,6 +59,7 @@ if (watermarkPanel) {
                     bandWidth,
                     bandHeight,
                     margin,
+                    verticalLift,
                     left,
                     top,
                     paddingX,
@@ -126,7 +127,6 @@ if (watermarkPanel) {
     const getSettings = () => ({
         agency: agencyField.value.trim() || "Xinhua",
         photographer: photographerField.value.trim() || "Fotógrafo",
-        reference: referenceField.value.trim() || watermarkPanel.dataset.coverageId || "",
         resolution: getOutputResolution(),
         position: positionField.value === "bottom-left" ? "bottom-left" : "bottom-right",
         opacity: Math.min(1, Math.max(0.05, Number(opacityField.value) / 100 || 0.8)),
@@ -388,7 +388,7 @@ if (watermarkPanel) {
             previewEmpty.hidden = true;
             previewCanvas.hidden = false;
             const size = await drawWatermarkedImage(photo, 1100);
-            previewMeta.textContent = `${photo.name} · preview ${size.width} x ${size.height} px · banda ${size.watermark.bandWidth} x ${size.watermark.bandHeight} px (${Math.round((size.watermark.bandWidth / size.width) * 100)} %) · salida ${getOutputResolution()} px lado mayor`;
+            previewMeta.textContent = `${photo.name} · marca ${size.width} x ${size.height} px · banda ${size.watermark.bandWidth} x ${size.watermark.bandHeight} px (${Math.round((size.watermark.bandWidth / size.width) * 100)} %) · salida ${getOutputResolution()} px lado mayor`;
             setMessage("Vista previa actualizada. El original no se modifica.");
         } catch (error) {
             previewCanvas.hidden = true;
@@ -417,11 +417,11 @@ if (watermarkPanel) {
             return;
         }
         exportButton.disabled = true;
-        setMessage(`Generando ${targets.length} JPG de previsualización...`, "warning");
+        setMessage(`Generando ${targets.length} JPG con marca de agua...`, "warning");
         try {
             for (const photo of targets) {
                 const blob = await buildExportBlob(photo);
-                const filename = `${normalizeFilename(photo.name)}_preview_${getSettings().resolution}px.jpg`;
+                const filename = `${normalizeFilename(photo.name)}_marca_${getSettings().resolution}px.jpg`;
                 downloadBlob(blob, filename);
             }
             setMessage(`${targets.length} JPG generado(s). Las fotografías originales permanecen intactas.`, "success");
@@ -436,7 +436,6 @@ if (watermarkPanel) {
     const preloadCoverageFields = () => {
         agencyField.value = watermarkPanel.dataset.agency || "Xinhua";
         photographerField.value = watermarkPanel.dataset.photographer || "";
-        referenceField.value = watermarkPanel.dataset.coverageId || "";
     };
 
     preloadCoverageFields();
@@ -451,7 +450,7 @@ if (watermarkPanel) {
 
     syncCompactControlLabels();
 
-    [agencyField, photographerField, referenceField, resolutionSelect, customResolutionField, positionField, opacityField, bandColorField, textColorField, preserveExifField, preserveIptcField, preserveIccField].forEach((field) => {
+    [agencyField, photographerField, resolutionSelect, customResolutionField, positionField, opacityField, bandColorField, textColorField, preserveExifField, preserveIptcField, preserveIccField].forEach((field) => {
         field.addEventListener("input", () => {
             syncCompactControlLabels();
             schedulePreviewRender();
