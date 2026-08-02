@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}DISPATCH | ATLAS LENS{% endblock %}
+{% block main_class %}dispatch-page{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <h1>Despachos</h1>
+        <p class="subtitle">Control editorial de despachos preparados desde LENS para distribución futura.</p>
+    </div>
+    <button type="button" class="secondary-button compact-action" disabled>Nuevo despacho</button>
+</section>
+
+{% set statuses = ("Borrador", "Preparando", "Listo", "Enviado", "Entregado", "Error") %}
+<section class="ui-card" aria-labelledby="dispatch-status-summary-title">
+    <h2 id="dispatch-status-summary-title">Resumen por estado</h2>
+    <dl class="coverage-meta-grid">
+        {% for status in statuses %}
+        <div>
+            <dt>{{ status }}</dt>
+            <dd>{{ shipments | selectattr("status", "equalto", status) | list | length }}</dd>
+        </div>
+        {% endfor %}
+    </dl>
+</section>
+
+{% if shipments %}
+<section class="ui-card" aria-labelledby="dispatch-history-title">
+    <h2 id="dispatch-history-title">Historial de despachos</h2>
+    <table>
+        <thead>
+            <tr>
+                <th scope="col">Nombre</th>
+                <th scope="col">Cobertura</th>
+                <th scope="col">Destinatarios</th>
+                <th scope="col">Fotos</th>
+                <th scope="col">Estado</th>
+                <th scope="col">Creación</th>
+                <th scope="col">Actualización</th>
+                <th scope="col">Detalle</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for shipment in shipments %}
+            <tr>
+                <td>{{ shipment.name }}</td>
+                <td>{{ shipment.coverage_snapshot.coverage_name or shipment.coverage_id }}</td>
+                <td>{{ shipment.recipients | length }}</td>
+                <td>{{ shipment.photo_ids | length }}</td>
+                <td>{{ shipment.status }}</td>
+                <td>{{ shipment.created_at }}</td>
+                <td>{{ shipment.updated_at }}</td>
+                <td><a href="{{ url_for('dispatch.detail', shipment_id=shipment.id) }}">Ver detalle</a></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% else %}
+<section class="empty-state ui-card">
+    <h2>No hay despachos todavía</h2>
+    <p>Cuando LENS prepare despachos para distribución, aparecerán en este historial.</p>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+
+{% block title %}DISPATCH | ATLAS LENS{% endblock %}
+{% block main_class %}dispatch-detail-page{% endblock %}
+
+{% block content %}
+<section class="coverage-header-card ui-card">
+    <p class="coverage-id">ID: {{ shipment.id }}</p>
+    <h1>{{ shipment.name }}</h1>
+    <dl class="coverage-meta-grid">
+        <div>
+            <dt>Estado</dt>
+            <dd>{{ shipment.status }}</dd>
+        </div>
+        <div>
+            <dt>Creado</dt>
+            <dd>{{ shipment.created_at }}</dd>
+        </div>
+        <div>
+            <dt>Actualizado</dt>
+            <dd>{{ shipment.updated_at }}</dd>
+        </div>
+    </dl>
+</section>
+
+<section class="ui-card" aria-labelledby="dispatch-general-title">
+    <h2 id="dispatch-general-title">Información general</h2>
+    <dl class="coverage-meta-grid">
+        <div>
+            <dt>Canal</dt>
+            <dd>{{ shipment.channel or "No definido" }}</dd>
+        </div>
+        <div>
+            <dt>Fotografías</dt>
+            <dd>{{ shipment.photo_ids | length }}</dd>
+        </div>
+        <div>
+            <dt>Destinatarios</dt>
+            <dd>{{ shipment.recipients | length }}</dd>
+        </div>
+    </dl>
+</section>
+
+<section class="ui-card" aria-labelledby="dispatch-coverage-title">
+    <h2 id="dispatch-coverage-title">Cobertura</h2>
+    <dl class="coverage-meta-grid">
+        <div>
+            <dt>Nombre</dt>
+            <dd>{{ shipment.coverage_snapshot.coverage_name or shipment.coverage_id }}</dd>
+        </div>
+        <div>
+            <dt>Ciudad y país</dt>
+            <dd>{{ shipment.coverage_snapshot.city or "Sin ciudad" }}, {{ shipment.coverage_snapshot.country or "sin país" }}</dd>
+        </div>
+        <div>
+            <dt>Agencia</dt>
+            <dd>{{ shipment.coverage_snapshot.agency or "Sin agencia" }}</dd>
+        </div>
+        <div>
+            <dt>Fotógrafo</dt>
+            <dd>{{ shipment.coverage_snapshot.photographer or "Sin fotógrafo" }}</dd>
+        </div>
+        <div>
+            <dt>Fecha de evento</dt>
+            <dd>{{ shipment.coverage_snapshot.event_date or "Sin fecha" }}</dd>
+        </div>
+        <div>
+            <dt>Fecha de envío</dt>
+            <dd>{{ shipment.coverage_snapshot.submit_date or "Sin fecha" }}</dd>
+        </div>
+    </dl>
+</section>
+
+<section class="ui-card" aria-labelledby="dispatch-export-title">
+    <h2 id="dispatch-export-title">Exportación o handoff</h2>
+    {% if shipment.export_reference %}
+    <dl class="coverage-meta-grid">
+        {% for key, value in shipment.export_reference.items() %}
+        <div>
+            <dt>{{ key }}</dt>
+            <dd>{{ value }}</dd>
+        </div>
+        {% endfor %}
+    </dl>
+    {% else %}
+    <p>No hay exportación asociada todavía.</p>
+    {% endif %}
+</section>
+
+<section class="ui-card" aria-labelledby="dispatch-recipients-title">
+    <h2 id="dispatch-recipients-title">Destinatarios</h2>
+    {% if shipment.recipients %}
+    <ul>
+        {% for recipient in shipment.recipients %}
+        <li>{{ recipient.name or "Sin nombre" }}{% if recipient.email %} · {{ recipient.email }}{% endif %}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No hay destinatarios registrados.</p>
+    {% endif %}
+</section>
+
+<section class="ui-card" aria-labelledby="dispatch-note-title">
+    <h2 id="dispatch-note-title">Nota de entrega</h2>
+    <p>{{ shipment.delivery_note or "Sin nota de entrega." }}</p>
+</section>
+
+<section class="ui-card" aria-labelledby="dispatch-photos-title">
+    <h2 id="dispatch-photos-title">Fotografías</h2>
+    {% if shipment.photo_snapshots %}
+    <ul>
+        {% for photo in shipment.photo_snapshots %}
+        <li>{{ photo.name or photo.id }} · {{ photo.caption_status }}</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No hay fotografías asociadas.</p>
+    {% endif %}
+</section>
+
+<section class="ui-card" aria-labelledby="dispatch-history-title">
+    <h2 id="dispatch-history-title">Historial de estados</h2>
+    {% if shipment.history %}
+    <ol>
+        {% for item in shipment.history %}
+        <li>{{ item.created_at }} · {{ item.status }} · {{ item.note or "Sin nota" }}</li>
+        {% endfor %}
+    </ol>
+    {% else %}
+    <p>No hay historial registrado.</p>
+    {% endif %}
+</section>
+
+<a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>
+{% endblock %}
