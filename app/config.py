@@ -11,3 +11,7 @@ def get_bool_env(name: str, default: bool = False) -> bool:
 
 AI_ENABLED = get_bool_env("AI_ENABLED", False)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "mock").strip().lower()
+DISPATCH_STORE_PATH = os.getenv(
+    "DISPATCH_STORE_PATH",
+    os.path.join("instance", "dispatch_shipments.json"),
+)
