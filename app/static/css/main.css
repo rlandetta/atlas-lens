@@ -55,13 +55,13 @@ a {
     border-bottom: 1px solid var(--border);
     background: #121c27;
     display: grid;
-    grid-template-columns: minmax(0, auto) 1fr;
+    grid-template-columns: minmax(0, auto) minmax(0, 1fr);
     align-items: center;
     gap: 0.8rem;
     padding: 0.52rem 1rem;
 }
 
-.lens-brand {
+.atlas-brand {
     min-width: 0;
     display: inline-flex;
     align-items: center;
@@ -69,7 +69,7 @@ a {
     text-decoration: none;
 }
 
-.lens-brand-mark {
+.atlas-brand-mark {
     width: 40px;
     height: 40px;
     flex: 0 0 40px;
@@ -81,39 +81,68 @@ a {
     justify-content: center;
 }
 
-.lens-brand-mark svg {
+.atlas-brand-mark svg {
     width: 26px;
     height: 26px;
 }
 
-.lens-brand-copy {
+.atlas-brand-copy {
     min-width: 0;
     display: grid;
     gap: 0.05rem;
 }
 
-.lens-brand-title {
+.atlas-brand-title {
     font-size: 0.9rem;
     font-weight: 800;
     letter-spacing: 0.08em;
     line-height: 1;
 }
 
-.lens-brand-subtitle {
+.atlas-brand-subtitle {
     color: var(--text-secondary);
     font-size: 0.76rem;
     line-height: 1.22;
 }
 
-.header-module-status {
+.atlas-global-nav {
     justify-self: end;
-    color: var(--accent);
-    font-size: 0.82rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.42rem;
+}
+
+.atlas-nav-link {
+    border: 1px solid transparent;
+    border-radius: 999px;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
     font-weight: 700;
+    letter-spacing: 0.04em;
     line-height: 1;
-    border-left: 1px solid rgba(163, 107, 44, 0.42);
-    padding-left: 1rem;
+    padding: 0.42rem 0.7rem;
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: border-color var(--transition-fast), color var(--transition-fast), background-color var(--transition-fast);
     white-space: nowrap;
+}
+
+.atlas-nav-link:hover {
+    color: var(--text-main);
+    border-color: #3a4653;
+}
+
+.atlas-nav-link.is-active {
+    color: var(--accent);
+    border-color: rgba(163, 107, 44, 0.5);
+    background: rgba(163, 107, 44, 0.08);
+}
+
+.atlas-nav-link.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.52;
 }
 
 .header-user {
@@ -1628,8 +1657,8 @@ h1 {
         justify-content: space-between;
     }
 
-    .header-module-status {
-        padding-left: 0.78rem;
+    .atlas-global-nav {
+        gap: 0.34rem;
     }
 
     .list-tools {
@@ -1691,32 +1720,36 @@ h1 {
         padding: 0.46rem 0.66rem;
     }
 
-    .lens-brand {
+    .atlas-brand {
         gap: 0.48rem;
     }
 
-    .lens-brand-mark {
+    .atlas-brand-mark {
         width: 36px;
         height: 36px;
         flex-basis: 36px;
     }
 
-    .lens-brand-mark svg {
+    .atlas-brand-mark svg {
         width: 23px;
         height: 23px;
     }
 
-    .lens-brand-title {
+    .atlas-brand-title {
         font-size: 0.84rem;
     }
 
-    .lens-brand-subtitle {
+    .atlas-brand-subtitle {
         font-size: 0.68rem;
     }
 
-    .header-module-status {
+    .atlas-global-nav {
+        justify-content: flex-start;
+    }
+
+    .atlas-nav-link {
         font-size: 0.72rem;
-        padding-left: 0.58rem;
+        padding: 0.34rem 0.5rem;
     }
 
     .header-user {

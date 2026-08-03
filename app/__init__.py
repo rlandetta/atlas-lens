@@ -1,6 +1,28 @@
 from __future__ import annotations
 
 
+ATLAS_NAVIGATION = (
+    {
+        "label": "Dashboard",
+        "endpoint": None,
+        "blueprint": "dashboard",
+        "enabled": False,
+    },
+    {
+        "label": "LENS",
+        "endpoint": "web.home",
+        "blueprint": "web",
+        "enabled": True,
+    },
+    {
+        "label": "DISPATCH",
+        "endpoint": "dispatch.index",
+        "blueprint": "dispatch",
+        "enabled": True,
+    },
+)
+
+
 def create_app():
     from flask import Flask
 
@@ -22,6 +44,11 @@ def create_app():
             lens_reader=lens_reader,
         ),
     }
+
+    @app.context_processor
+    def inject_atlas_shell():
+        return {"atlas_navigation": ATLAS_NAVIGATION}
+
     app.register_blueprint(web_bp)
     app.register_blueprint(dispatch_bp)
     return app

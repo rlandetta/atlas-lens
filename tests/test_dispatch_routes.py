@@ -64,6 +64,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
+        self.assertIn("ATLAS", body)
         self.assertIn("Despachos", body)
         self.assertIn("Resumen por estado", body)
         self.assertIn("Borrador", body)
@@ -73,6 +74,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Entregado", body)
         self.assertIn("Error", body)
         self.assertIn("No hay despachos todavía", body)
+        self.assertNotIn("Cobertura activa", body)
 
     def test_get_dispatch_index_with_history_table(self):
         self.create_shipment()
@@ -86,6 +88,28 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Despacho Quito", body)
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Ver detalle", body)
+
+    def test_lens_route_uses_atlas_shell_with_lens_active(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("ATLAS", body)
+        self.assertRegex(
+            body,
+            r'class="atlas-nav-link is-active"[\s\S]*aria-current="page"[\s\S]*>LENS</a>',
+        )
+
+    def test_dispatch_route_uses_atlas_shell_with_dispatch_active(self):
+        response = self.client.get("/dispatch/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertRegex(
+            body,
+            r'class="atlas-nav-link is-active"[\s\S]*aria-current="page"[\s\S]*>DISPATCH</a>',
+        )
+        self.assertNotIn("Cobertura activa", body)
 
     def test_get_dispatch_detail_existing(self):
         shipment = self.create_shipment()

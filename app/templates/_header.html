@@ -1,6 +1,6 @@
 <header class="app-header">
-    <a href="{{ url_for('web.home') }}" class="lens-brand" aria-label="Ir a coberturas">
-        <span class="lens-brand-mark" aria-hidden="true">
+    <a href="{{ url_for('web.home') }}" class="atlas-brand" aria-label="Ir al inicio de ATLAS">
+        <span class="atlas-brand-mark" aria-hidden="true">
             <svg viewBox="0 0 32 32" fill="none">
                 <path d="M5.5 10V6.8c0-.7.6-1.3 1.3-1.3H10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 <path d="M22 5.5h3.2c.7 0 1.3.6 1.3 1.3V10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -14,10 +14,23 @@
                 <path d="M7.9 19.9 5.4 16l4.8-3.1 3.2 5.5-5.5 1.5Z" fill="currentColor"/>
             </svg>
         </span>
-        <span class="lens-brand-copy">
-            <span class="lens-brand-title">LENS</span>
-            <span class="lens-brand-subtitle">Gestión editorial</span>
+        <span class="atlas-brand-copy">
+            <span class="atlas-brand-title">ATLAS</span>
+            <span class="atlas-brand-subtitle">Plataforma editorial</span>
         </span>
     </a>
-    <div class="header-module-status">Cobertura activa</div>
+    <nav class="atlas-global-nav" aria-label="Navegación global de ATLAS">
+        {% for item in atlas_navigation %}
+            {% set is_active = request.blueprint == item.blueprint %}
+            {% if item.enabled and item.endpoint %}
+            <a
+                href="{{ url_for(item.endpoint) }}"
+                class="atlas-nav-link{% if is_active %} is-active{% endif %}"
+                {% if is_active %}aria-current="page"{% endif %}
+            >{{ item.label }}</a>
+            {% else %}
+            <span class="atlas-nav-link is-disabled" aria-disabled="true">{{ item.label }}</span>
+            {% endif %}
+        {% endfor %}
+    </nav>
 </header>
