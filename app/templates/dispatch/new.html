@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Nuevo despacho | ATLAS{% endblock %}
+{% block main_class %}form-page dispatch-new-page{% endblock %}
+
+{% block content %}
+<section class="form-card ui-card">
+    <h1>Nuevo despacho</h1>
+    <p class="subtitle">Cree un despacho en borrador usando fotografías aprobadas desde LENS.</p>
+
+    {% if errors %}
+    <div class="form-error" role="alert">
+        <p>No se pudo crear el despacho:</p>
+        <ul>
+            {% for error in errors %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{% if coverage_locked %}{{ url_for('dispatch.new', coverage_id=selected_coverage.id) }}{% else %}{{ url_for('dispatch.new') }}{% endif %}" class="coverage-form">
+        <div class="coverage-form-grid">
+            <div class="form-field">
+                <label for="name">Nombre del despacho</label>
+                <input id="name" name="name" type="text" value="{{ form_data.name or '' }}" required>
+            </div>
+
+            <div class="form-field">
+                <label for="channel">Canal</label>
+                <select id="channel" name="channel" required>
+                    {% for channel in channel_options %}
+                    <option value="{{ channel }}" {% if (form_data.channel or "Manual") == channel %}selected{% endif %}>{{ channel }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <section class="ui-card" aria-labelledby="dispatch-new-coverage-title">
+            <h2 id="dispatch-new-coverage-title">Cobertura</h2>
+            {% if coverage_locked and selected_coverage %}
+            <p>Cobertura preseleccionada: <strong>{{ selected_coverage.name }}</strong></p>
+            <input type="hidden" name="coverage_id" value="{{ selected_coverage.id }}">
+            {% elif coverage_options %}
+            <div class="form-field">
+                <label for="coverage_id">Selecciona una cobertura</label>
+                <select id="coverage_id" name="coverage_id" required>
+                    <option value="" {% if not form_data.coverage_id %}selected{% endif %}>Selecciona una cobertura</option>
+                    {% for coverage in coverage_options %}
+                    <option value="{{ coverage.id }}" {% if form_data.coverage_id == coverage.id %}selected{% endif %}>
+                        {{ coverage.name }}{% if coverage.city or coverage.country %} · {{ coverage.city }}{% if coverage.city and coverage.country %}, {% endif %}{{ coverage.country }}{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <p>No hay coberturas disponibles.</p>
+            {% endif %}
+        </section>
+
+        <section class="ui-card" aria-labelledby="dispatch-new-photos-title">
+            <h2 id="dispatch-new-photos-title">Fotografías aprobadas</h2>
+            {% if photo_options %}
+            <fieldset>
+                <legend>Selecciona una o más fotografías</legend>
+                {% for photo in photo_options %}
+                <label>
+                    <input type="checkbox" name="photo_ids" value="{{ photo.id }}" {% if photo.id in selected_photo_ids %}checked{% endif %}>
+                    {{ photo.name }}
+                </label>
+                {% endfor %}
+            </fieldset>
+            {% elif form_data.coverage_id %}
+            <p>La cobertura seleccionada no tiene fotografías con caption aprobado.</p>
+            {% else %}
+            <p>Selecciona una cobertura para ver sus fotografías aprobadas.</p>
+            {% endif %}
+        </section>
+
+        <section class="ui-card" aria-labelledby="dispatch-new-recipients-title">
+            <h2 id="dispatch-new-recipients-title">Destinatarios</h2>
+            <div class="form-field">
+                <label for="recipients">Un destinatario por línea con formato Nombre | correo@dominio.com</label>
+                <textarea id="recipients" name="recipients" rows="6" required>{{ form_data.recipients or '' }}</textarea>
+            </div>
+        </section>
+
+        <section class="ui-card" aria-labelledby="dispatch-new-note-title">
+            <h2 id="dispatch-new-note-title">Nota de entrega</h2>
+            <div class="form-field">
+                <label for="delivery_note">Nota opcional</label>
+                <textarea id="delivery_note" name="delivery_note" rows="4">{{ form_data.delivery_note or '' }}</textarea>
+            </div>
+        </section>
+
+        <button type="submit" class="primary-button compact-action">Crear despacho</button>
+    </form>
+
+    <a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>
+</section>
+{% endblock %}

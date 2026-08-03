@@ -9,7 +9,7 @@
         <h1>Despachos</h1>
         <p class="subtitle">Control editorial de despachos preparados desde LENS para distribución futura.</p>
     </div>
-    <button type="button" class="secondary-button compact-action" disabled>Nuevo despacho</button>
+    <a href="{{ url_for('dispatch.new') }}" class="secondary-button compact-action">Nuevo despacho</a>
 </section>
 
 {% set statuses = ("Borrador", "Preparando", "Listo", "Enviado", "Entregado", "Error") %}

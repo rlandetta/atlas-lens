@@ -34,9 +34,11 @@ def create_app():
     from app.routes.web import web_bp
 
     app = Flask(__name__)
-    lens_reader = LensReadService(WebCoverageProvider())
+    coverage_provider = WebCoverageProvider()
+    lens_reader = LensReadService(coverage_provider)
     dispatch_store = DispatchShipmentStore(DISPATCH_STORE_PATH)
     app.extensions["dispatch"] = {
+        "coverage_provider": coverage_provider,
         "store": dispatch_store,
         "lens_reader": lens_reader,
         "shipment_service": ShipmentService(
