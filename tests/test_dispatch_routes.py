@@ -51,6 +51,7 @@ class DispatchRoutesTest(unittest.TestCase):
                     {
                         "id": "photo-review",
                         "name": "IMG002.jpg",
+                        "filename": "IMG002.jpg",
                         "caption_narrative": "Persona observa actividad.",
                         "caption_status": "Revisado",
                     },
@@ -145,10 +146,11 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Nuevo despacho", body)
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Selecciona una cobertura", body)
-        self.assertIn("Nombre | correo@dominio.com", body)
+        self.assertIn("Ejemplo: Mesa Xinhua | desk@xinhua.com", body)
         self.assertIn("Guardar como borrador", body)
         self.assertIn("Programar envío", body)
         self.assertIn("America/Guayaquil", body)
+        self.assertIn("Incluir documento Word con captions", body)
 
     def test_get_dispatch_new_with_valid_coverage_id(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -157,8 +159,9 @@ class DispatchRoutesTest(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn("Cobertura preseleccionada", body)
         self.assertIn("IMG001.jpg", body)
-        self.assertNotIn("IMG002.jpg", body)
-        self.assertNotIn("IMG003.jpg", body)
+        self.assertIn("IMG002.jpg", body)
+        self.assertIn("IMG003.jpg", body)
+        self.assertIn('value="photo-approved" checked', body)
 
     def test_get_dispatch_new_with_invalid_coverage_id(self):
         response = self.client.get("/dispatch/new?coverage_id=missing")
@@ -191,8 +194,14 @@ class DispatchRoutesTest(unittest.TestCase):
             "scheduled_date": "",
             "scheduled_time": "",
             "timezone": "America/Guayaquil",
+            "include_caption_docx": "1",
         }
         form.update(overrides)
+        form = {
+            key: value
+            for key, value in form.items()
+            if value is not None
+        }
         return form
 
     def post_new(self, **overrides):
@@ -212,8 +221,27 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(shipments[0]["name"], "Despacho desde formulario")
         self.assertEqual(shipments[0]["status"], "Borrador")
         self.assertEqual(shipments[0]["channel"], "Manual")
+        self.assertTrue(shipments[0]["include_caption_docx"])
+        self.assertEqual(shipments[0]["export_reference"]["caption_docx"]["generator"], "ExportService")
         self.assertEqual(shipments[0]["scheduled_at"], "")
         self.assertEqual(shipments[0]["timezone"], "America/Guayaquil")
+
+    def test_post_dispatch_new_allows_unchecking_caption_docx_when_photo_is_selected(self):
+        response = self.post_new(include_caption_docx=None)
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertFalse(shipment["include_caption_docx"])
+        self.assertFalse(shipment["export_reference"]["caption_docx"]["include"])
+
+    def test_post_dispatch_new_allows_caption_docx_without_selected_photos(self):
+        response = self.post_new(photo_ids=[])
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["photo_ids"], [])
+        self.assertTrue(shipment["include_caption_docx"])
+        self.assertEqual(shipment["export_reference"]["caption_docx"]["photo_scope"], "all_eligible")
 
     def test_post_dispatch_new_valid_schedule_redirects_and_persists(self):
         response = self.post_new(
@@ -266,22 +294,25 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Selecciona una cobertura.", response.get_data(as_text=True))
 
     def test_post_dispatch_new_missing_photos(self):
-        response = self.post_new(photo_ids=[])
+        response = self.post_new(photo_ids=[], include_caption_docx=None)
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Selecciona al menos una fotografía.", response.get_data(as_text=True))
+        self.assertIn("Seleccione al menos una fotografía o incluya el documento Word con captions.", response.get_data(as_text=True))
 
-    def test_post_dispatch_new_rejects_unapproved_photo(self):
+    def test_post_dispatch_new_accepts_legacy_status_when_caption_and_file_are_available(self):
+        review_file = self.lens_media_root / "coverages" / "cov-1" / "photo-review_IMG002.jpg"
+        review_file.write_bytes(b"\xff\xd8\xff\xe0ATLASJPEG\xff\xd9")
+        self.coverages["cov-1"]["photos"][1]["storage_path"] = "coverages/cov-1/photo-review_IMG002.jpg"
+        self.coverages["cov-1"]["photos"][1]["available_on_disk"] = True
         response = self.post_new(photo_ids=["photo-review"])
 
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("La fotografía no tiene caption aprobado.", response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 302)
 
     def test_post_dispatch_new_rejects_empty_caption(self):
         response = self.post_new(photo_ids=["photo-empty"])
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("La fotografía aprobada no está disponible.", response.get_data(as_text=True))
+        self.assertIn("Selecciona únicamente fotografías con caption y archivo disponible para envío.", response.get_data(as_text=True))
 
     def test_post_dispatch_new_missing_recipients(self):
         response = self.post_new(recipients="")
@@ -294,6 +325,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Cada destinatario debe usar el formato", response.get_data(as_text=True))
+        self.assertIn("Ejemplo: Mesa Xinhua | desk@xinhua.com", response.get_data(as_text=True))
 
     def test_post_dispatch_new_rejects_missing_coverage(self):
         response = self.post_new(coverage_id="missing")

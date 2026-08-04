@@ -284,7 +284,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn("Archivo no disponible para envío", body)
         self.assertIn('value="photo-1"  disabled', body)
 
-    def test_coverage_detail_enables_dispatch_button_with_approved_caption(self):
+    def test_coverage_detail_enables_dispatch_button_with_caption_and_file(self):
         coverage_id = self.create_coverage()
         self.add_photo(coverage_id)
         self.client.post(
@@ -300,14 +300,14 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn("Crear despacho", body)
         self.assertIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
 
-    def test_coverage_detail_disables_dispatch_button_without_approved_caption(self):
+    def test_coverage_detail_disables_dispatch_button_without_caption(self):
         coverage_id = self.create_coverage()
         self.add_photo(coverage_id)
 
         body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
 
         self.assertIn("Crear despacho", body)
-        self.assertIn("Apruebe al menos una fotografía para crear un despacho.", body)
+        self.assertIn("Agregue un caption a por lo menos una fotografía para crear el despacho.", body)
         self.assertNotIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
 
     def test_dispatch_new_shows_unavailable_approved_photo_disabled(self):
@@ -337,7 +337,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn("Archivo no disponible para envío", body)
         self.assertIn('value="photo-1"  disabled', body)
 
-    def test_dispatch_new_shows_available_approved_photo_selectable_and_excludes_unapproved(self):
+    def test_dispatch_new_shows_available_caption_photos_selectable_regardless_of_status(self):
         coverage_id = self.create_coverage()
         self.add_photo(
             coverage_id,
@@ -365,7 +365,20 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn("IMG001.jpg", body)
         self.assertIn('value="photo-approved"', body)
         self.assertNotIn('value="photo-approved"  disabled', body)
-        self.assertNotIn("IMG002.jpg", body)
+        self.assertIn("IMG002.jpg", body)
+        self.assertIn('value="photo-review"', body)
+        self.assertNotIn('value="photo-review"  disabled', body)
+        self.assertIn('/photos/photo-approved/media', body)
+
+    def test_safe_thumbnail_route_serves_only_photo_media_from_store(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        media_response = self.client.get(f"/coverages/{coverage_id}/photos/photo-1/media")
+        missing_response = self.client.get(f"/coverages/{coverage_id}/photos/missing/media")
+
+        self.assertEqual(media_response.status_code, 200)
+        self.assertEqual(missing_response.status_code, 404)
+        media_response.close()
 
     def test_uploaded_photo_survives_restart_and_dispatch_allows_selection(self):
         coverage_id = self.create_coverage()

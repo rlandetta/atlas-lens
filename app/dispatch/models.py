@@ -69,6 +69,7 @@ def validate_transition(current_status: str, next_status: str) -> None:
 
 def normalize_shipment(shipment: dict[str, Any]) -> dict[str, Any]:
     normalized = deepcopy(shipment)
+    normalized.setdefault("include_caption_docx", False)
     normalized.setdefault("scheduled_at", "")
     normalized.setdefault("timezone", DEFAULT_DISPATCH_TIMEZONE)
     normalized.setdefault("sent_at", "")
@@ -116,6 +117,7 @@ class ShipmentDraft:
     delivery_note: str = ""
     channel: str = "manual"
     export_reference: dict[str, Any] | None = None
+    include_caption_docx: bool = False
     status: str = "Borrador"
     scheduled_at: str = ""
     timezone: str = DEFAULT_DISPATCH_TIMEZONE
@@ -135,8 +137,8 @@ def build_shipment(
         raise DispatchValidationError("El despacho requiere nombre.")
     if not draft.coverage_id:
         raise DispatchValidationError("El despacho requiere cobertura.")
-    if not draft.photo_ids:
-        raise DispatchValidationError("Selecciona al menos una fotografía.")
+    if not draft.photo_ids and not draft.include_caption_docx:
+        raise DispatchValidationError("Seleccione al menos una fotografía o incluya el documento Word con captions.")
     status = validate_status(draft.status)
 
     shipment = {
@@ -144,6 +146,7 @@ def build_shipment(
         "name": name,
         "coverage_id": draft.coverage_id,
         "export_reference": deepcopy(draft.export_reference or {}),
+        "include_caption_docx": bool(draft.include_caption_docx),
         "photo_ids": [str(photo_id) for photo_id in draft.photo_ids],
         "photo_snapshots": normalize_photo_references(photo_snapshots),
         "coverage_snapshot": deepcopy(coverage_snapshot),

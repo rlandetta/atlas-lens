@@ -8,7 +8,7 @@ import tempfile
 import unicodedata
 from pathlib import Path
 
-from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
 
 from app.ai import AIError, AIService
 from app.ai.context_engine import get_coverage_context_data, normalize_context_payload
@@ -345,16 +345,20 @@ def find_coverage_photo(coverage: dict, photo_id: str) -> dict | None:
     )
 
 
-def is_photo_approved_for_dispatch_entry(photo: dict) -> bool:
+def is_photo_dispatch_eligible_entry(photo: dict) -> bool:
+    storage_path = str(photo.get("storage_path", "")).strip()
+    if coverage_store is not None and not coverage_store.is_stored_file_available(storage_path):
+        return False
     return (
-        photo.get("caption_status") == "Aprobado"
-        and bool(str(photo.get("caption_narrative", "")).strip())
+        bool(str(photo.get("caption_narrative", "")).strip())
+        and photo.get("available_on_disk", True) is not False
+        and bool(storage_path)
     )
 
 
 def has_dispatch_ready_caption(coverage: dict) -> bool:
     return any(
-        is_photo_approved_for_dispatch_entry(photo)
+        is_photo_dispatch_eligible_entry(photo)
         for photo in ensure_coverage_photos(coverage)
     )
 
@@ -666,6 +670,30 @@ def add_coverage_photo(coverage_id: str):
             coverage_store.delete_photo_file(photo.get("storage_path", ""))
         raise
     return jsonify({"photo": photo, "total": len(photos)}), 201
+
+
+@web_bp.get("/coverages/<coverage_id>/photos/<photo_id>/media")
+def coverage_photo_media(coverage_id: str, photo_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None or coverage_store is None:
+        abort(404)
+
+    photo = find_coverage_photo(coverage, photo_id)
+    if photo is None:
+        abort(404)
+
+    storage_path = str(photo.get("storage_path", "")).strip()
+    media_path = coverage_store.resolve_storage_path(storage_path)
+    if (
+        media_path is None
+        or not media_path.is_file()
+        or media_path.is_symlink()
+        or not coverage_store.is_stored_file_available(storage_path)
+    ):
+        abort(404)
+
+    mimetype = str(photo.get("type", "")).strip() or None
+    return send_file(media_path, mimetype=mimetype)
 
 
 @web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/caption")

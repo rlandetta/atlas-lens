@@ -55,16 +55,15 @@ class LensReadService:
             photo = approved_photos.get(str(photo_id))
             if photo is None:
                 original = self.get_photo(coverage_id, str(photo_id))
-                if original.get("caption_status") != "Aprobado":
-                    raise LensReadError("La fotografía no tiene caption aprobado.")
-                raise LensReadError("La fotografía aprobada no está disponible.")
+                if not str(original.get("caption_narrative", "")).strip():
+                    raise LensReadError("La fotografía no tiene caption.")
+                raise LensReadError("La fotografía con caption no está disponible.")
             selected.append(deepcopy(photo))
         return selected
 
     @staticmethod
     def is_photo_approved(photo: dict[str, Any]) -> bool:
         return (
-            photo.get("caption_status") == "Aprobado"
-            and bool(str(photo.get("caption_narrative", "")).strip())
+            bool(str(photo.get("caption_narrative", "")).strip())
             and photo.get("available_on_disk", True) is not False
         )

@@ -1105,7 +1105,7 @@ const generateNarrationWithAi = async (options = {}) => {
         setAiButtonState("Generando...", true);
         const payload = await requestAiNarration(photoId, options);
         await applyAiNarration(photoId, payload.narration);
-        setAiStatus("Narración generada. Revisa el texto antes de aprobar.");
+        setAiStatus("Narración generada. Revisa el texto antes de guardar.");
         setAiButtonState("Generar nuevamente");
     } catch (error) {
         setAiStatus("No fue posible generar la narración. Intenta nuevamente.", "error");

@@ -63,10 +63,11 @@ class ShipmentService:
         status: str = "Borrador",
         scheduled_at: str = "",
         timezone: str = "America/Guayaquil",
+        include_caption_docx: bool = False,
     ) -> dict:
         normalized_photo_ids = [str(photo_id) for photo_id in photo_ids if str(photo_id)]
-        if not normalized_photo_ids:
-            raise DispatchValidationError("Selecciona al menos una fotografía.")
+        if not normalized_photo_ids and not include_caption_docx:
+            raise DispatchValidationError("Seleccione al menos una fotografía o incluya el documento Word con captions.")
 
         try:
             coverage = self.lens_reader.get_coverage(coverage_id)
@@ -75,7 +76,7 @@ class ShipmentService:
             raise DispatchValidationError(str(error)) from error
 
         if len(photos) != len(normalized_photo_ids):
-            raise DispatchValidationError("No todas las fotografías seleccionadas están aprobadas.")
+            raise DispatchValidationError("No todas las fotografías seleccionadas tienen caption y archivo disponible.")
 
         draft = ShipmentDraft(
             name=name,
@@ -85,6 +86,7 @@ class ShipmentService:
             delivery_note=delivery_note,
             channel=channel,
             export_reference=deepcopy(export_reference or {}),
+            include_caption_docx=include_caption_docx,
             status=status,
             scheduled_at=scheduled_at,
             timezone=timezone,

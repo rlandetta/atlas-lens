@@ -84,8 +84,30 @@ class ShipmentServiceTest(unittest.TestCase):
         self.assertEqual(shipment["scheduled_at"], "")
         self.assertEqual(shipment["timezone"], "America/Guayaquil")
         self.assertEqual(shipment["attempt_count"], 0)
+        self.assertFalse(shipment["include_caption_docx"])
         self.assertNotIn("data_url", shipment["photo_snapshots"][0])
         self.assertEqual(self.service.get_shipment(shipment["id"])["id"], shipment["id"])
+
+    def test_create_shipment_with_caption_docx_only(self):
+        shipment = self.service.create_shipment(
+            name="Despacho Word",
+            coverage_id="cov-1",
+            photo_ids=[],
+            recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+            include_caption_docx=True,
+            export_reference={
+                "caption_docx": {
+                    "include": True,
+                    "format": "docx",
+                    "photo_scope": "all_eligible",
+                    "generator": "ExportService",
+                }
+            },
+        )
+
+        self.assertEqual(shipment["photo_ids"], [])
+        self.assertTrue(shipment["include_caption_docx"])
+        self.assertEqual(shipment["export_reference"]["caption_docx"]["generator"], "ExportService")
 
     def test_create_scheduled_shipment(self):
         shipment = self.service.create_shipment(
@@ -124,14 +146,15 @@ class ShipmentServiceTest(unittest.TestCase):
         with self.assertRaises(DispatchTransitionError):
             self.service.transition_status(shipment["id"], "Enviado")
 
-    def test_rejects_photo_without_approved_status(self):
-        with self.assertRaises(DispatchValidationError):
-            self.service.create_shipment(
-                name="Despacho",
-                coverage_id="cov-1",
-                photo_ids=["photo-review"],
-                recipients=[{"name": "Mesa", "email": "desk@example.com"}],
-            )
+    def test_accepts_caption_regardless_of_legacy_status(self):
+        shipment = self.service.create_shipment(
+            name="Despacho",
+            coverage_id="cov-1",
+            photo_ids=["photo-review"],
+            recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+        )
+
+        self.assertEqual(shipment["photo_ids"], ["photo-review"])
 
     def test_rejects_empty_caption(self):
         with self.assertRaises(DispatchValidationError):

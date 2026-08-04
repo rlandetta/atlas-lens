@@ -73,7 +73,7 @@ def is_photo_available_for_dispatch(photo: dict[str, Any]) -> bool:
     return coverage_store.is_stored_file_available(storage_path)
 
 
-def get_approved_photo_options(coverage_id: str) -> list[dict[str, str]]:
+def get_caption_photo_options(coverage_id: str) -> list[dict[str, str]]:
     if not coverage_id:
         return []
     try:
@@ -88,14 +88,21 @@ def get_approved_photo_options(coverage_id: str) -> list[dict[str, str]]:
         {
             "id": str(photo.get("id", "")),
             "name": str(photo.get("name", "") or photo.get("id", "")),
-            "available_on_disk": is_photo_available_for_dispatch(photo),
+            "caption_excerpt": str(photo.get("caption_narrative", "")).strip()[:140],
+            "has_caption": bool(str(photo.get("caption_narrative", "")).strip()),
+            "file_available": is_photo_available_for_dispatch(photo),
+            "available_on_disk": (
+                bool(str(photo.get("caption_narrative", "")).strip())
+                and is_photo_available_for_dispatch(photo)
+            ),
+            "thumbnail_url": url_for(
+                "web.coverage_photo_media",
+                coverage_id=coverage_id,
+                photo_id=str(photo.get("id", "")),
+            ) if is_photo_available_for_dispatch(photo) else "",
         }
         for photo in photos
-        if (
-            photo.get("id")
-            and photo.get("caption_status") == "Aprobado"
-            and str(photo.get("caption_narrative", "")).strip()
-        )
+        if photo.get("id")
     ]
 
 
@@ -107,7 +114,10 @@ def parse_recipients(raw_recipients: str) -> list[dict[str, str]]:
     recipients = []
     for line in lines:
         if "|" not in line:
-            raise DispatchValidationError("Cada destinatario debe usar el formato Nombre | correo@dominio.com.")
+            raise DispatchValidationError(
+                "Cada destinatario debe usar el formato Nombre | correo@dominio.com. "
+                "Ejemplo: Mesa Xinhua | desk@xinhua.com"
+            )
         name, email = [part.strip() for part in line.split("|", 1)]
         if not name or not email:
             raise DispatchValidationError("Cada destinatario debe incluir nombre y correo electrónico.")
@@ -168,6 +178,17 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
     )
     if requested_coverage_id and selected_coverage and not form_data.get("name"):
         form_data["name"] = selected_coverage["name"]
+    if "include_caption_docx" not in form_data:
+        form_data["include_caption_docx"] = True
+    photo_options = get_caption_photo_options(selected_coverage_id)
+    eligible_photo_ids = {
+        photo["id"]
+        for photo in photo_options
+        if photo["available_on_disk"]
+    }
+    selected_photo_ids = set(form_data.get("photo_ids", []))
+    if request.method == "GET" and not selected_photo_ids:
+        selected_photo_ids = set(eligible_photo_ids)
     return {
         "channel_options": CHANNEL_OPTIONS,
         "coverage_options": coverage_options,
@@ -175,9 +196,14 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
         "timezone_options": TIMEZONE_OPTIONS,
         "errors": context_errors,
         "form_data": form_data,
-        "photo_options": get_approved_photo_options(selected_coverage_id),
+        "photo_options": photo_options,
         "selected_coverage": selected_coverage,
-        "selected_photo_ids": set(form_data.get("photo_ids", [])),
+        "selected_photo_ids": selected_photo_ids,
+        "docx_includes_all_captions": bool(
+            form_data.get("include_caption_docx")
+            and not selected_photo_ids
+            and eligible_photo_ids
+        ),
     }
 
 
@@ -206,6 +232,7 @@ def new() -> str:
         "scheduled_date": request.form.get("scheduled_date", "").strip(),
         "scheduled_time": request.form.get("scheduled_time", "").strip(),
         "timezone": request.form.get("timezone", DEFAULT_TIMEZONE).strip() or DEFAULT_TIMEZONE,
+        "include_caption_docx": "include_caption_docx" in request.form,
     }
 
     errors = []
@@ -222,17 +249,17 @@ def new() -> str:
         errors.append("El nombre del despacho es obligatorio.")
     if not form_data["coverage_id"]:
         errors.append("Selecciona una cobertura.")
-    if not form_data["photo_ids"]:
-        errors.append("Selecciona al menos una fotografía.")
-    else:
-        approved_photo_options = get_approved_photo_options(form_data["coverage_id"])
+    if not form_data["photo_ids"] and not form_data["include_caption_docx"]:
+        errors.append("Seleccione al menos una fotografía o incluya el documento Word con captions.")
+    if form_data["photo_ids"]:
+        approved_photo_options = get_caption_photo_options(form_data["coverage_id"])
         unavailable_photo_ids = {
             photo["id"]
             for photo in approved_photo_options
             if not photo["available_on_disk"]
         }
         if any(photo_id in unavailable_photo_ids for photo_id in form_data["photo_ids"]):
-            errors.append("Selecciona únicamente fotografías aprobadas con archivo disponible para envío.")
+            errors.append("Selecciona únicamente fotografías con caption y archivo disponible para envío.")
     if form_data["channel"] not in CHANNEL_OPTIONS:
         errors.append("Selecciona un canal válido.")
     try:
@@ -261,9 +288,18 @@ def new() -> str:
             recipients=recipients,
             delivery_note=form_data["delivery_note"],
             channel=form_data["channel"],
+            export_reference={
+                "caption_docx": {
+                    "include": bool(form_data["include_caption_docx"]),
+                    "format": "docx",
+                    "photo_scope": "selected" if form_data["photo_ids"] else "all_eligible",
+                    "generator": "ExportService",
+                }
+            },
             status=status,
             scheduled_at=scheduled_at,
             timezone=timezone_name,
+            include_caption_docx=bool(form_data["include_caption_docx"]),
         )
     except DispatchValidationError as error:
         return render_template(
