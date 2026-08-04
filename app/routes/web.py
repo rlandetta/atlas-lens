@@ -7,6 +7,7 @@ import re
 import tempfile
 import unicodedata
 from pathlib import Path
+from copy import deepcopy
 
 from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, send_file, url_for
 
@@ -171,6 +172,14 @@ def attach_editor_metadata(form_data: dict) -> dict:
     form_data["editor_name"] = editor_name
     form_data["editor_initials"] = build_editor_initials(editor_name)
     return form_data
+
+
+def apply_coverage_edit_fields(coverage: dict, form_data: dict[str, str]) -> dict:
+    updated = deepcopy(coverage)
+    for field in REQUIRED_COVERAGE_FIELDS:
+        updated[field] = form_data[field]
+    attach_editor_metadata(updated)
+    return updated
 
 
 def attach_default_ai_context(coverage: dict) -> dict:
@@ -363,6 +372,39 @@ def has_dispatch_ready_caption(coverage: dict) -> bool:
     )
 
 
+def get_dispatch_eligible_photo_count(coverage: dict) -> int:
+    return sum(
+        1
+        for photo in ensure_coverage_photos(coverage)
+        if is_photo_dispatch_eligible_entry(photo)
+    )
+
+
+def build_dispatch_state(coverage: dict) -> dict:
+    eligible_photo_count = get_dispatch_eligible_photo_count(coverage)
+    return {
+        "eligible_photo_count": eligible_photo_count,
+        "can_create_dispatch": eligible_photo_count > 0,
+    }
+
+
+def serialize_photos_for_detail(coverage_id: str, photos: list[dict]) -> list[dict]:
+    serialized = []
+    for photo in photos:
+        item = deepcopy(photo)
+        storage_path = str(photo.get("storage_path", "")).strip()
+        if coverage_store is not None and coverage_store.is_stored_file_available(storage_path):
+            item["media_url"] = url_for(
+                "web.coverage_photo_media",
+                coverage_id=coverage_id,
+                photo_id=str(photo.get("id", "")),
+            )
+        else:
+            item["media_url"] = ""
+        serialized.append(item)
+    return serialized
+
+
 def ai_disabled_response():
     return jsonify({
         "ok": False,
@@ -451,14 +493,16 @@ def build_export_history(coverage: dict) -> list[dict]:
 def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
     photos = ensure_coverage_photos(coverage)
     attach_default_ai_context(coverage)
+    dispatch_state = build_dispatch_state(coverage)
     return {
         "coverage_id": coverage_id,
         "coverage": coverage,
         "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
-        "photos": photos,
+        "photos": serialize_photos_for_detail(coverage_id, photos),
         "export_history": build_export_history(coverage),
         "export_default_name": ExportNamingService().build_names(coverage).base_name,
-        "can_create_dispatch": has_dispatch_ready_caption(coverage),
+        "can_create_dispatch": dispatch_state["can_create_dispatch"],
+        "dispatch_eligible_photo_count": dispatch_state["eligible_photo_count"],
         "country_groups": COUNTRY_GROUPS,
         "suggestions": get_all_suggestions(),
         "ai_enabled": AI_ENABLED,
@@ -541,25 +585,28 @@ def edit_coverage(coverage_id: str) -> str:
     error_message = validate_coverage_data(form_data)
 
     if error_message:
-        form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
-        form_data["ai_context"] = get_coverage_context_data(coverages[coverage_id])
-        attach_editor_metadata(form_data)
+        preview_coverage = apply_coverage_edit_fields(coverages[coverage_id], form_data)
         return render_template(
             "coverage_detail.html",
             **build_detail_context(
                 coverage_id,
-                form_data,
+                preview_coverage,
                 edit_error=error_message,
                 open_edit_dialog=True,
             ),
         )
 
-    form_data["photos"] = ensure_coverage_photos(coverages[coverage_id])
-    form_data["ai_context"] = get_coverage_context_data(coverages[coverage_id])
-    attach_editor_metadata(form_data)
     remember_coverage_values(form_data)
-    coverages[coverage_id] = form_data
-    persist_coverage(coverage_id)
+    if coverage_store is not None:
+        updated = coverage_store.mutate(
+            coverage_id,
+            lambda current: apply_coverage_edit_fields(current, form_data),
+        )
+        if updated is None:
+            abort(404)
+        coverages[coverage_id] = updated
+    else:
+        coverages[coverage_id] = apply_coverage_edit_fields(coverages[coverage_id], form_data)
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 
@@ -703,27 +750,39 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
         abort(404)
 
     payload = request.get_json(silent=True) or {}
-    photos = ensure_coverage_photos(coverage)
-    photo = next(
-        (
-            existing_photo
-            for existing_photo in photos
-            if existing_photo.get("id") == photo_id
-        ),
-        None,
-    )
+    caption_narrative = str(payload.get("caption_narrative", ""))
+    caption_status = normalize_caption_status(str(payload.get("caption_status", "Sin editar")))
 
-    if photo is None:
+    def update_caption(current_coverage: dict) -> dict:
+        photo = find_coverage_photo(current_coverage, photo_id)
+        if photo is None:
+            raise KeyError(photo_id)
+        photo["caption_narrative"] = caption_narrative
+        photo["caption_status"] = caption_status
+        photo["updated_at"] = utc_now_iso()
+        return current_coverage
+
+    try:
+        if coverage_store is not None:
+            updated_coverage = coverage_store.mutate(coverage_id, update_caption)
+            if updated_coverage is None:
+                abort(404)
+            coverages[coverage_id] = updated_coverage
+            coverage = updated_coverage
+        else:
+            update_caption(coverage)
+    except KeyError:
         abort(404)
 
-    photo["caption_narrative"] = str(payload.get("caption_narrative", ""))
-    photo["caption_status"] = normalize_caption_status(str(payload.get("caption_status", "Sin editar")))
-    photo["updated_at"] = utc_now_iso()
-    persist_coverage(coverage_id)
+    photo = find_coverage_photo(coverage, photo_id)
+    dispatch_state = build_dispatch_state(coverage)
     return jsonify({
+        "saved": True,
         "photo_id": photo_id,
         "caption_narrative": photo["caption_narrative"],
         "caption_status": photo["caption_status"],
+        "eligible_photo_count": dispatch_state["eligible_photo_count"],
+        "can_create_dispatch": dispatch_state["can_create_dispatch"],
     })
 
 

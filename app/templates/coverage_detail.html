@@ -8,17 +8,12 @@
     <div class="coverage-header-top">
         <p class="coverage-id">ID temporal: {{ coverage_id }}</p>
         <div class="photo-toolbar-actions">
-            {% if can_create_dispatch %}
-            <a href="{{ url_for('dispatch.new', coverage_id=coverage_id) }}" class="primary-button compact-action">Crear despacho</a>
-            {% else %}
-            <button type="button" class="secondary-button compact-action" disabled>Crear despacho</button>
-            {% endif %}
+            <a id="create-dispatch-link" href="{{ url_for('dispatch.new', coverage_id=coverage_id) }}" class="primary-button compact-action" {% if not can_create_dispatch %}hidden{% endif %}>Crear despacho</a>
+            <button id="create-dispatch-disabled-button" type="button" class="secondary-button compact-action" disabled {% if can_create_dispatch %}hidden{% endif %}>Crear despacho</button>
             <button id="open-edit-dialog-button" type="button" class="secondary-button edit-information-button">Editar información</button>
         </div>
     </div>
-    {% if not can_create_dispatch %}
-    <p class="subtitle">Agregue un caption a por lo menos una fotografía para crear el despacho.</p>
-    {% endif %}
+    <p id="create-dispatch-message" class="subtitle" {% if can_create_dispatch %}hidden{% endif %}>Agregue un caption a por lo menos una fotografía para crear el despacho.</p>
     <h1 class="editorial-title">{{ title }}</h1>
     <dl class="coverage-meta-grid">
         <div>

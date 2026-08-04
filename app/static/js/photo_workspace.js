@@ -62,6 +62,9 @@ const copyCaptionConfirmDialog = document.getElementById("copy-caption-confirm-d
 const copyCaptionConfirmMessage = document.getElementById("copy-caption-confirm-message");
 const cancelCopyCaptionButton = document.getElementById("cancel-copy-caption-button");
 const confirmCopyCaptionButton = document.getElementById("confirm-copy-caption-button");
+const createDispatchLink = document.getElementById("create-dispatch-link");
+const createDispatchDisabledButton = document.getElementById("create-dispatch-disabled-button");
+const createDispatchMessage = document.getElementById("create-dispatch-message");
 
 const selectedPhotos = [];
 const captionStatusOptions = ["Sin editar", "En edición", "Revisado", "Aprobado"];
@@ -114,11 +117,11 @@ const formatSize = (bytes) => {
 };
 
 const getPhotoThumbnailSource = (photo) => (
-    photo.thumbnailDataUrl || photo.objectUrl || photo.dataUrl || ""
+    photo.thumbnailDataUrl || photo.objectUrl || photo.dataUrl || photo.mediaUrl || ""
 );
 
 const getPhotoPreviewSource = (photo) => (
-    photo.objectUrl || photo.dataUrl || photo.thumbnailDataUrl || ""
+    photo.objectUrl || photo.dataUrl || photo.thumbnailDataUrl || photo.mediaUrl || ""
 );
 
 const getActivePhoto = () => (
@@ -255,7 +258,8 @@ const normalizeInitialPhoto = (photo) => ({
     width: photo.width || null,
     height: photo.height || null,
     dataUrl: photo.data_url || photo.dataUrl || "",
-    thumbnailDataUrl: photo.thumbnail_data_url || photo.thumbnailDataUrl || photo.data_url || photo.dataUrl || "",
+    thumbnailDataUrl: photo.thumbnail_data_url || photo.thumbnailDataUrl || photo.data_url || photo.dataUrl || photo.media_url || photo.mediaUrl || "",
+    mediaUrl: photo.media_url || photo.mediaUrl || "",
     objectUrl: null,
     lastModified: photo.lastModified || null,
     sourceFile: null,
@@ -356,6 +360,23 @@ const persistPhotoCaption = async (photoId, record, keepalive = false) => {
     }
 
     return response.json();
+};
+
+const updateDispatchEntryState = (payload) => {
+    if (!payload || typeof payload.can_create_dispatch === "undefined") {
+        return;
+    }
+
+    const canCreateDispatch = Boolean(payload.can_create_dispatch);
+    if (createDispatchLink) {
+        createDispatchLink.hidden = !canCreateDispatch;
+    }
+    if (createDispatchDisabledButton) {
+        createDispatchDisabledButton.hidden = canCreateDispatch;
+    }
+    if (createDispatchMessage) {
+        createDispatchMessage.hidden = canCreateDispatch;
+    }
 };
 
 const copyCaptionToEmptyPhotos = async (sourcePhotoId, record) => {
@@ -935,8 +956,9 @@ const autosaveCaption = async (photoId = activePhotoId) => {
         setSaveStatus("saving");
     }
 
+    let payload = null;
     try {
-        await persistPhotoCaption(photoId, record);
+        payload = await persistPhotoCaption(photoId, record);
     } catch (error) {
         if (photoId === activePhotoId) {
             setSaveStatus("dirty");
@@ -956,6 +978,7 @@ const autosaveCaption = async (photoId = activePhotoId) => {
     if (photoId === activePhotoId) {
         setSaveStatus("saved");
     }
+    updateDispatchEntryState(payload);
 };
 
 const updateCaptionTextCounters = () => {
@@ -1183,6 +1206,13 @@ const showSkeletonCards = (count) => {
     photoGrid.appendChild(fragment);
 };
 
+const createPhotoThumbnailError = () => {
+    const errorPlaceholder = document.createElement("span");
+    errorPlaceholder.className = "photo-grid-placeholder";
+    errorPlaceholder.textContent = "No se pudo cargar la miniatura";
+    return errorPlaceholder;
+};
+
 const createPhotoCard = (item) => {
     const card = document.createElement("article");
     const isActive = item.id === activePhotoId;
@@ -1213,8 +1243,11 @@ const createPhotoCard = (item) => {
         thumbnail.src = thumbnailSource;
         thumbnail.alt = `Miniatura de ${item.name}`;
         thumbnail.loading = "lazy";
+        thumbnail.addEventListener("error", () => {
+            thumbnail.replaceWith(createPhotoThumbnailError());
+        }, { once: true });
     } else {
-        thumbnail.textContent = "Preparando miniatura";
+        thumbnail.textContent = item.processingError || "Miniatura no disponible";
     }
 
     const status = document.createElement("span");

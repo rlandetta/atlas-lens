@@ -52,6 +52,24 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         return response.headers["Location"].rsplit("/", 1)[-1]
 
+    def edit_coverage(self, coverage_id, **overrides):
+        data = {
+            "coverage_name": "Cobertura Persistida Editada",
+            "submit_date": "2026-08-04",
+            "event_date": "2026-08-04",
+            "city": "Guayaquil",
+            "country": "Ecuador",
+            "agency": "AFP",
+            "photographer": "Nuevo Fotógrafo",
+            "editor": "ab",
+        }
+        data.update(overrides)
+        return self.client.post(
+            f"/coverages/{coverage_id}/edit",
+            data=data,
+            follow_redirects=False,
+        )
+
     def add_photo(self, coverage_id, **overrides):
         content = overrides.pop("content", self.jpeg_bytes)
         mime_type = overrides.get("type", "image/jpeg")
@@ -158,6 +176,76 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(photo["caption_narrative"], "Caption aprobado.")
         self.assertEqual(photo["caption_status"], "Aprobado")
 
+    def test_empty_caption_keeps_dispatch_button_disabled(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.get(f"/coverages/{coverage_id}")
+        body = response.get_data(as_text=True)
+
+        self.assertIn('id="create-dispatch-link"', body)
+        self.assertIn('id="create-dispatch-disabled-button"', body)
+        self.assertIn("Agregue un caption a por lo menos una fotografía para crear el despacho.", body)
+        self.assertIn('id="create-dispatch-link" href=', body)
+        self.assertIn("hidden>Crear despacho</a>", body)
+
+    def test_saving_first_eligible_caption_reports_dispatch_enabled(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption listo.",
+                "caption_status": "Sin editar",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["saved"])
+        self.assertEqual(payload["eligible_photo_count"], 1)
+        self.assertTrue(payload["can_create_dispatch"])
+
+    def test_clearing_last_eligible_caption_reports_dispatch_disabled(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption listo.",
+                "caption_status": "Aprobado",
+            },
+        )
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "",
+                "caption_status": "Aprobado",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["eligible_photo_count"], 0)
+        self.assertFalse(payload["can_create_dispatch"])
+
+    def test_caption_status_does_not_affect_dispatch_eligibility(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption listo.",
+                "caption_status": "Sin editar",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["can_create_dispatch"])
+
     def test_copy_caption_persists(self):
         coverage_id = self.create_coverage()
         self.add_photo(coverage_id, id="photo-source", name="IMG001.jpg")
@@ -209,6 +297,115 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
         self.assertEqual(stored["export_history"][0]["format"], "HTML")
+
+    def test_edit_coverage_preserves_photos_storage_caption_history_and_ai_context(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption conservado.",
+                "caption_status": "Sin editar",
+            },
+        )
+        web.coverages[coverage_id]["export_history"] = [{"format": "DOCX", "created_at": "2026-08-04T00:00:00+00:00"}]
+        web.coverages[coverage_id]["ai_context"] = {"notes": "Contexto interno"}
+        web.persist_coverage(coverage_id)
+        before = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        before_photo = before["photos"][0]
+
+        response = self.edit_coverage(coverage_id)
+
+        self.assertEqual(response.status_code, 302)
+        stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        photo = stored["photos"][0]
+        self.assertEqual(stored["agency"], "AFP")
+        self.assertEqual(stored["photographer"], "Nuevo Fotógrafo")
+        self.assertEqual(stored["editor"], "ab")
+        self.assertEqual(photo["id"], before_photo["id"])
+        self.assertEqual(photo["storage_path"], before_photo["storage_path"])
+        self.assertEqual(photo["available_on_disk"], before_photo["available_on_disk"])
+        self.assertEqual(photo["caption_narrative"], "Caption conservado.")
+        self.assertEqual(stored["export_history"], before["export_history"])
+        self.assertEqual(stored["ai_context"], before["ai_context"])
+
+    def test_thumbnail_still_responds_after_edit_coverage(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        before = self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"][0]["storage_path"]
+
+        self.edit_coverage(coverage_id)
+        response = self.client.get(f"/coverages/{coverage_id}/photos/photo-1/media")
+        after = self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"][0]["storage_path"]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(after, before)
+        response.close()
+
+    def test_two_consecutive_caption_autosaves_keep_latest_values(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption uno.",
+                "caption_status": "Sin editar",
+            },
+        )
+        response = self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption dos.",
+                "caption_status": "Revisado",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        photo = self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"][0]
+        self.assertEqual(photo["caption_narrative"], "Caption dos.")
+        self.assertEqual(photo["caption_status"], "Revisado")
+
+    def test_caption_autosave_and_near_edit_do_not_overwrite_each_other(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        caption_response = self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption simultáneo.",
+                "caption_status": "Sin editar",
+            },
+        )
+        edit_response = self.edit_coverage(coverage_id, agency="Reuters")
+
+        self.assertEqual(caption_response.status_code, 200)
+        self.assertEqual(edit_response.status_code, 302)
+        stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertEqual(stored["agency"], "Reuters")
+        self.assertEqual(stored["photos"][0]["caption_narrative"], "Caption simultáneo.")
+
+    def test_restart_reload_keeps_dispatch_button_and_images_consistent(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption persistido.",
+                "caption_status": "Sin editar",
+            },
+        )
+
+        reloaded = create_app()
+        reloaded.config.update(TESTING=True)
+        client = reloaded.test_client()
+        body = client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+        media_response = client.get(f"/coverages/{coverage_id}/photos/photo-1/media")
+
+        self.assertIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
+        self.assertIn("/photos/photo-1/media", body)
+        self.assertEqual(media_response.status_code, 200)
+        media_response.close()
 
     def test_delete_coverage_persists(self):
         coverage_id = self.create_coverage()
@@ -308,7 +505,9 @@ class LensPersistenceRoutesTest(unittest.TestCase):
 
         self.assertIn("Crear despacho", body)
         self.assertIn("Agregue un caption a por lo menos una fotografía para crear el despacho.", body)
-        self.assertNotIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
+        self.assertIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
+        self.assertIn('id="create-dispatch-link"', body)
+        self.assertIn("hidden>Crear despacho</a>", body)
 
     def test_dispatch_new_shows_unavailable_approved_photo_disabled(self):
         coverage_id = self.create_coverage()
