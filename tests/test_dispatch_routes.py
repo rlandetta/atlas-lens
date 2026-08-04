@@ -92,6 +92,11 @@ class DispatchRoutesTest(unittest.TestCase):
             channel="manual",
         )
 
+    def save_shipment_changes(self, shipment, **updates):
+        next_shipment = copy.deepcopy(shipment)
+        next_shipment.update(updates)
+        return self.shipment_service.store.update(next_shipment["id"], next_shipment)
+
     def create_docx_shipment_from_route(self, **overrides):
         response = self.post_new(**overrides)
         self.assertEqual(response.status_code, 302)
@@ -398,6 +403,104 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertNotIn("Sin errores", body)
         self.assertNotIn("+00:00", body)
         self.assertNotIn("T18:", body)
+
+    def test_dispatch_detail_draft_operational_summary(self):
+        shipment = self.create_docx_shipment_from_route()
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Este despacho aún no está programado.", body)
+        self.assertIn("Se entregará a 1 destinatario e incluye 1 fotografía y un documento Word con captions.", body)
+
+    def test_dispatch_detail_programmed_operational_summary(self):
+        shipment = self.create_docx_shipment_from_route(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn(
+            "Este despacho se enviará el 4 de agosto de 2099 a las 09:45 "
+            "a Mesa Xinhua &lt;desk@xinhua.com&gt;. Incluye 1 fotografía y un documento Word con captions.",
+            body,
+        )
+
+    def test_dispatch_detail_sent_operational_summary_uses_sent_at(self):
+        shipment = self.create_docx_shipment_from_route()
+        shipment = self.save_shipment_changes(
+            shipment,
+            status="Enviado",
+            sent_at="2026-08-05T14:45:00+00:00",
+        )
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn(
+            "Este despacho fue enviado el 5 de agosto de 2026 a las 09:45 "
+            "a Mesa Xinhua &lt;desk@xinhua.com&gt;.",
+            body,
+        )
+
+    def test_dispatch_detail_error_operational_summary_with_secondary_error(self):
+        shipment = self.create_docx_shipment_from_route(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+        shipment = self.save_shipment_changes(
+            shipment,
+            status="Error",
+            last_error="SMTP no configurado.",
+        )
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("El envío programado para el 4 de agosto de 2099 a las 09:45 no pudo completarse.", body)
+        self.assertIn("<small>SMTP no configurado.</small>", body)
+
+    def test_dispatch_detail_cancelled_operational_summary(self):
+        shipment = self.create_docx_shipment_from_route(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+        shipment = self.save_shipment_changes(shipment, status="Cancelado")
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("El envío programado para el 4 de agosto de 2099 a las 09:45 fue cancelado.", body)
+
+    def test_dispatch_detail_recipient_summary_for_multiple_recipients(self):
+        shipment = self.create_docx_shipment_from_route()
+        shipment = self.save_shipment_changes(
+            shipment,
+            status="Enviando",
+            recipients=[
+                {"name": "Ricardo Landetta", "email": "rlandetta@gmail.com"},
+                {"name": "", "email": "desk@xinhua.com"},
+                {"name": "AFP Photo Desk", "email": "photo@afp.com"},
+            ],
+        )
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn(
+            "Este despacho está siendo enviado a Ricardo Landetta &lt;rlandetta@gmail.com&gt;, "
+            "desk@xinhua.com y 1 más.",
+            body,
+        )
+        self.assertNotIn("[{", body)
+        self.assertNotIn("{&#39;", body)
+
+    def test_dispatch_detail_excludes_docx_text_when_not_included(self):
+        shipment = self.create_shipment()
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Se entregará a 1 destinatario e incluye 1 fotografía.", body)
+        self.assertNotIn("1 fotografía y un documento Word con captions.", body)
 
     def test_dispatch_detail_presents_docx_humanly(self):
         shipment = self.create_docx_shipment_from_route()

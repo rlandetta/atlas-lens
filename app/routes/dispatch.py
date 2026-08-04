@@ -82,6 +82,13 @@ def format_datetime_es(value: str, timezone_name: str = DEFAULT_TIMEZONE) -> str
     return f"{local.day} de {SPANISH_MONTHS[local.month]} de {local.year}, {local:%H:%M}"
 
 
+def split_formatted_datetime(value: str) -> dict[str, str]:
+    if not value:
+        return {"date": "", "time": ""}
+    date_part, _, time_part = value.partition(", ")
+    return {"date": date_part, "time": time_part}
+
+
 def truncate_text(value: str, limit: int = 170) -> str:
     text = " ".join(str(value or "").split())
     if len(text) <= limit:
@@ -235,6 +242,97 @@ def build_content_summary(shipment: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def format_recipient(recipient: dict[str, Any]) -> str:
+    name = str(recipient.get("name", "")).strip()
+    email = str(recipient.get("email", "")).strip()
+    if name and email:
+        return f"{name} <{email}>"
+    return name or email or "Destinatario sin datos"
+
+
+def summarize_recipients(recipients: list[dict[str, Any]]) -> str:
+    if not recipients:
+        return "sin destinatarios"
+    formatted = [
+        format_recipient(recipient)
+        for recipient in recipients
+        if isinstance(recipient, dict)
+    ]
+    if not formatted:
+        return "sin destinatarios"
+    if len(formatted) == 1:
+        return formatted[0]
+    if len(formatted) == 2:
+        return f"{formatted[0]} y {formatted[1]}"
+    return f"{formatted[0]}, {formatted[1]} y {len(formatted) - 2} más"
+
+
+def pluralize(value: int, singular: str, plural: str) -> str:
+    return singular if value == 1 else plural
+
+
+def build_operational_summary(
+    shipment: dict[str, Any],
+    content_summary: dict[str, Any],
+    formatted: dict[str, str],
+) -> dict[str, str]:
+    status = str(shipment.get("status", ""))
+    recipients = [
+        recipient
+        for recipient in shipment.get("recipients", [])
+        if isinstance(recipient, dict)
+    ]
+    recipient_count = len(recipients)
+    photo_count = int(content_summary.get("photo_count", 0) or 0)
+    docx_text = (
+        " y un documento Word con captions"
+        if content_summary.get("docx_included")
+        else ""
+    )
+    scheduled = split_formatted_datetime(formatted.get("scheduled_at", ""))
+    sent = split_formatted_datetime(formatted.get("sent_at", ""))
+    recipient_summary = summarize_recipients(recipients)
+    recipient_label = pluralize(recipient_count, "destinatario", "destinatarios")
+    photo_label = pluralize(photo_count, "fotografía", "fotografías")
+
+    text = (
+        f"Este despacho está en estado {status or 'sin estado'}."
+    )
+    if status == "Borrador":
+        text = (
+            "Este despacho aún no está programado. "
+            f"Se entregará a {recipient_count} {recipient_label} e incluye "
+            f"{photo_count} {photo_label}{docx_text}."
+        )
+    elif status == "Programado":
+        text = (
+            f"Este despacho se enviará el {scheduled['date']} a las {scheduled['time']} "
+            f"a {recipient_summary}. Incluye {photo_count} {photo_label}{docx_text}."
+        )
+    elif status == "Enviando":
+        text = f"Este despacho está siendo enviado a {recipient_summary}."
+    elif status == "Enviado":
+        text = (
+            f"Este despacho fue enviado el {sent['date']} a las {sent['time']} "
+            f"a {recipient_summary}."
+        )
+    elif status == "Error":
+        text = (
+            f"El envío programado para el {scheduled['date']} a las {scheduled['time']} "
+            "no pudo completarse."
+        )
+    elif status == "Cancelado":
+        text = (
+            f"El envío programado para el {scheduled['date']} a las {scheduled['time']} "
+            "fue cancelado."
+        )
+
+    return {
+        "text": text,
+        "secondary": str(shipment.get("last_error", "")).strip() if status == "Error" else "",
+    }
+
+
 def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
     timezone_name = str(shipment.get("timezone") or DEFAULT_TIMEZONE)
     formatted_history = []
@@ -246,17 +344,20 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
             "note": str(item.get("note", "")),
             "created_at": format_datetime_es(str(item.get("created_at", "")), timezone_name),
         })
+    content_summary = build_content_summary(shipment)
+    formatted = {
+        "created_at": format_datetime_es(str(shipment.get("created_at", "")), timezone_name),
+        "updated_at": format_datetime_es(str(shipment.get("updated_at", "")), timezone_name),
+        "scheduled_at": format_datetime_es(str(shipment.get("scheduled_at", "")), timezone_name),
+        "sent_at": format_datetime_es(str(shipment.get("sent_at", "")), timezone_name),
+        "last_attempt_at": format_datetime_es(str(shipment.get("last_attempt_at", "")), timezone_name),
+    }
     return {
         "shipment": shipment,
-        "content_summary": build_content_summary(shipment),
+        "content_summary": content_summary,
         "detail_photos": build_photo_detail_items(shipment),
-        "formatted": {
-            "created_at": format_datetime_es(str(shipment.get("created_at", "")), timezone_name),
-            "updated_at": format_datetime_es(str(shipment.get("updated_at", "")), timezone_name),
-            "scheduled_at": format_datetime_es(str(shipment.get("scheduled_at", "")), timezone_name),
-            "sent_at": format_datetime_es(str(shipment.get("sent_at", "")), timezone_name),
-            "last_attempt_at": format_datetime_es(str(shipment.get("last_attempt_at", "")), timezone_name),
-        },
+        "formatted": formatted,
+        "operational_summary": build_operational_summary(shipment, content_summary, formatted),
         "history_items": formatted_history,
     }
 

@@ -13,6 +13,16 @@
     <span class="dispatch-status-badge">{{ shipment.status }}</span>
 </section>
 
+<aside class="dispatch-operational-summary" aria-label="Resumen operativo de entrega">
+    <span class="dispatch-operational-badge">{{ shipment.status }}</span>
+    <div>
+        <p>{{ operational_summary.text }}</p>
+        {% if operational_summary.secondary %}
+        <small>{{ operational_summary.secondary }}</small>
+        {% endif %}
+    </div>
+</aside>
+
 <div class="dispatch-detail-grid">
     <section class="ui-card" aria-labelledby="dispatch-general-title">
         <h2 id="dispatch-general-title">Información general</h2>
