@@ -36,6 +36,39 @@
             </div>
         </div>
 
+        <section class="ui-card" aria-labelledby="dispatch-new-schedule-title">
+            <h2 id="dispatch-new-schedule-title">Programación</h2>
+            <fieldset>
+                <legend>Modo</legend>
+                <label>
+                    <input type="radio" name="mode" value="draft" {% if (form_data.mode or "draft") == "draft" %}checked{% endif %}>
+                    Guardar como borrador
+                </label>
+                <label>
+                    <input type="radio" name="mode" value="schedule" {% if form_data.mode == "schedule" %}checked{% endif %}>
+                    Programar envío
+                </label>
+            </fieldset>
+            <div class="coverage-form-grid">
+                <div class="form-field">
+                    <label for="scheduled_date">Fecha de envío</label>
+                    <input id="scheduled_date" name="scheduled_date" type="date" value="{{ form_data.scheduled_date or '' }}">
+                </div>
+                <div class="form-field">
+                    <label for="scheduled_time">Hora de envío</label>
+                    <input id="scheduled_time" name="scheduled_time" type="time" value="{{ form_data.scheduled_time or '' }}">
+                </div>
+                <div class="form-field">
+                    <label for="timezone">Zona horaria</label>
+                    <select id="timezone" name="timezone">
+                        {% for timezone in timezone_options %}
+                        <option value="{{ timezone }}" {% if (form_data.timezone or "America/Guayaquil") == timezone %}selected{% endif %}>{{ timezone }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </section>
+
         <section class="ui-card" aria-labelledby="dispatch-new-coverage-title">
             <h2 id="dispatch-new-coverage-title">Cobertura</h2>
             {% if coverage_locked and selected_coverage %}

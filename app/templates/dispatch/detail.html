@@ -38,6 +38,30 @@
             <dt>Destinatarios</dt>
             <dd>{{ shipment.recipients | length }}</dd>
         </div>
+        <div>
+            <dt>Programado para</dt>
+            <dd>{{ shipment.scheduled_at or "No programado" }}</dd>
+        </div>
+        <div>
+            <dt>Zona horaria</dt>
+            <dd>{{ shipment.timezone or "America/Guayaquil" }}</dd>
+        </div>
+        <div>
+            <dt>Intentos</dt>
+            <dd>{{ shipment.attempt_count or 0 }}</dd>
+        </div>
+        <div>
+            <dt>Último intento</dt>
+            <dd>{{ shipment.last_attempt_at or "Sin intentos" }}</dd>
+        </div>
+        <div>
+            <dt>Enviado</dt>
+            <dd>{{ shipment.sent_at or "No enviado" }}</dd>
+        </div>
+        <div>
+            <dt>Último error</dt>
+            <dd>{{ shipment.last_error or "Sin errores" }}</dd>
+        </div>
     </dl>
 </section>
 

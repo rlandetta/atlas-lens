@@ -60,6 +60,9 @@ class ShipmentService:
         delivery_note: str = "",
         channel: str = "manual",
         export_reference: dict | None = None,
+        status: str = "Borrador",
+        scheduled_at: str = "",
+        timezone: str = "America/Guayaquil",
     ) -> dict:
         normalized_photo_ids = [str(photo_id) for photo_id in photo_ids if str(photo_id)]
         if not normalized_photo_ids:
@@ -82,6 +85,9 @@ class ShipmentService:
             delivery_note=delivery_note,
             channel=channel,
             export_reference=deepcopy(export_reference or {}),
+            status=status,
+            scheduled_at=scheduled_at,
+            timezone=timezone,
         )
         shipment = build_shipment(
             shipment_id=self.build_shipment_id(),

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime
 from typing import Mapping, Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
@@ -10,6 +12,9 @@ from app.dispatch import DispatchValidationError
 dispatch_bp = Blueprint("dispatch", __name__, url_prefix="/dispatch")
 
 CHANNEL_OPTIONS = ("Manual", "Correo", "FTP", "SFTP", "API")
+DEFAULT_TIMEZONE = "America/Guayaquil"
+TIMEZONE_OPTIONS = (DEFAULT_TIMEZONE,)
+CREATE_MODES = ("draft", "schedule")
 
 
 class WebCoverageProvider:
@@ -86,6 +91,35 @@ def parse_recipients(raw_recipients: str) -> list[dict[str, str]]:
     return recipients
 
 
+def parse_schedule(form_data: dict[str, Any]) -> tuple[str, str, str]:
+    mode = str(form_data.get("mode", "draft")).strip() or "draft"
+    if mode not in CREATE_MODES:
+        raise DispatchValidationError("Selecciona un modo de creación válido.")
+    if mode == "draft":
+        return "Borrador", "", DEFAULT_TIMEZONE
+
+    timezone_name = str(form_data.get("timezone", DEFAULT_TIMEZONE)).strip() or DEFAULT_TIMEZONE
+    try:
+        timezone = ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as error:
+        raise DispatchValidationError("La zona horaria seleccionada no es válida.") from error
+
+    scheduled_date = str(form_data.get("scheduled_date", "")).strip()
+    scheduled_time = str(form_data.get("scheduled_time", "")).strip()
+    if not scheduled_date:
+        raise DispatchValidationError("La fecha de envío es obligatoria para programar.")
+    if not scheduled_time:
+        raise DispatchValidationError("La hora de envío es obligatoria para programar.")
+    try:
+        scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}").replace(tzinfo=timezone)
+    except ValueError as error:
+        raise DispatchValidationError("La fecha y hora de envío no son válidas.") from error
+
+    if scheduled_at <= datetime.now(timezone):
+        raise DispatchValidationError("La fecha y hora de envío no puede estar en el pasado.")
+    return "Programado", scheduled_at.isoformat(), timezone_name
+
+
 def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str] | None = None) -> dict[str, Any]:
     form_data = deepcopy(form_data or {})
     requested_coverage_id = str(request.args.get("coverage_id", "")).strip()
@@ -110,6 +144,7 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
         "channel_options": CHANNEL_OPTIONS,
         "coverage_options": coverage_options,
         "coverage_locked": bool(requested_coverage_id and selected_coverage),
+        "timezone_options": TIMEZONE_OPTIONS,
         "errors": context_errors,
         "form_data": form_data,
         "photo_options": get_approved_photo_options(selected_coverage_id),
@@ -139,6 +174,10 @@ def new() -> str:
         "recipients": request.form.get("recipients", "").strip(),
         "delivery_note": request.form.get("delivery_note", "").strip(),
         "channel": request.form.get("channel", "").strip(),
+        "mode": request.form.get("mode", "draft").strip() or "draft",
+        "scheduled_date": request.form.get("scheduled_date", "").strip(),
+        "scheduled_time": request.form.get("scheduled_time", "").strip(),
+        "timezone": request.form.get("timezone", DEFAULT_TIMEZONE).strip() or DEFAULT_TIMEZONE,
     }
 
     errors = []
@@ -163,6 +202,13 @@ def new() -> str:
         recipients = parse_recipients(form_data["recipients"])
     except DispatchValidationError as error:
         errors.append(str(error))
+    status = "Borrador"
+    scheduled_at = ""
+    timezone_name = DEFAULT_TIMEZONE
+    try:
+        status, scheduled_at, timezone_name = parse_schedule(form_data)
+    except DispatchValidationError as error:
+        errors.append(str(error))
 
     if errors:
         return render_template(
@@ -178,6 +224,9 @@ def new() -> str:
             recipients=recipients,
             delivery_note=form_data["delivery_note"],
             channel=form_data["channel"],
+            status=status,
+            scheduled_at=scheduled_at,
+            timezone=timezone_name,
         )
     except DispatchValidationError as error:
         return render_template(

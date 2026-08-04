@@ -6,6 +6,7 @@ from app.dispatch.models import (
     DispatchTransitionError,
     DispatchValidationError,
 )
+from app.dispatch.scheduler import DispatchScheduler
 from app.dispatch.service import DispatchHandoffService, ShipmentService
 from app.dispatch.store import DispatchShipmentStore
 
@@ -14,6 +15,7 @@ __all__ = [
     "DISPATCH_TRANSITIONS",
     "DispatchError",
     "DispatchHandoffService",
+    "DispatchScheduler",
     "DispatchShipmentStore",
     "DispatchStoreError",
     "DispatchTransitionError",

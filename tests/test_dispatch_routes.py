@@ -87,9 +87,12 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Borrador", body)
         self.assertIn("Preparando", body)
         self.assertIn("Listo", body)
+        self.assertIn("Programado", body)
+        self.assertIn("Enviando", body)
         self.assertIn("Enviado", body)
         self.assertIn("Entregado", body)
         self.assertIn("Error", body)
+        self.assertIn("Cancelado", body)
         self.assertIn("No hay despachos todavía", body)
         self.assertNotIn("Cobertura activa", body)
 
@@ -123,6 +126,9 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Selecciona una cobertura", body)
         self.assertIn("Nombre | correo@dominio.com", body)
+        self.assertIn("Guardar como borrador", body)
+        self.assertIn("Programar envío", body)
+        self.assertIn("America/Guayaquil", body)
 
     def test_get_dispatch_new_with_valid_coverage_id(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -161,6 +167,10 @@ class DispatchRoutesTest(unittest.TestCase):
             "recipients": "Mesa Xinhua | desk@xinhua.com",
             "delivery_note": "Lista para despacho.",
             "channel": "Manual",
+            "mode": "draft",
+            "scheduled_date": "",
+            "scheduled_time": "",
+            "timezone": "America/Guayaquil",
         }
         form.update(overrides)
         return form
@@ -182,6 +192,44 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(shipments[0]["name"], "Despacho desde formulario")
         self.assertEqual(shipments[0]["status"], "Borrador")
         self.assertEqual(shipments[0]["channel"], "Manual")
+        self.assertEqual(shipments[0]["scheduled_at"], "")
+        self.assertEqual(shipments[0]["timezone"], "America/Guayaquil")
+
+    def test_post_dispatch_new_valid_schedule_redirects_and_persists(self):
+        response = self.post_new(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+            timezone="America/Guayaquil",
+        )
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["status"], "Programado")
+        self.assertEqual(shipment["scheduled_at"], "2099-08-04T09:45:00-05:00")
+        self.assertEqual(shipment["timezone"], "America/Guayaquil")
+
+    def test_post_dispatch_new_rejects_past_schedule(self):
+        response = self.post_new(
+            mode="schedule",
+            scheduled_date="2000-01-01",
+            scheduled_time="09:45",
+            timezone="America/Guayaquil",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("La fecha y hora de envío no puede estar en el pasado.", response.get_data(as_text=True))
+
+    def test_post_dispatch_new_rejects_invalid_timezone(self):
+        response = self.post_new(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+            timezone="Invalid/Zone",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("La zona horaria seleccionada no es válida.", response.get_data(as_text=True))
 
     def test_post_dispatch_new_missing_name(self):
         response = self.post_new(name="")

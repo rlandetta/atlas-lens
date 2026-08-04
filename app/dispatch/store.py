@@ -9,7 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from app.dispatch.models import DispatchStoreError
+from app.dispatch.models import DispatchStoreError, normalize_shipment
 
 
 class DispatchShipmentStore:
@@ -84,30 +84,47 @@ class DispatchShipmentStore:
 
     def list_shipments(self) -> list[dict[str, Any]]:
         with self._locked(shared=True):
-            return deepcopy(self._load_unlocked()["shipments"])
+            return [normalize_shipment(shipment) for shipment in self._load_unlocked()["shipments"]]
 
     def get(self, shipment_id: str) -> dict[str, Any] | None:
         with self._locked(shared=True):
             for shipment in self._load_unlocked()["shipments"]:
                 if shipment.get("id") == shipment_id:
-                    return deepcopy(shipment)
+                    return normalize_shipment(shipment)
         return None
 
     def create(self, shipment: dict[str, Any]) -> dict[str, Any]:
+        normalized_shipment = normalize_shipment(shipment)
         with self._locked(shared=False):
             payload = self._load_unlocked()
-            if any(existing.get("id") == shipment.get("id") for existing in payload["shipments"]):
+            if any(existing.get("id") == normalized_shipment.get("id") for existing in payload["shipments"]):
                 raise DispatchStoreError("Ya existe un despacho con ese identificador.")
-            payload["shipments"].insert(0, deepcopy(shipment))
+            payload["shipments"].insert(0, deepcopy(normalized_shipment))
             self._save_unlocked(payload)
-        return deepcopy(shipment)
+        return deepcopy(normalized_shipment)
 
     def update(self, shipment_id: str, next_shipment: dict[str, Any]) -> dict[str, Any]:
+        normalized_shipment = normalize_shipment(next_shipment)
         with self._locked(shared=False):
             payload = self._load_unlocked()
             for index, shipment in enumerate(payload["shipments"]):
                 if shipment.get("id") == shipment_id:
-                    payload["shipments"][index] = deepcopy(next_shipment)
+                    payload["shipments"][index] = deepcopy(normalized_shipment)
                     self._save_unlocked(payload)
-                    return deepcopy(next_shipment)
+                    return deepcopy(normalized_shipment)
         raise DispatchStoreError("No existe el despacho solicitado.")
+
+    def mutate(self, shipment_id: str, callback) -> dict[str, Any] | None:
+        with self._locked(shared=False):
+            payload = self._load_unlocked()
+            for index, shipment in enumerate(payload["shipments"]):
+                if shipment.get("id") == shipment_id:
+                    current = normalize_shipment(shipment)
+                    next_shipment = callback(deepcopy(current))
+                    if next_shipment is None:
+                        return None
+                    normalized_shipment = normalize_shipment(next_shipment)
+                    payload["shipments"][index] = deepcopy(normalized_shipment)
+                    self._save_unlocked(payload)
+                    return deepcopy(normalized_shipment)
+        return None

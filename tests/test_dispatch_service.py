@@ -81,8 +81,26 @@ class ShipmentServiceTest(unittest.TestCase):
         self.assertEqual(shipment["coverage_id"], "cov-1")
         self.assertEqual(shipment["photo_ids"], ["photo-approved"])
         self.assertEqual(shipment["export_reference"], {"zip": "coverage.zip"})
+        self.assertEqual(shipment["scheduled_at"], "")
+        self.assertEqual(shipment["timezone"], "America/Guayaquil")
+        self.assertEqual(shipment["attempt_count"], 0)
         self.assertNotIn("data_url", shipment["photo_snapshots"][0])
         self.assertEqual(self.service.get_shipment(shipment["id"])["id"], shipment["id"])
+
+    def test_create_scheduled_shipment(self):
+        shipment = self.service.create_shipment(
+            name="Despacho programado",
+            coverage_id="cov-1",
+            photo_ids=["photo-approved"],
+            recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+            status="Programado",
+            scheduled_at="2026-08-04T09:45:00-05:00",
+            timezone="America/Guayaquil",
+        )
+
+        self.assertEqual(shipment["status"], "Programado")
+        self.assertEqual(shipment["scheduled_at"], "2026-08-04T09:45:00-05:00")
+        self.assertEqual(shipment["timezone"], "America/Guayaquil")
 
     def test_update_shipment(self):
         shipment = self.create_shipment()
@@ -183,4 +201,3 @@ class DispatchHandoffServiceCompatibilityTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -9,19 +9,27 @@ DISPATCH_STATUSES = (
     "Borrador",
     "Preparando",
     "Listo",
+    "Programado",
+    "Enviando",
     "Enviado",
     "Entregado",
     "Error",
+    "Cancelado",
 )
 
 DISPATCH_TRANSITIONS = {
-    "Borrador": {"Preparando", "Error"},
-    "Preparando": {"Listo", "Error"},
-    "Listo": {"Enviado", "Borrador", "Error"},
+    "Borrador": {"Preparando", "Programado", "Error"},
+    "Preparando": {"Listo", "Programado", "Error"},
+    "Listo": {"Programado", "Enviado", "Borrador", "Error"},
+    "Programado": {"Enviando", "Borrador", "Cancelado", "Error"},
+    "Enviando": {"Enviado", "Error"},
     "Enviado": {"Entregado", "Error"},
     "Entregado": set(),
-    "Error": {"Borrador", "Preparando"},
+    "Error": {"Borrador", "Preparando", "Programado"},
+    "Cancelado": {"Borrador"},
 }
+
+DEFAULT_DISPATCH_TIMEZONE = "America/Guayaquil"
 
 
 class DispatchError(ValueError):
@@ -57,6 +65,18 @@ def validate_transition(current_status: str, next_status: str) -> None:
         raise DispatchTransitionError(
             f"No se permite cambiar de {current_status} a {next_status}."
         )
+
+
+def normalize_shipment(shipment: dict[str, Any]) -> dict[str, Any]:
+    normalized = deepcopy(shipment)
+    normalized.setdefault("scheduled_at", "")
+    normalized.setdefault("timezone", DEFAULT_DISPATCH_TIMEZONE)
+    normalized.setdefault("sent_at", "")
+    normalized.setdefault("last_attempt_at", "")
+    normalized.setdefault("attempt_count", 0)
+    normalized.setdefault("last_error", "")
+    normalized.setdefault("history", [])
+    return normalized
 
 
 def normalize_recipients(recipients: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -96,6 +116,9 @@ class ShipmentDraft:
     delivery_note: str = ""
     channel: str = "manual"
     export_reference: dict[str, Any] | None = None
+    status: str = "Borrador"
+    scheduled_at: str = ""
+    timezone: str = DEFAULT_DISPATCH_TIMEZONE
 
 
 def build_shipment(
@@ -114,6 +137,7 @@ def build_shipment(
         raise DispatchValidationError("El despacho requiere cobertura.")
     if not draft.photo_ids:
         raise DispatchValidationError("Selecciona al menos una fotografía.")
+    status = validate_status(draft.status)
 
     shipment = {
         "id": shipment_id,
@@ -126,16 +150,21 @@ def build_shipment(
         "recipients": normalize_recipients(draft.recipients),
         "delivery_note": draft.delivery_note.strip(),
         "channel": draft.channel.strip() or "manual",
-        "status": "Borrador",
+        "status": status,
+        "scheduled_at": draft.scheduled_at.strip(),
+        "timezone": draft.timezone.strip() or DEFAULT_DISPATCH_TIMEZONE,
+        "sent_at": "",
+        "last_attempt_at": "",
+        "attempt_count": 0,
+        "last_error": "",
         "created_at": timestamp,
         "updated_at": timestamp,
         "history": [
             {
-                "status": "Borrador",
+                "status": status,
                 "created_at": timestamp,
-                "note": "Despacho creado.",
+                "note": "Despacho creado." if status == "Borrador" else f"Despacho creado en estado {status}.",
             }
         ],
     }
     return shipment
-
