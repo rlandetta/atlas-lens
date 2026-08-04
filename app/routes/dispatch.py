@@ -61,6 +61,18 @@ def list_coverage_options() -> list[dict[str, str]]:
     return sorted(options, key=lambda item: item["name"].casefold())
 
 
+def is_photo_available_for_dispatch(photo: dict[str, Any]) -> bool:
+    storage_path = str(photo.get("storage_path", "")).strip()
+    if photo.get("available_on_disk", True) is False or not storage_path:
+        return False
+
+    lens_extension = current_app.extensions.get("lens", {})
+    coverage_store = lens_extension.get("coverage_store")
+    if coverage_store is None:
+        return photo.get("available_on_disk", True) is not False
+    return coverage_store.is_stored_file_available(storage_path)
+
+
 def get_approved_photo_options(coverage_id: str) -> list[dict[str, str]]:
     if not coverage_id:
         return []
@@ -76,7 +88,7 @@ def get_approved_photo_options(coverage_id: str) -> list[dict[str, str]]:
         {
             "id": str(photo.get("id", "")),
             "name": str(photo.get("name", "") or photo.get("id", "")),
-            "available_on_disk": photo.get("available_on_disk", True) is not False,
+            "available_on_disk": is_photo_available_for_dispatch(photo),
         }
         for photo in photos
         if (
@@ -154,6 +166,8 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
         (item for item in coverage_options if item["id"] == selected_coverage_id),
         None,
     )
+    if requested_coverage_id and selected_coverage and not form_data.get("name"):
+        form_data["name"] = selected_coverage["name"]
     return {
         "channel_options": CHANNEL_OPTIONS,
         "coverage_options": coverage_options,
@@ -210,6 +224,15 @@ def new() -> str:
         errors.append("Selecciona una cobertura.")
     if not form_data["photo_ids"]:
         errors.append("Selecciona al menos una fotografía.")
+    else:
+        approved_photo_options = get_approved_photo_options(form_data["coverage_id"])
+        unavailable_photo_ids = {
+            photo["id"]
+            for photo in approved_photo_options
+            if not photo["available_on_disk"]
+        }
+        if any(photo_id in unavailable_photo_ids for photo_id in form_data["photo_ids"]):
+            errors.append("Selecciona únicamente fotografías aprobadas con archivo disponible para envío.")
     if form_data["channel"] not in CHANNEL_OPTIONS:
         errors.append("Selecciona un canal válido.")
     try:

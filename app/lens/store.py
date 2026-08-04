@@ -7,6 +7,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 from typing import Any
 
@@ -150,7 +151,7 @@ class LensCoverageStore:
         available_on_disk = bool(
             storage_path
             and photo.get("available_on_disk", True) is not False
-            and (self.media_root / storage_path).is_file()
+            and self.is_stored_file_available(storage_path)
         )
         return {
             "id": str(photo.get("id", "")),
@@ -185,3 +186,52 @@ class LensCoverageStore:
         if Path(path).is_absolute() or path.startswith("../") or "/../" in path:
             return ""
         return path
+
+    def resolve_storage_path(self, storage_path: str) -> Path | None:
+        normalized = self.normalize_storage_path(storage_path)
+        if not normalized:
+            return None
+        root = self.media_root.resolve()
+        candidate = (root / normalized).resolve()
+        try:
+            if not candidate.is_relative_to(root):
+                return None
+        except ValueError:
+            return None
+        return candidate
+
+    def is_stored_file_available(self, storage_path: str) -> bool:
+        path = self.resolve_storage_path(storage_path)
+        return bool(path and path.is_file() and not path.is_symlink())
+
+    def delete_photo_file(self, storage_path: str) -> bool:
+        path = self.resolve_storage_path(storage_path)
+        if not path or not path.exists() or not path.is_file() or path.is_symlink():
+            return False
+        path.unlink()
+        return True
+
+    def delete_coverage_media(self, coverage_id: str) -> None:
+        safe_id = self.sanitize_path_component(coverage_id)
+        if not safe_id:
+            return
+        root = self.media_root.resolve()
+        target = (root / "coverages" / safe_id).resolve()
+        try:
+            if not target.is_relative_to(root / "coverages"):
+                return
+        except ValueError:
+            return
+        if not target.exists() or target.is_symlink() or not target.is_dir():
+            return
+        shutil.rmtree(target)
+
+    @staticmethod
+    def sanitize_path_component(value: str) -> str:
+        import re
+
+        sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value).strip())
+        sanitized = sanitized.strip(".-")
+        if not sanitized or sanitized in {".", ".."}:
+            return ""
+        return sanitized

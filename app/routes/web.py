@@ -1,10 +1,14 @@
 from datetime import datetime, timezone
 import base64
+import binascii
+import os
 import random
 import re
+import tempfile
 import unicodedata
+from pathlib import Path
 
-from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, jsonify, redirect, render_template, request, url_for
 
 from app.ai import AIError, AIService
 from app.ai.context_engine import get_coverage_context_data, normalize_context_payload
@@ -16,6 +20,12 @@ from app.export.service import ExportService, ExportValidationError, ExportWarni
 from app.suggestion_store import get_all_suggestions, remember_coverage_values
 
 web_bp = Blueprint("web", __name__)
+
+ALLOWED_PHOTO_TYPES = {
+    "image/jpeg": {".jpg", ".jpeg"},
+    "image/png": {".png"},
+    "image/webp": {".webp"},
+}
 
 REQUIRED_COVERAGE_FIELDS = (
     "coverage_name",
@@ -94,6 +104,11 @@ def persist_all_coverages() -> None:
 def delete_persisted_coverage(coverage_id: str) -> None:
     if coverage_store is not None:
         coverage_store.delete(coverage_id)
+
+
+def delete_persisted_coverage_media(coverage_id: str) -> None:
+    if coverage_store is not None:
+        coverage_store.delete_coverage_media(coverage_id)
 
 
 def utc_now_iso() -> str:
@@ -177,6 +192,141 @@ def parse_optional_int(value):
         return None
 
     return int(value)
+
+
+def max_photo_bytes() -> int:
+    return int(current_app.config.get("LENS_MAX_PHOTO_BYTES", 25 * 1024 * 1024))
+
+
+def sanitize_filename(filename: str, fallback_extension: str) -> str:
+    name = Path(str(filename or "")).name.strip()
+    name = name.replace("\\", "")
+    stem = Path(name).stem
+    extension = Path(name).suffix.lower() or fallback_extension
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip(".-")
+    if not stem:
+        stem = "photo"
+    return f"{stem}{extension}"
+
+
+def validate_photo_identity(value: str, field_name: str) -> str:
+    if coverage_store is None:
+        sanitized = re.sub(r"[^A-Za-z0-9._-]+", "-", str(value).strip()).strip(".-")
+    else:
+        sanitized = coverage_store.sanitize_path_component(value)
+    if not sanitized:
+        raise ValueError(f"{field_name} inválido.")
+    return sanitized
+
+
+def parse_photo_data_url(data_url: str, expected_mime: str) -> bytes:
+    prefix = f"data:{expected_mime};base64,"
+    if not isinstance(data_url, str) or not data_url.startswith(prefix):
+        raise ValueError("El archivo no coincide con el tipo de imagen declarado.")
+    encoded_payload = data_url[len(prefix):]
+    try:
+        return base64.b64decode(encoded_payload, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("La imagen contiene base64 inválido.") from error
+
+
+def validate_image_signature(content: bytes, mime_type: str) -> None:
+    if mime_type == "image/jpeg" and content.startswith(b"\xff\xd8\xff"):
+        return
+    if mime_type == "image/png" and content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return
+    if (
+        mime_type == "image/webp"
+        and len(content) >= 12
+        and content[:4] == b"RIFF"
+        and content[8:12] == b"WEBP"
+    ):
+        return
+    raise ValueError("El contenido no corresponde a una imagen permitida.")
+
+
+def build_photo_storage_path(coverage_id: str, photo_id: str, filename: str) -> str:
+    safe_coverage_id = validate_photo_identity(coverage_id, "coverage_id")
+    safe_photo_id = validate_photo_identity(photo_id, "photo_id")
+    safe_filename = sanitize_filename(filename, Path(filename).suffix.lower())
+    return f"coverages/{safe_coverage_id}/{safe_photo_id}_{safe_filename}"
+
+
+def write_photo_content(storage_path: str, content: bytes) -> None:
+    if coverage_store is None:
+        raise RuntimeError("El almacenamiento de fotografías no está configurado.")
+
+    destination = coverage_store.resolve_storage_path(storage_path)
+    if destination is None:
+        raise ValueError("La ruta de almacenamiento de la fotografía no es segura.")
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "wb",
+            dir=destination.parent,
+            prefix=f".{destination.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, destination)
+        if not destination.is_file() or destination.is_symlink():
+            raise OSError("No se pudo confirmar el archivo de fotografía guardado.")
+    except Exception:
+        if temp_path and temp_path.exists():
+            temp_path.unlink()
+        if destination.exists() and not destination.is_symlink() and destination.is_file():
+            destination.unlink()
+        raise
+
+
+def build_persisted_photo(coverage_id: str, payload: dict) -> dict:
+    photo_id = str(payload["id"])
+    original_name = str(payload.get("filename") or payload["name"])
+    mime_type = str(payload["type"]).strip().lower()
+    if mime_type not in ALLOWED_PHOTO_TYPES:
+        raise ValueError("Formato de imagen no permitido.")
+
+    extension = Path(original_name).suffix.lower()
+    if extension not in ALLOWED_PHOTO_TYPES[mime_type]:
+        raise ValueError("La extensión del archivo no coincide con un formato permitido.")
+
+    declared_size = int(payload["size"])
+    if declared_size <= 0:
+        raise ValueError("El tamaño de la imagen no es válido.")
+    if declared_size > max_photo_bytes():
+        raise OverflowError("La imagen supera el tamaño máximo permitido.")
+
+    content = parse_photo_data_url(str(payload["data_url"]), mime_type)
+    if len(content) != declared_size:
+        raise ValueError("El tamaño declarado no coincide con el archivo recibido.")
+    validate_image_signature(content, mime_type)
+
+    filename = sanitize_filename(original_name, extension)
+    storage_path = build_photo_storage_path(coverage_id, photo_id, filename)
+    write_photo_content(storage_path, content)
+
+    timestamp = utc_now_iso()
+    return {
+        "id": validate_photo_identity(photo_id, "photo_id"),
+        "name": filename,
+        "filename": filename,
+        "storage_path": storage_path,
+        "size": declared_size,
+        "type": mime_type,
+        "width": parse_optional_int(payload.get("width")),
+        "height": parse_optional_int(payload.get("height")),
+        "caption_narrative": str(payload.get("caption_narrative", "")),
+        "caption_status": normalize_caption_status(str(payload.get("caption_status", "Sin editar"))),
+        "created_at": str(payload.get("created_at") or timestamp),
+        "updated_at": str(payload.get("updated_at") or timestamp),
+        "available_on_disk": True,
+    }
 
 
 def normalize_caption_status(value: str) -> str:
@@ -430,6 +580,7 @@ def delete_coverage(coverage_id: str) -> str:
 
     del coverages[coverage_id]
     delete_persisted_coverage(coverage_id)
+    delete_persisted_coverage_media(coverage_id)
     return redirect(url_for("web.home"))
 
 
@@ -491,34 +642,29 @@ def add_coverage_photo(coverage_id: str):
     if any(not payload.get(field) for field in required_fields):
         return jsonify({"error": "Photo payload is incomplete."}), 400
 
-    try:
-        timestamp = utc_now_iso()
-        photo = {
-            "id": str(payload["id"]),
-            "name": str(payload["name"]),
-            "filename": str(payload.get("filename") or payload["name"]),
-            "storage_path": str(payload.get("storage_path") or payload.get("relative_path") or ""),
-            "size": int(payload["size"]),
-            "type": str(payload["type"]),
-            "width": parse_optional_int(payload.get("width")),
-            "height": parse_optional_int(payload.get("height")),
-            "data_url": str(payload["data_url"]),
-            "caption_narrative": str(payload.get("caption_narrative", "")),
-            "caption_status": normalize_caption_status(str(payload.get("caption_status", "Sin editar"))),
-            "created_at": str(payload.get("created_at") or timestamp),
-            "updated_at": str(payload.get("updated_at") or timestamp),
-            "available_on_disk": payload.get("available_on_disk", True),
-        }
-    except (TypeError, ValueError):
-        return jsonify({"error": "Photo payload contains invalid numeric metadata."}), 400
-
     photos = ensure_coverage_photos(coverage)
-    if any(existing_photo["id"] == photo["id"] for existing_photo in photos):
+    if any(existing_photo.get("id") == str(payload["id"]) for existing_photo in photos):
+        existing_photo = find_coverage_photo(coverage, str(payload["id"]))
         persist_coverage(coverage_id)
-        return jsonify({"photo": photo, "total": len(photos)})
+        return jsonify({"photo": existing_photo, "total": len(photos)})
+
+    try:
+        photo = build_persisted_photo(coverage_id, payload)
+    except (TypeError, ValueError):
+        return jsonify({"error": "No se pudo guardar la fotografía. Verifica formato, tamaño y contenido."}), 400
+    except OverflowError:
+        return jsonify({"error": "La fotografía supera el tamaño máximo permitido."}), 413
+    except OSError:
+        return jsonify({"error": "No se pudo escribir la fotografía en el almacenamiento de ATLAS."}), 500
 
     photos.append(photo)
-    persist_coverage(coverage_id)
+    try:
+        persist_coverage(coverage_id)
+    except Exception:
+        photos.remove(photo)
+        if coverage_store is not None:
+            coverage_store.delete_photo_file(photo.get("storage_path", ""))
+        raise
     return jsonify({"photo": photo, "total": len(photos)}), 201
 
 
@@ -675,6 +821,13 @@ def delete_coverage_photo(coverage_id: str, photo_id: str):
     if len(next_photos) == len(photos):
         abort(404)
 
+    photo = next(
+        existing_photo
+        for existing_photo in photos
+        if existing_photo.get("id") == photo_id
+    )
+    if coverage_store is not None:
+        coverage_store.delete_photo_file(str(photo.get("storage_path", "")))
     coverage["photos"] = next_photos
     persist_coverage(coverage_id)
     return jsonify({"total": len(next_photos)})

@@ -2,6 +2,7 @@ import copy
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from app import create_app
 from app.dispatch import DispatchShipmentStore, ShipmentService
@@ -11,8 +12,22 @@ from app.lens_read_service import LensReadService
 class DispatchRoutesTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.lens_media_root = self.root / "lens_media"
+        self.dispatch_store_path = self.root / "dispatch_shipments.json"
+        self.lens_store_path = self.root / "lens_coverages.json"
+        self.patches = [
+            patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
+            patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.lens_store_path)),
+            patch("app.config.LENS_MEDIA_ROOT", str(self.lens_media_root)),
+        ]
+        for item in self.patches:
+            item.start()
         self.app = create_app()
         self.app.config.update(TESTING=True)
+        approved_file = self.lens_media_root / "coverages" / "cov-1" / "photo-approved_IMG001.jpg"
+        approved_file.parent.mkdir(parents=True)
+        approved_file.write_bytes(b"\xff\xd8\xff\xe0ATLASJPEG\xff\xd9")
         self.coverages = {
             "cov-1": {
                 "coverage_name": "Cobertura Quito",
@@ -27,6 +42,9 @@ class DispatchRoutesTest(unittest.TestCase):
                     {
                         "id": "photo-approved",
                         "name": "IMG001.jpg",
+                        "filename": "IMG001.jpg",
+                        "storage_path": "coverages/cov-1/photo-approved_IMG001.jpg",
+                        "available_on_disk": True,
                         "caption_narrative": "Persona participa en evento.",
                         "caption_status": "Aprobado",
                     },
@@ -46,7 +64,7 @@ class DispatchRoutesTest(unittest.TestCase):
             }
         }
         self.original_coverages = copy.deepcopy(self.coverages)
-        store = DispatchShipmentStore(Path(self.temp_dir.name) / "dispatch_shipments.json")
+        store = DispatchShipmentStore(self.dispatch_store_path)
         coverage_provider = lambda: self.coverages
         lens_reader = LensReadService(coverage_provider)
         self.shipment_service = ShipmentService(store=store, lens_reader=lens_reader)
@@ -59,6 +77,8 @@ class DispatchRoutesTest(unittest.TestCase):
         self.client = self.app.test_client()
 
     def tearDown(self):
+        for item in reversed(self.patches):
+            item.stop()
         self.temp_dir.cleanup()
 
     def create_shipment(self):

@@ -26,7 +26,12 @@ ATLAS_NAVIGATION = (
 def create_app():
     from flask import Flask
 
-    from app.config import DISPATCH_STORE_PATH, LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT
+    from app.config import (
+        DISPATCH_STORE_PATH,
+        LENS_COVERAGE_STORE_PATH,
+        LENS_MAX_PHOTO_BYTES,
+        LENS_MEDIA_ROOT,
+    )
     from app.dispatch import DispatchShipmentStore, ShipmentService
     from app.lens import LensCoverageStore
     from app.lens_read_service import LensReadService
@@ -35,6 +40,7 @@ def create_app():
     from app.routes.web import configure_coverage_store, web_bp
 
     app = Flask(__name__)
+    app.config["LENS_MAX_PHOTO_BYTES"] = LENS_MAX_PHOTO_BYTES
     lens_coverage_store = LensCoverageStore(LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT)
     configure_coverage_store(lens_coverage_store)
     coverage_provider = WebCoverageProvider()

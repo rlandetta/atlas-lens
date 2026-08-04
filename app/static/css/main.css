@@ -489,6 +489,45 @@ h1 {
     width: auto;
 }
 
+.dispatch-photo-options {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.72rem;
+}
+
+.dispatch-photo-options legend {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 0 0.2rem;
+}
+
+.dispatch-photo-option {
+    align-items: center;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.coverage-form .dispatch-photo-option input {
+    flex: 0 0 auto;
+    height: 1rem;
+    margin: 0;
+    width: 1rem;
+}
+
+.dispatch-photo-option.is-disabled {
+    opacity: 0.68;
+}
+
+.dispatch-photo-unavailable {
+    color: var(--error-text);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
 .coverage-form label,
 .edit-dialog-form label {
     font-weight: 600;

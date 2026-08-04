@@ -311,7 +311,16 @@ const persistPhoto = async (photo) => {
     });
 
     if (!response.ok) {
-        throw new Error("Unable to persist photo in coverage memory.");
+        let errorMessage = "No se pudo guardar la fotografía en ATLAS.";
+        try {
+            const payload = await response.json();
+            if (payload && payload.error) {
+                errorMessage = payload.error;
+            }
+        } catch (error) {
+            void error;
+        }
+        throw new Error(errorMessage);
     }
 
     return response.json();
