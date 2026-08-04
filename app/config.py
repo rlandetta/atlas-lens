@@ -15,3 +15,11 @@ DISPATCH_STORE_PATH = os.getenv(
     "DISPATCH_STORE_PATH",
     os.path.join("instance", "dispatch_shipments.json"),
 )
+LENS_COVERAGE_STORE_PATH = os.getenv(
+    "LENS_COVERAGE_STORE_PATH",
+    os.path.join("instance", "lens_coverages.json"),
+)
+LENS_MEDIA_ROOT = os.getenv(
+    "LENS_MEDIA_ROOT",
+    os.path.join("instance", "lens_media"),
+)

@@ -19,6 +19,11 @@ CREATE_MODES = ("draft", "schedule")
 
 class WebCoverageProvider:
     def __call__(self) -> Mapping[str, dict[str, Any]]:
+        lens_extension = current_app.extensions.get("lens", {})
+        coverage_store = lens_extension.get("coverage_store")
+        if coverage_store is not None:
+            return coverage_store.list_coverages()
+
         from app.routes.web import coverages
 
         return coverages

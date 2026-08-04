@@ -26,17 +26,23 @@ ATLAS_NAVIGATION = (
 def create_app():
     from flask import Flask
 
-    from app.config import DISPATCH_STORE_PATH
+    from app.config import DISPATCH_STORE_PATH, LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT
     from app.dispatch import DispatchShipmentStore, ShipmentService
+    from app.lens import LensCoverageStore
     from app.lens_read_service import LensReadService
     from app.routes.dispatch import dispatch_bp
     from app.routes.dispatch import WebCoverageProvider
-    from app.routes.web import web_bp
+    from app.routes.web import configure_coverage_store, web_bp
 
     app = Flask(__name__)
+    lens_coverage_store = LensCoverageStore(LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT)
+    configure_coverage_store(lens_coverage_store)
     coverage_provider = WebCoverageProvider()
     lens_reader = LensReadService(coverage_provider)
     dispatch_store = DispatchShipmentStore(DISPATCH_STORE_PATH)
+    app.extensions["lens"] = {
+        "coverage_store": lens_coverage_store,
+    }
     app.extensions["dispatch"] = {
         "coverage_provider": coverage_provider,
         "store": dispatch_store,

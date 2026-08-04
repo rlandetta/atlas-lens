@@ -66,5 +66,5 @@ class LensReadService:
         return (
             photo.get("caption_status") == "Aprobado"
             and bool(str(photo.get("caption_narrative", "")).strip())
+            and photo.get("available_on_disk", True) is not False
         )
-

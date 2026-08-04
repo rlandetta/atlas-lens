@@ -71,6 +71,33 @@ COUNTRY_GROUPS = (
 
 # Temporary in-memory storage while there is no database.
 coverages = {}
+coverage_store = None
+
+
+def configure_coverage_store(store) -> None:
+    global coverage_store
+    coverage_store = store
+    coverages.clear()
+    coverages.update(store.list_coverages())
+
+
+def persist_coverage(coverage_id: str) -> None:
+    if coverage_store is not None and coverage_id in coverages:
+        coverage_store.set(coverage_id, coverages[coverage_id])
+
+
+def persist_all_coverages() -> None:
+    if coverage_store is not None:
+        coverage_store.save_all(coverages)
+
+
+def delete_persisted_coverage(coverage_id: str) -> None:
+    if coverage_store is not None:
+        coverage_store.delete(coverage_id)
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def build_coverage_id(coverage_name: str) -> str:
@@ -315,6 +342,7 @@ def new_coverage() -> str:
     attach_default_ai_context(form_data)
     remember_coverage_values(form_data)
     coverages[coverage_id] = form_data
+    persist_coverage(coverage_id)
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 
@@ -362,6 +390,7 @@ def edit_coverage(coverage_id: str) -> str:
     attach_editor_metadata(form_data)
     remember_coverage_values(form_data)
     coverages[coverage_id] = form_data
+    persist_coverage(coverage_id)
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 
@@ -375,6 +404,7 @@ def save_coverage_ai_context(coverage_id: str) -> str:
         abort(404)
 
     coverage["ai_context"] = normalize_context_payload(request.form)
+    persist_coverage(coverage_id)
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 
@@ -384,6 +414,7 @@ def delete_coverage(coverage_id: str) -> str:
         abort(404)
 
     del coverages[coverage_id]
+    delete_persisted_coverage(coverage_id)
     return redirect(url_for("web.home"))
 
 
@@ -418,6 +449,7 @@ def create_coverage_export(coverage_id: str):
 
     if export_request.destination == "dispatch":
         dispatch_payload = DispatchHandoffService().prepare(coverage, result)
+        persist_coverage(coverage_id)
         return jsonify({
             "ok": True,
             "destination": "dispatch",
@@ -425,6 +457,7 @@ def create_coverage_export(coverage_id: str):
             "dispatch": dispatch_payload,
         })
 
+    persist_coverage(coverage_id)
     return jsonify({
         "ok": True,
         "destination": "download",
@@ -444,9 +477,12 @@ def add_coverage_photo(coverage_id: str):
         return jsonify({"error": "Photo payload is incomplete."}), 400
 
     try:
+        timestamp = utc_now_iso()
         photo = {
             "id": str(payload["id"]),
             "name": str(payload["name"]),
+            "filename": str(payload.get("filename") or payload["name"]),
+            "storage_path": str(payload.get("storage_path") or payload.get("relative_path") or ""),
             "size": int(payload["size"]),
             "type": str(payload["type"]),
             "width": parse_optional_int(payload.get("width")),
@@ -454,15 +490,20 @@ def add_coverage_photo(coverage_id: str):
             "data_url": str(payload["data_url"]),
             "caption_narrative": str(payload.get("caption_narrative", "")),
             "caption_status": normalize_caption_status(str(payload.get("caption_status", "Sin editar"))),
+            "created_at": str(payload.get("created_at") or timestamp),
+            "updated_at": str(payload.get("updated_at") or timestamp),
+            "available_on_disk": payload.get("available_on_disk", True),
         }
     except (TypeError, ValueError):
         return jsonify({"error": "Photo payload contains invalid numeric metadata."}), 400
 
     photos = ensure_coverage_photos(coverage)
     if any(existing_photo["id"] == photo["id"] for existing_photo in photos):
+        persist_coverage(coverage_id)
         return jsonify({"photo": photo, "total": len(photos)})
 
     photos.append(photo)
+    persist_coverage(coverage_id)
     return jsonify({"photo": photo, "total": len(photos)}), 201
 
 
@@ -488,6 +529,8 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
 
     photo["caption_narrative"] = str(payload.get("caption_narrative", ""))
     photo["caption_status"] = normalize_caption_status(str(payload.get("caption_status", "Sin editar")))
+    photo["updated_at"] = utc_now_iso()
+    persist_coverage(coverage_id)
     return jsonify({
         "photo_id": photo_id,
         "caption_narrative": photo["caption_narrative"],
@@ -521,8 +564,10 @@ def copy_caption_to_empty_photos(coverage_id: str):
 
         photo["caption_narrative"] = source_caption
         photo["caption_status"] = source_status
+        photo["updated_at"] = utc_now_iso()
         updated_photo_ids.append(str(photo.get("id")))
 
+    persist_coverage(coverage_id)
     return jsonify({
         "updated_photo_ids": updated_photo_ids,
         "updated_count": len(updated_photo_ids),
@@ -616,4 +661,5 @@ def delete_coverage_photo(coverage_id: str, photo_id: str):
         abort(404)
 
     coverage["photos"] = next_photos
+    persist_coverage(coverage_id)
     return jsonify({"total": len(next_photos)})

@@ -1,0 +1,187 @@
+from __future__ import annotations
+
+from contextlib import contextmanager
+from copy import deepcopy
+from datetime import datetime, timezone
+import fcntl
+import json
+import os
+from pathlib import Path
+import tempfile
+from typing import Any
+
+
+class LensCoverageStoreError(ValueError):
+    pass
+
+
+class LensCoverageStore:
+    def __init__(self, path: str | os.PathLike[str], media_root: str | os.PathLike[str]):
+        self.path = Path(path)
+        self.media_root = Path(media_root)
+        self.lock_path = self.path.with_name(f"{self.path.name}.lock")
+
+    def load(self) -> dict[str, dict[str, Any]]:
+        with self._locked(shared=True):
+            return self._load_unlocked()
+
+    def _load_unlocked(self) -> dict[str, dict[str, Any]]:
+        if not self.path.exists():
+            return {}
+        if self.path.stat().st_size == 0:
+            return {}
+
+        try:
+            with self.path.open("r", encoding="utf-8") as source:
+                payload = json.load(source)
+        except json.JSONDecodeError as error:
+            raise LensCoverageStoreError(
+                f"El archivo de coberturas contiene JSON inválido: {self.path}"
+            ) from error
+
+        if not isinstance(payload, dict) or not isinstance(payload.get("coverages"), dict):
+            raise LensCoverageStoreError(
+                f"El archivo de coberturas tiene una estructura inválida: {self.path}"
+            )
+        return {
+            str(coverage_id): self.normalize_coverage(coverage)
+            for coverage_id, coverage in payload["coverages"].items()
+            if isinstance(coverage, dict)
+        }
+
+    def save_all(self, coverages: dict[str, dict[str, Any]]) -> None:
+        with self._locked(shared=False):
+            self._save_unlocked(coverages)
+
+    def _save_unlocked(self, coverages: dict[str, dict[str, Any]]) -> None:
+        if not isinstance(coverages, dict):
+            raise LensCoverageStoreError("No se puede guardar una estructura de coberturas inválida.")
+
+        payload = {
+            "coverages": {
+                str(coverage_id): self.normalize_coverage(coverage)
+                for coverage_id, coverage in coverages.items()
+                if isinstance(coverage, dict)
+            }
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                prefix=f".{self.path.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                json.dump(payload, temp_file, ensure_ascii=False, indent=2)
+                temp_file.write("\n")
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            os.replace(temp_path, self.path)
+        except Exception:
+            if temp_path and temp_path.exists():
+                temp_path.unlink()
+            raise
+
+    @contextmanager
+    def _locked(self, *, shared: bool):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self.lock_path.open("a", encoding="utf-8") as lock_file:
+            operation = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+            fcntl.flock(lock_file.fileno(), operation)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+    def list_coverages(self) -> dict[str, dict[str, Any]]:
+        return deepcopy(self.load())
+
+    def get(self, coverage_id: str) -> dict[str, Any] | None:
+        return deepcopy(self.load().get(coverage_id))
+
+    def set(self, coverage_id: str, coverage: dict[str, Any]) -> dict[str, Any]:
+        with self._locked(shared=False):
+            coverages = self._load_unlocked()
+            normalized = self.normalize_coverage(coverage)
+            coverages[str(coverage_id)] = normalized
+            self._save_unlocked(coverages)
+        return deepcopy(normalized)
+
+    def delete(self, coverage_id: str) -> None:
+        with self._locked(shared=False):
+            coverages = self._load_unlocked()
+            coverages.pop(str(coverage_id), None)
+            self._save_unlocked(coverages)
+
+    def mutate(self, coverage_id: str, callback) -> dict[str, Any] | None:
+        with self._locked(shared=False):
+            coverages = self._load_unlocked()
+            current = coverages.get(str(coverage_id))
+            if current is None:
+                return None
+            next_coverage = callback(deepcopy(current))
+            if next_coverage is None:
+                return None
+            normalized = self.normalize_coverage(next_coverage)
+            coverages[str(coverage_id)] = normalized
+            self._save_unlocked(coverages)
+            return deepcopy(normalized)
+
+    def normalize_coverage(self, coverage: dict[str, Any]) -> dict[str, Any]:
+        normalized = deepcopy(coverage)
+        photos = normalized.get("photos", [])
+        normalized["photos"] = [
+            self.normalize_photo(photo)
+            for photo in photos
+            if isinstance(photo, dict)
+        ] if isinstance(photos, list) else []
+        return normalized
+
+    def normalize_photo(self, photo: dict[str, Any]) -> dict[str, Any]:
+        timestamp = datetime.now(timezone.utc).isoformat()
+        filename = str(photo.get("filename") or photo.get("name") or photo.get("id", ""))
+        storage_path = self.normalize_storage_path(str(
+            photo.get("storage_path") or photo.get("relative_path") or photo.get("file_path") or ""
+        ))
+        available_on_disk = bool(
+            storage_path
+            and photo.get("available_on_disk", True) is not False
+            and (self.media_root / storage_path).is_file()
+        )
+        return {
+            "id": str(photo.get("id", "")),
+            "name": filename,
+            "filename": filename,
+            "storage_path": storage_path,
+            "size": self.optional_int(photo.get("size")),
+            "type": str(photo.get("type", "image/jpeg") or "image/jpeg"),
+            "width": self.optional_int(photo.get("width")),
+            "height": self.optional_int(photo.get("height")),
+            "caption_narrative": str(photo.get("caption_narrative", "")),
+            "caption_status": str(photo.get("caption_status", "Sin editar") or "Sin editar"),
+            "created_at": str(photo.get("created_at") or timestamp),
+            "updated_at": str(photo.get("updated_at") or timestamp),
+            "available_on_disk": available_on_disk,
+        }
+
+    @staticmethod
+    def optional_int(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def normalize_storage_path(value: str) -> str:
+        path = value.strip().replace("\\", "/")
+        if not path:
+            return ""
+        if Path(path).is_absolute() or path.startswith("../") or "/../" in path:
+            return ""
+        return path
