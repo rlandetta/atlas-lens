@@ -196,8 +196,14 @@
                                 {% endif %}
                                 <p class="caption-text-counter"><span id="caption-character-count">0 caracteres</span><span id="caption-word-count">0 palabras</span></p>
                             </section>
-                            <section class="caption-block caption-status-block" aria-label="Autoguardado del caption">
-                                <input id="caption-review-status-field" type="hidden" value="Sin editar">
+                            <section class="caption-block caption-status-block">
+                                <label for="caption-review-status-field">Estado editorial</label>
+                                <select id="caption-review-status-field">
+                                    <option value="Sin editar">Sin editar</option>
+                                    <option value="En edición">En edición</option>
+                                    <option value="Revisado">Revisado</option>
+                                    <option value="Aprobado">Aprobado</option>
+                                </select>
                                 <p class="caption-status-save-label">Autoguardado</p>
                                 <p id="caption-save-status" class="caption-status-save-pill">✓ Guardado</p>
                             </section>

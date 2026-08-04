@@ -577,6 +577,135 @@ h1 {
     margin: 0 0 0.62rem;
 }
 
+.dispatch-detail-header {
+    align-items: start;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+}
+
+.dispatch-status-badge,
+.dispatch-caption-badge {
+    border: 1px solid rgba(163, 107, 44, 0.5);
+    border-radius: 999px;
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    padding: 0.32rem 0.55rem;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.dispatch-detail-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dispatch-detail-section {
+    margin-top: 0.75rem;
+}
+
+.dispatch-compact-meta {
+    gap: 0.45rem;
+}
+
+.dispatch-compact-list,
+.dispatch-history-list {
+    display: grid;
+    gap: 0.4rem;
+    margin: 0;
+    padding-left: 1.1rem;
+}
+
+.dispatch-photo-grid {
+    display: grid;
+    gap: 0.7rem;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.dispatch-photo-card {
+    background: #111a24;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.dispatch-photo-card img,
+.dispatch-photo-fallback {
+    aspect-ratio: 3 / 2;
+    background: #0d141d;
+    color: var(--text-secondary);
+    display: grid;
+    font-size: 0.78rem;
+    place-items: center;
+    width: 100%;
+}
+
+.dispatch-photo-card img {
+    object-fit: cover;
+}
+
+.dispatch-photo-card-body {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.62rem;
+}
+
+.dispatch-photo-card-header {
+    align-items: start;
+    display: flex;
+    gap: 0.5rem;
+    justify-content: space-between;
+}
+
+.dispatch-photo-card h3 {
+    font-size: 0.88rem;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.dispatch-photo-card p {
+    color: var(--text-secondary);
+    display: -webkit-box;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    margin: 0;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+}
+
+.dispatch-muted {
+    color: var(--text-secondary);
+}
+
+.dispatch-history-list li {
+    color: var(--text-secondary);
+}
+
+.dispatch-history-list strong {
+    color: var(--text-main);
+    margin: 0 0.35rem;
+}
+
+.dispatch-history-list em {
+    font-style: normal;
+}
+
+@media (max-width: 860px) {
+    .dispatch-detail-header {
+        display: grid;
+    }
+
+    .dispatch-detail-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 .dispatch-photo-unavailable {
     color: var(--error-text);
     font-size: 0.78rem;

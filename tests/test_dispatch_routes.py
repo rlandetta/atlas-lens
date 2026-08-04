@@ -92,6 +92,11 @@ class DispatchRoutesTest(unittest.TestCase):
             channel="manual",
         )
 
+    def create_docx_shipment_from_route(self, **overrides):
+        response = self.post_new(**overrides)
+        self.assertEqual(response.status_code, 302)
+        return self.shipment_service.list_shipments()[0]
+
     def test_dispatch_blueprint_is_registered(self):
         self.assertIn("dispatch.index", self.app.view_functions)
         self.assertIn("dispatch.new", self.app.view_functions)
@@ -379,6 +384,66 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Mesa", body)
         self.assertIn("Historial de estados", body)
         self.assertIn("IMG001.jpg", body)
+        self.assertIn("Persona participa en evento.", body)
+        self.assertIn("Aprobado", body)
+        self.assertIn("/coverages/cov-1/photos/photo-approved/media", body)
+        self.assertIn("Fotografías</dt>", body)
+        self.assertIn("Destinatarios</dt>", body)
+        self.assertNotIn("handoff", body.lower())
+        self.assertNotIn("{&#39;", body)
+        self.assertNotIn("ExportService", body)
+        self.assertNotIn("No programado", body)
+        self.assertNotIn("Sin intentos", body)
+        self.assertNotIn("No enviado", body)
+        self.assertNotIn("Sin errores", body)
+        self.assertNotIn("+00:00", body)
+        self.assertNotIn("T18:", body)
+
+    def test_dispatch_detail_presents_docx_humanly(self):
+        shipment = self.create_docx_shipment_from_route()
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Contenido del despacho", body)
+        self.assertIn("Documento Word con captions", body)
+        self.assertIn("Incluido", body)
+        self.assertIn("Alcance del documento", body)
+        self.assertIn("Fotografías seleccionadas", body)
+        self.assertIn("Fotografías incluidas", body)
+        self.assertIn("<dd>1</dd>", body)
+        self.assertNotIn("caption_docx", body)
+        self.assertNotIn("photo_scope", body)
+        self.assertNotIn("include", body)
+        self.assertNotIn("generator", body)
+
+    def test_dispatch_detail_presents_scheduled_date_in_guayaquil(self):
+        shipment = self.create_docx_shipment_from_route(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+            timezone="America/Guayaquil",
+        )
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Programado para", body)
+        self.assertIn("4 de agosto de 2099, 09:45", body)
+        self.assertNotIn("2099-08-04T09:45:00-05:00", body)
+
+    def test_dispatch_detail_truncates_long_caption_excerpt(self):
+        long_caption = (
+            "Policías verifican documentos y realizan inspecciones a motociclistas durante un operativo "
+            "de control en el sector de La Carolina, como parte de las acciones preventivas desplegadas "
+            "por las autoridades locales durante la jornada."
+        )
+        self.coverages["cov-1"]["photos"][0]["caption_narrative"] = long_caption
+        shipment = self.create_shipment()
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Policías verifican documentos", body)
+        self.assertIn("…", body)
+        self.assertNotIn("durante la jornada.", body)
 
     def test_get_dispatch_detail_missing(self):
         response = self.client.get("/dispatch/missing")

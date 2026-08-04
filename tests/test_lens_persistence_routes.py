@@ -176,6 +176,20 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(photo["caption_narrative"], "Caption aprobado.")
         self.assertEqual(photo["caption_status"], "Aprobado")
 
+    def test_caption_status_selector_is_visible_in_lens(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn('label for="caption-review-status-field"', body)
+        self.assertIn("Estado editorial", body)
+        self.assertIn('<select id="caption-review-status-field">', body)
+        self.assertIn('<option value="Sin editar">Sin editar</option>', body)
+        self.assertIn('<option value="En edición">En edición</option>', body)
+        self.assertIn('<option value="Revisado">Revisado</option>', body)
+        self.assertIn('<option value="Aprobado">Aprobado</option>', body)
+
     def test_empty_caption_keeps_dispatch_button_disabled(self):
         coverage_id = self.create_coverage()
         self.add_photo(coverage_id)
@@ -245,6 +259,8 @@ class LensPersistenceRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.get_json()["can_create_dispatch"])
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+        self.assertIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
 
     def test_copy_caption_persists(self):
         coverage_id = self.create_coverage()

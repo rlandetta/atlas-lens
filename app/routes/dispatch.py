@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Mapping, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -15,6 +15,21 @@ CHANNEL_OPTIONS = ("Manual", "Correo", "FTP", "SFTP", "API")
 DEFAULT_TIMEZONE = "America/Guayaquil"
 TIMEZONE_OPTIONS = (DEFAULT_TIMEZONE,)
 CREATE_MODES = ("draft", "schedule")
+SPANISH_MONTHS = (
+    "",
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
 
 
 class WebCoverageProvider:
@@ -47,6 +62,31 @@ def read_coverages() -> Mapping[str, dict[str, Any]]:
     if not isinstance(coverages, Mapping):
         return {}
     return coverages
+
+
+def format_datetime_es(value: str, timezone_name: str = DEFAULT_TIMEZONE) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return raw_value
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    try:
+        target_timezone = ZoneInfo(timezone_name or DEFAULT_TIMEZONE)
+    except ZoneInfoNotFoundError:
+        target_timezone = ZoneInfo(DEFAULT_TIMEZONE)
+    local = parsed.astimezone(target_timezone)
+    return f"{local.day} de {SPANISH_MONTHS[local.month]} de {local.year}, {local:%H:%M}"
+
+
+def truncate_text(value: str, limit: int = 170) -> str:
+    text = " ".join(str(value or "").split())
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}…"
 
 
 def list_coverage_options() -> list[dict[str, str]]:
@@ -104,6 +144,121 @@ def get_caption_photo_options(coverage_id: str) -> list[dict[str, str]]:
         for photo in photos
         if photo.get("id")
     ]
+
+
+def get_live_coverage(coverage_id: str) -> dict[str, Any]:
+    try:
+        return get_dispatch_services()["lens_reader"].get_coverage(coverage_id)
+    except Exception:
+        return {}
+
+
+def build_photo_detail_items(shipment: dict[str, Any]) -> list[dict[str, Any]]:
+    coverage_id = str(shipment.get("coverage_id", ""))
+    live_coverage = get_live_coverage(coverage_id)
+    live_photos = {
+        str(photo.get("id")): photo
+        for photo in live_coverage.get("photos", [])
+        if isinstance(photo, dict)
+    }
+    snapshot_photos = [
+        photo
+        for photo in shipment.get("photo_snapshots", [])
+        if isinstance(photo, dict)
+    ]
+    items = []
+    for snapshot in snapshot_photos:
+        photo_id = str(snapshot.get("id", ""))
+        live_photo = live_photos.get(photo_id, {})
+        caption = str(
+            live_photo.get("caption_narrative")
+            or snapshot.get("caption_preview")
+            or ""
+        )
+        caption_status = str(
+            live_photo.get("caption_status")
+            or snapshot.get("caption_status")
+            or ""
+        )
+        name = str(
+            live_photo.get("name")
+            or live_photo.get("filename")
+            or snapshot.get("name")
+            or photo_id
+        )
+        thumbnail_url = ""
+        if live_photo and is_photo_available_for_dispatch(live_photo):
+            thumbnail_url = url_for(
+                "web.coverage_photo_media",
+                coverage_id=coverage_id,
+                photo_id=photo_id,
+            )
+        items.append({
+            "id": photo_id,
+            "name": name,
+            "caption_excerpt": truncate_text(caption),
+            "caption_status": caption_status,
+            "thumbnail_url": thumbnail_url,
+        })
+    return items
+
+
+def count_eligible_coverage_photos(coverage_id: str) -> int:
+    return sum(
+        1
+        for photo in get_caption_photo_options(coverage_id)
+        if photo.get("available_on_disk")
+    )
+
+
+def build_content_summary(shipment: dict[str, Any]) -> dict[str, Any]:
+    caption_docx = {}
+    export_reference = shipment.get("export_reference", {})
+    if isinstance(export_reference, dict):
+        raw_caption_docx = export_reference.get("caption_docx", {})
+        if isinstance(raw_caption_docx, dict):
+            caption_docx = raw_caption_docx
+    include_docx = bool(shipment.get("include_caption_docx") or caption_docx.get("include"))
+    photo_scope = str(caption_docx.get("photo_scope", "selected"))
+    selected_count = len(shipment.get("photo_ids", []))
+    if photo_scope == "all_eligible" and selected_count == 0:
+        docx_photo_count = count_eligible_coverage_photos(str(shipment.get("coverage_id", "")))
+        scope_label = "Todos los captions disponibles"
+    else:
+        docx_photo_count = selected_count
+        scope_label = "Fotografías seleccionadas"
+    return {
+        "docx_included": include_docx,
+        "docx_scope": scope_label,
+        "docx_photo_count": docx_photo_count,
+        "photo_count": selected_count,
+    }
+
+
+def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
+    timezone_name = str(shipment.get("timezone") or DEFAULT_TIMEZONE)
+    formatted_history = []
+    for item in shipment.get("history", []):
+        if not isinstance(item, dict):
+            continue
+        formatted_history.append({
+            "status": str(item.get("status", "")),
+            "note": str(item.get("note", "")),
+            "created_at": format_datetime_es(str(item.get("created_at", "")), timezone_name),
+        })
+    return {
+        "shipment": shipment,
+        "content_summary": build_content_summary(shipment),
+        "detail_photos": build_photo_detail_items(shipment),
+        "formatted": {
+            "created_at": format_datetime_es(str(shipment.get("created_at", "")), timezone_name),
+            "updated_at": format_datetime_es(str(shipment.get("updated_at", "")), timezone_name),
+            "scheduled_at": format_datetime_es(str(shipment.get("scheduled_at", "")), timezone_name),
+            "sent_at": format_datetime_es(str(shipment.get("sent_at", "")), timezone_name),
+            "last_attempt_at": format_datetime_es(str(shipment.get("last_attempt_at", "")), timezone_name),
+        },
+        "history_items": formatted_history,
+    }
 
 
 def parse_recipients(raw_recipients: str) -> list[dict[str, str]]:
@@ -316,4 +471,4 @@ def detail(shipment_id: str) -> str:
     shipment = shipment_service.get_shipment(shipment_id)
     if shipment is None:
         abort(404)
-    return render_template("dispatch/detail.html", shipment=shipment)
+    return render_template("dispatch/detail.html", **build_detail_context(shipment))
