@@ -176,7 +176,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIsNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
 
-    def test_dispatch_does_not_show_unavailable_photo_as_selectable(self):
+    def test_dispatch_marks_unavailable_photo_as_not_selectable(self):
         coverage_id = self.create_coverage()
         self.add_photo(coverage_id)
         self.client.post(
@@ -189,8 +189,87 @@ class LensPersistenceRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/new?coverage_id={coverage_id}").get_data(as_text=True)
 
-        self.assertIn("La cobertura seleccionada no tiene fotografías con caption aprobado.", body)
-        self.assertNotIn('value="photo-1"', body)
+        self.assertIn("IMG001.jpg", body)
+        self.assertIn("Archivo no disponible para envío", body)
+        self.assertIn('value="photo-1"  disabled', body)
+
+    def test_coverage_detail_enables_dispatch_button_with_approved_caption(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption aprobado.",
+                "caption_status": "Aprobado",
+            },
+        )
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn("Crear despacho", body)
+        self.assertIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
+
+    def test_coverage_detail_disables_dispatch_button_without_approved_caption(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn("Crear despacho", body)
+        self.assertIn("Apruebe al menos una fotografía para crear un despacho.", body)
+        self.assertNotIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
+
+    def test_dispatch_new_shows_unavailable_approved_photo_disabled(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption aprobado.",
+                "caption_status": "Aprobado",
+            },
+        )
+
+        body = self.client.get(f"/dispatch/new?coverage_id={coverage_id}").get_data(as_text=True)
+
+        self.assertIn("Cobertura preseleccionada", body)
+        self.assertIn("IMG001.jpg", body)
+        self.assertIn("Archivo no disponible para envío", body)
+        self.assertIn('value="photo-1"  disabled', body)
+
+    def test_dispatch_new_shows_available_approved_photo_selectable_and_excludes_unapproved(self):
+        media_file = self.media_root / "cov" / "IMG001.jpg"
+        media_file.parent.mkdir(parents=True)
+        media_file.write_bytes(b"jpg")
+        coverage_id = self.create_coverage()
+        self.add_photo(
+            coverage_id,
+            id="photo-approved",
+            name="IMG001.jpg",
+            storage_path="cov/IMG001.jpg",
+        )
+        self.add_photo(coverage_id, id="photo-review", name="IMG002.jpg")
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-approved/caption",
+            json={
+                "caption_narrative": "Caption aprobado.",
+                "caption_status": "Aprobado",
+            },
+        )
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-review/caption",
+            json={
+                "caption_narrative": "Caption revisado.",
+                "caption_status": "Revisado",
+            },
+        )
+
+        body = self.client.get(f"/dispatch/new?coverage_id={coverage_id}").get_data(as_text=True)
+
+        self.assertIn("IMG001.jpg", body)
+        self.assertIn('value="photo-approved"', body)
+        self.assertNotIn('value="photo-approved"  disabled', body)
+        self.assertNotIn("IMG002.jpg", body)
 
 
 if __name__ == "__main__":

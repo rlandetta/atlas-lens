@@ -98,8 +98,11 @@
                 <legend>Selecciona una o más fotografías</legend>
                 {% for photo in photo_options %}
                 <label>
-                    <input type="checkbox" name="photo_ids" value="{{ photo.id }}" {% if photo.id in selected_photo_ids %}checked{% endif %}>
+                    <input type="checkbox" name="photo_ids" value="{{ photo.id }}" {% if photo.id in selected_photo_ids and photo.available_on_disk %}checked{% endif %} {% if not photo.available_on_disk %}disabled{% endif %}>
                     {{ photo.name }}
+                    {% if not photo.available_on_disk %}
+                    · Archivo no disponible para envío
+                    {% endif %}
                 </label>
                 {% endfor %}
             </fieldset>

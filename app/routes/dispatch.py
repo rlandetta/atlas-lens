@@ -65,16 +65,25 @@ def get_approved_photo_options(coverage_id: str) -> list[dict[str, str]]:
     if not coverage_id:
         return []
     try:
-        photos = get_dispatch_services()["lens_reader"].get_approved_photos(coverage_id)
+        coverage = get_dispatch_services()["lens_reader"].get_coverage(coverage_id)
     except Exception:
+        return []
+
+    photos = coverage.get("photos", [])
+    if not isinstance(photos, list):
         return []
     return [
         {
             "id": str(photo.get("id", "")),
             "name": str(photo.get("name", "") or photo.get("id", "")),
+            "available_on_disk": photo.get("available_on_disk", True) is not False,
         }
         for photo in photos
-        if photo.get("id")
+        if (
+            photo.get("id")
+            and photo.get("caption_status") == "Aprobado"
+            and str(photo.get("caption_narrative", "")).strip()
+        )
     ]
 
 

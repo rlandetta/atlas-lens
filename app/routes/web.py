@@ -195,6 +195,20 @@ def find_coverage_photo(coverage: dict, photo_id: str) -> dict | None:
     )
 
 
+def is_photo_approved_for_dispatch_entry(photo: dict) -> bool:
+    return (
+        photo.get("caption_status") == "Aprobado"
+        and bool(str(photo.get("caption_narrative", "")).strip())
+    )
+
+
+def has_dispatch_ready_caption(coverage: dict) -> bool:
+    return any(
+        is_photo_approved_for_dispatch_entry(photo)
+        for photo in ensure_coverage_photos(coverage)
+    )
+
+
 def ai_disabled_response():
     return jsonify({
         "ok": False,
@@ -290,6 +304,7 @@ def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | Non
         "photos": photos,
         "export_history": build_export_history(coverage),
         "export_default_name": ExportNamingService().build_names(coverage).base_name,
+        "can_create_dispatch": has_dispatch_ready_caption(coverage),
         "country_groups": COUNTRY_GROUPS,
         "suggestions": get_all_suggestions(),
         "ai_enabled": AI_ENABLED,
