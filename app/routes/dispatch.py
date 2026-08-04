@@ -383,6 +383,43 @@ def parse_recipients(raw_recipients: str) -> list[dict[str, str]]:
     return recipients
 
 
+def build_recipient_rows(names: list[str], emails: list[str]) -> list[dict[str, str]]:
+    row_count = max(len(names), len(emails), 1)
+    rows = []
+    for index in range(row_count):
+        rows.append({
+            "name": str(names[index] if index < len(names) else "").strip(),
+            "email": str(emails[index] if index < len(emails) else "").strip(),
+        })
+    return rows
+
+
+def parse_recipient_rows(rows: list[dict[str, str]]) -> tuple[list[dict[str, str]], list[str]]:
+    recipients = []
+    row_errors = [""] * max(len(rows), 1)
+    for index, row in enumerate(rows or [{"name": "", "email": ""}]):
+        name = str(row.get("name", "")).strip()
+        email = str(row.get("email", "")).strip()
+        if not name and not email:
+            continue
+        if "|" in name or "|" in email:
+            row_errors[index] = "No use el carácter |. Escriba nombre y correo en campos separados."
+            continue
+        if not name:
+            row_errors[index] = "El nombre es obligatorio."
+            continue
+        if not email:
+            row_errors[index] = "El correo electrónico es obligatorio."
+            continue
+        if "@" not in email or email.startswith("@") or email.endswith("@") or "." not in email.rsplit("@", 1)[-1]:
+            row_errors[index] = "El correo electrónico no tiene un formato válido."
+            continue
+        recipients.append({"name": name, "email": email})
+    if not recipients and not any(row_errors):
+        row_errors[0] = "Agrega al menos un destinatario."
+    return recipients, row_errors
+
+
 def parse_schedule(form_data: dict[str, Any]) -> tuple[str, str, str]:
     mode = str(form_data.get("mode", "draft")).strip() or "draft"
     if mode not in CREATE_MODES:
@@ -414,6 +451,8 @@ def parse_schedule(form_data: dict[str, Any]) -> tuple[str, str, str]:
 
 def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str] | None = None) -> dict[str, Any]:
     form_data = deepcopy(form_data or {})
+    recipient_rows = deepcopy(form_data.get("recipient_rows") or [{"name": "", "email": ""}])
+    recipient_errors = list(form_data.get("recipient_errors") or [""] * len(recipient_rows))
     requested_coverage_id = str(request.args.get("coverage_id", "")).strip()
     if requested_coverage_id and not form_data.get("coverage_id"):
         form_data["coverage_id"] = requested_coverage_id
@@ -453,6 +492,8 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
         "errors": context_errors,
         "form_data": form_data,
         "photo_options": photo_options,
+        "recipient_errors": recipient_errors,
+        "recipient_rows": recipient_rows,
         "selected_coverage": selected_coverage,
         "selected_photo_ids": selected_photo_ids,
         "docx_includes_all_captions": bool(
@@ -489,6 +530,10 @@ def new() -> str:
         "scheduled_time": request.form.get("scheduled_time", "").strip(),
         "timezone": request.form.get("timezone", DEFAULT_TIMEZONE).strip() or DEFAULT_TIMEZONE,
         "include_caption_docx": "include_caption_docx" in request.form,
+        "recipient_rows": build_recipient_rows(
+            request.form.getlist("recipient_name[]"),
+            request.form.getlist("recipient_email[]"),
+        ),
     }
 
     errors = []
@@ -518,10 +563,10 @@ def new() -> str:
             errors.append("Selecciona únicamente fotografías con caption y archivo disponible para envío.")
     if form_data["channel"] not in CHANNEL_OPTIONS:
         errors.append("Selecciona un canal válido.")
-    try:
-        recipients = parse_recipients(form_data["recipients"])
-    except DispatchValidationError as error:
-        errors.append(str(error))
+    recipients, recipient_errors = parse_recipient_rows(form_data["recipient_rows"])
+    form_data["recipient_errors"] = recipient_errors
+    if any(recipient_errors):
+        errors.append("Corrige los destinatarios marcados.")
     status = "Borrador"
     scheduled_at = ""
     timezone_name = DEFAULT_TIMEZONE

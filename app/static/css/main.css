@@ -456,6 +456,19 @@ h1 {
     gap: 0.22rem;
 }
 
+.field-help {
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    line-height: 1.35;
+}
+
+.field-error {
+    color: var(--error-text);
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin: 0;
+}
+
 .dispatch-schedule-card {
     display: grid;
     gap: 0.62rem;
@@ -484,6 +497,12 @@ h1 {
     gap: 0.42rem;
 }
 
+.dispatch-schedule-option label {
+    color: var(--text-main);
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
 .coverage-form .dispatch-schedule-option input {
     margin: 0;
     width: auto;
@@ -494,6 +513,7 @@ h1 {
     border-radius: var(--radius-md);
     display: grid;
     gap: 0.5rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     margin: 0;
     padding: 0.72rem;
 }
@@ -502,6 +522,7 @@ h1 {
     color: var(--text-secondary);
     font-size: 0.82rem;
     font-weight: 700;
+    grid-column: 1 / -1;
     padding: 0 0.2rem;
 }
 
@@ -511,9 +532,9 @@ h1 {
     border: 1px solid rgba(43, 54, 66, 0.82);
     border-radius: var(--radius-md);
     display: flex;
-    gap: 0.62rem;
-    min-height: 74px;
-    padding: 0.45rem 0.52rem;
+    gap: 0.5rem;
+    min-height: 92px;
+    padding: 0.42rem 0.48rem;
 }
 
 .coverage-form .dispatch-photo-option input {
@@ -532,10 +553,10 @@ h1 {
     background: #0d141d;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    flex: 0 0 92px;
-    height: 62px;
+    flex: 0 0 110px;
+    height: 80px;
     object-fit: cover;
-    width: 92px;
+    width: 110px;
 }
 
 .dispatch-photo-copy {
@@ -546,16 +567,23 @@ h1 {
 
 .dispatch-photo-name {
     color: var(--text-main);
-    font-size: 0.86rem;
+    font-size: 0.84rem;
     font-weight: 700;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .dispatch-photo-caption {
     color: var(--text-secondary);
+    display: -webkit-box;
     font-size: 0.78rem;
     font-weight: 500;
     line-height: 1.3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .dispatch-docx-option {
@@ -575,6 +603,31 @@ h1 {
     color: var(--text-secondary);
     font-size: 0.82rem;
     margin: 0 0 0.62rem;
+}
+
+.dispatch-recipient-list {
+    display: grid;
+    gap: 0.55rem;
+    margin-bottom: 0.7rem;
+}
+
+.dispatch-recipient-row {
+    align-items: end;
+    background: #111a24;
+    border: 1px solid rgba(43, 54, 66, 0.82);
+    border-radius: var(--radius-md);
+    display: grid;
+    gap: 0.45rem;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+    padding: 0.62rem;
+}
+
+.dispatch-recipient-row .field-error {
+    grid-column: 1 / -1;
+}
+
+.dispatch-recipient-remove {
+    min-height: 2.45rem;
 }
 
 .dispatch-detail-header {
@@ -742,6 +795,15 @@ h1 {
 
     .dispatch-detail-grid {
         grid-template-columns: 1fr;
+    }
+
+    .dispatch-photo-options,
+    .dispatch-recipient-row {
+        grid-template-columns: 1fr;
+    }
+
+    .dispatch-photo-option {
+        align-items: flex-start;
     }
 }
 

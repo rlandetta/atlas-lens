@@ -156,11 +156,16 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Nuevo despacho", body)
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Selecciona una cobertura", body)
-        self.assertIn("Ejemplo: Mesa Xinhua | desk@xinhua.com", body)
+        self.assertIn("Ejemplo: 09:45 AM · Hora de Ecuador", body)
+        self.assertIn('name="recipient_name[]"', body)
+        self.assertIn('name="recipient_email[]"', body)
+        self.assertIn("Agregar destinatario", body)
+        self.assertNotIn("Nombre | correo@dominio.com", body)
         self.assertIn("Guardar como borrador", body)
         self.assertIn("Programar envío", body)
         self.assertIn("America/Guayaquil", body)
         self.assertIn("Incluir documento Word con captions", body)
+        self.assertIn('src="/static/js/dispatch_form.js"', body)
 
     def test_get_dispatch_new_with_valid_coverage_id(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -197,7 +202,8 @@ class DispatchRoutesTest(unittest.TestCase):
             "name": "Despacho desde formulario",
             "coverage_id": "cov-1",
             "photo_ids": ["photo-approved"],
-            "recipients": "Mesa Xinhua | desk@xinhua.com",
+            "recipient_name[]": ["Mesa Xinhua"],
+            "recipient_email[]": ["desk@xinhua.com"],
             "delivery_note": "Lista para despacho.",
             "channel": "Manual",
             "mode": "draft",
@@ -231,10 +237,23 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(shipments[0]["name"], "Despacho desde formulario")
         self.assertEqual(shipments[0]["status"], "Borrador")
         self.assertEqual(shipments[0]["channel"], "Manual")
+        self.assertEqual(shipments[0]["recipients"], [{"name": "Mesa Xinhua", "email": "desk@xinhua.com"}])
         self.assertTrue(shipments[0]["include_caption_docx"])
         self.assertEqual(shipments[0]["export_reference"]["caption_docx"]["generator"], "ExportService")
         self.assertEqual(shipments[0]["scheduled_at"], "")
         self.assertEqual(shipments[0]["timezone"], "America/Guayaquil")
+
+    def test_post_dispatch_new_ignores_empty_recipient_rows(self):
+        response = self.post_new(
+            **{
+                "recipient_name[]": ["Mesa Xinhua", ""],
+                "recipient_email[]": ["desk@xinhua.com", ""],
+            }
+        )
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["recipients"], [{"name": "Mesa Xinhua", "email": "desk@xinhua.com"}])
 
     def test_post_dispatch_new_allows_unchecking_caption_docx_when_photo_is_selected(self):
         response = self.post_new(include_caption_docx=None)
@@ -295,7 +314,8 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         body = response.get_data(as_text=True)
         self.assertIn("El nombre del despacho es obligatorio.", body)
-        self.assertIn("Mesa Xinhua | desk@xinhua.com", body)
+        self.assertIn('value="Mesa Xinhua"', body)
+        self.assertIn('value="desk@xinhua.com"', body)
 
     def test_post_dispatch_new_missing_coverage(self):
         response = self.post_new(coverage_id="")
@@ -325,17 +345,54 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Selecciona únicamente fotografías con caption y archivo disponible para envío.", response.get_data(as_text=True))
 
     def test_post_dispatch_new_missing_recipients(self):
-        response = self.post_new(recipients="")
+        response = self.post_new(**{"recipient_name[]": [""], "recipient_email[]": [""]})
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Agrega al menos un destinatario.", response.get_data(as_text=True))
 
-    def test_post_dispatch_new_rejects_invalid_recipient_format(self):
-        response = self.post_new(recipients="Mesa Xinhua desk@xinhua.com")
+    def test_post_dispatch_new_rejects_incomplete_recipient_rows(self):
+        response = self.post_new(**{"recipient_name[]": ["Mesa Xinhua"], "recipient_email[]": [""]})
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Cada destinatario debe usar el formato", response.get_data(as_text=True))
-        self.assertIn("Ejemplo: Mesa Xinhua | desk@xinhua.com", response.get_data(as_text=True))
+        body = response.get_data(as_text=True)
+        self.assertIn("Corrige los destinatarios marcados.", body)
+        self.assertIn("El correo electrónico es obligatorio.", body)
+        self.assertIn('value="Mesa Xinhua"', body)
+
+    def test_post_dispatch_new_rejects_recipient_pipe_character(self):
+        response = self.post_new(**{"recipient_name[]": ["Mesa | Xinhua"], "recipient_email[]": ["desk@xinhua.com"]})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("No use el carácter |. Escriba nombre y correo en campos separados.", response.get_data(as_text=True))
+
+    def test_dispatch_form_javascript_supports_recipient_rows(self):
+        script = (Path(__file__).parents[1] / "app" / "static" / "js" / "dispatch_form.js").read_text()
+
+        self.assertIn("data-recipient-add", script)
+        self.assertIn("data-recipient-remove", script)
+        self.assertIn("cloneNode", script)
+        self.assertIn("renumberRecipients", script)
+        self.assertIn('replaceAll("|", "")', script)
+
+    def test_dispatch_new_uses_compact_photo_grid_markup(self):
+        response = self.client.get("/dispatch/new?coverage_id=cov-1")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('class="dispatch-photo-options"', body)
+        self.assertIn('class="dispatch-photo-option', body)
+        self.assertIn('class="dispatch-photo-thumb"', body)
+        self.assertIn('name="photo_ids" value="photo-approved" checked', body)
+
+    def test_dispatch_photo_selection_css_is_compact_and_responsive(self):
+        stylesheet = (Path(__file__).parents[1] / "app" / "static" / "css" / "main.css").read_text()
+
+        self.assertIn("grid-template-columns: repeat(2, minmax(0, 1fr));", stylesheet)
+        self.assertIn("-webkit-line-clamp: 3;", stylesheet)
+        self.assertIn("text-overflow: ellipsis;", stylesheet)
+        self.assertIn("height: 80px;", stylesheet)
+        self.assertIn("width: 110px;", stylesheet)
+        self.assertIn(".dispatch-photo-options,\n    .dispatch-recipient-row {\n        grid-template-columns: 1fr;", stylesheet)
 
     def test_post_dispatch_new_rejects_missing_coverage(self):
         response = self.post_new(coverage_id="missing")

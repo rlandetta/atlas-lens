@@ -40,14 +40,14 @@
             <h2 id="dispatch-new-schedule-title">Programación</h2>
             <fieldset class="dispatch-schedule-mode">
                 <legend>Modo</legend>
-                <label class="dispatch-schedule-option">
-                    <input type="radio" name="mode" value="draft" {% if (form_data.mode or "draft") == "draft" %}checked{% endif %}>
-                    <span>Guardar como borrador</span>
-                </label>
-                <label class="dispatch-schedule-option">
-                    <input type="radio" name="mode" value="schedule" {% if form_data.mode == "schedule" %}checked{% endif %}>
-                    <span>Programar envío</span>
-                </label>
+                <div class="dispatch-schedule-option">
+                    <input id="dispatch_mode_draft" type="radio" name="mode" value="draft" {% if (form_data.mode or "draft") == "draft" %}checked{% endif %}>
+                    <label for="dispatch_mode_draft">Guardar como borrador</label>
+                </div>
+                <div class="dispatch-schedule-option">
+                    <input id="dispatch_mode_schedule" type="radio" name="mode" value="schedule" {% if form_data.mode == "schedule" %}checked{% endif %}>
+                    <label for="dispatch_mode_schedule">Programar envío</label>
+                </div>
             </fieldset>
             <div class="coverage-form-grid dispatch-schedule-fields" data-dispatch-schedule-fields {% if (form_data.mode or "draft") != "schedule" %}hidden{% endif %}>
                 <div class="form-field">
@@ -57,6 +57,7 @@
                 <div class="form-field">
                     <label for="scheduled_time">Hora de envío</label>
                     <input id="scheduled_time" name="scheduled_time" type="time" value="{{ form_data.scheduled_time or '' }}">
+                    <small class="field-help">Ejemplo: 09:45 AM · Hora de Ecuador</small>
                 </div>
                 <div class="form-field">
                     <label for="timezone">Zona horaria</label>
@@ -73,7 +74,7 @@
             <h2 id="dispatch-new-coverage-title">Cobertura</h2>
             {% if coverage_locked and selected_coverage %}
             <p>Cobertura preseleccionada: <strong>{{ selected_coverage.name }}</strong></p>
-            <input type="hidden" name="coverage_id" value="{{ selected_coverage.id }}">
+            <input id="coverage_id" type="hidden" name="coverage_id" value="{{ selected_coverage.id }}">
             {% elif coverage_options %}
             <div class="form-field">
                 <label for="coverage_id">Selecciona una cobertura</label>
@@ -93,10 +94,10 @@
 
         <section class="ui-card" aria-labelledby="dispatch-new-photos-title">
             <h2 id="dispatch-new-photos-title">Fotografías con caption</h2>
-            <label class="dispatch-docx-option">
-                <input type="checkbox" name="include_caption_docx" value="1" {% if form_data.include_caption_docx %}checked{% endif %}>
-                <span>Incluir documento Word con captions</span>
-            </label>
+            <div class="dispatch-docx-option">
+                <input id="include_caption_docx" type="checkbox" name="include_caption_docx" value="1" {% if form_data.include_caption_docx %}checked{% endif %}>
+                <label for="include_caption_docx">Incluir documento Word con captions</label>
+            </div>
             {% if docx_includes_all_captions %}
             <p class="dispatch-docx-note">El documento Word incluirá todos los captions disponibles de la cobertura.</p>
             {% endif %}
@@ -104,15 +105,15 @@
             <fieldset class="dispatch-photo-options">
                 <legend>Selecciona una o más fotografías</legend>
                 {% for photo in photo_options %}
-                <label class="dispatch-photo-option{% if not photo.available_on_disk %} is-disabled{% endif %}">
-                    <input type="checkbox" name="photo_ids" value="{{ photo.id }}" {% if photo.id in selected_photo_ids and photo.available_on_disk %}checked{% endif %} {% if not photo.available_on_disk %}disabled{% endif %}>
+                <div class="dispatch-photo-option{% if not photo.available_on_disk %} is-disabled{% endif %}">
+                    <input id="dispatch_photo_{{ loop.index }}" type="checkbox" name="photo_ids" value="{{ photo.id }}" {% if photo.id in selected_photo_ids and photo.available_on_disk %}checked{% endif %} {% if not photo.available_on_disk %}disabled{% endif %}>
                     {% if photo.thumbnail_url %}
                     <img class="dispatch-photo-thumb" src="{{ photo.thumbnail_url }}" alt="Miniatura de {{ photo.name }}" loading="lazy">
                     {% else %}
                     <span class="dispatch-photo-thumb-placeholder" aria-hidden="true"></span>
                     {% endif %}
                     <span class="dispatch-photo-copy">
-                        <span class="dispatch-photo-name">{{ photo.name }}</span>
+                        <label class="dispatch-photo-name" for="dispatch_photo_{{ loop.index }}">{{ photo.name }}</label>
                         {% if photo.caption_excerpt %}
                         <span class="dispatch-photo-caption">{{ photo.caption_excerpt }}</span>
                         {% else %}
@@ -122,7 +123,7 @@
                     {% if not photo.file_available %}
                     <span class="dispatch-photo-unavailable">Archivo no disponible para envío</span>
                     {% endif %}
-                </label>
+                </div>
                 {% endfor %}
             </fieldset>
             {% elif form_data.coverage_id %}
@@ -134,10 +135,25 @@
 
         <section class="ui-card" aria-labelledby="dispatch-new-recipients-title">
             <h2 id="dispatch-new-recipients-title">Destinatarios</h2>
-            <div class="form-field">
-                <label for="recipients">Un destinatario por línea. Ejemplo: Mesa Xinhua | desk@xinhua.com</label>
-                <textarea id="recipients" name="recipients" rows="6" required>{{ form_data.recipients or '' }}</textarea>
+            <div class="dispatch-recipient-list" data-recipient-list>
+                {% for recipient in recipient_rows %}
+                <div class="dispatch-recipient-row" data-recipient-row>
+                    <div class="form-field">
+                        <label for="recipient_name_{{ loop.index }}">Nombre</label>
+                        <input id="recipient_name_{{ loop.index }}" name="recipient_name[]" type="text" value="{{ recipient.name }}" autocomplete="name" data-recipient-name>
+                    </div>
+                    <div class="form-field">
+                        <label for="recipient_email_{{ loop.index }}">Correo electrónico</label>
+                        <input id="recipient_email_{{ loop.index }}" name="recipient_email[]" type="email" value="{{ recipient.email }}" autocomplete="email" data-recipient-email>
+                    </div>
+                    <button type="button" class="secondary-button dispatch-recipient-remove" data-recipient-remove>Eliminar</button>
+                    {% if recipient_errors[loop.index0] %}
+                    <p class="field-error">{{ recipient_errors[loop.index0] }}</p>
+                    {% endif %}
+                </div>
+                {% endfor %}
             </div>
+            <button type="button" class="secondary-button compact-action" data-recipient-add>Agregar destinatario</button>
         </section>
 
         <section class="ui-card" aria-labelledby="dispatch-new-note-title">
@@ -156,16 +172,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-document.addEventListener("DOMContentLoaded", () => {
-    const scheduleFields = document.querySelector("[data-dispatch-schedule-fields]");
-    const modeInputs = document.querySelectorAll('input[name="mode"]');
-    const syncScheduleFields = () => {
-        const selectedMode = document.querySelector('input[name="mode"]:checked');
-        scheduleFields.hidden = !selectedMode || selectedMode.value !== "schedule";
-    };
-    modeInputs.forEach((input) => input.addEventListener("change", syncScheduleFields));
-    syncScheduleFields();
-});
-</script>
+<script src="{{ url_for('static', filename='js/dispatch_form.js') }}"></script>
 {% endblock %}
