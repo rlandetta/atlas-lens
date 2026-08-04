@@ -36,20 +36,20 @@
             </div>
         </div>
 
-        <section class="ui-card" aria-labelledby="dispatch-new-schedule-title">
+        <section class="ui-card dispatch-schedule-card" aria-labelledby="dispatch-new-schedule-title">
             <h2 id="dispatch-new-schedule-title">Programación</h2>
-            <fieldset>
+            <fieldset class="dispatch-schedule-mode">
                 <legend>Modo</legend>
-                <label>
+                <label class="dispatch-schedule-option">
                     <input type="radio" name="mode" value="draft" {% if (form_data.mode or "draft") == "draft" %}checked{% endif %}>
-                    Guardar como borrador
+                    <span>Guardar como borrador</span>
                 </label>
-                <label>
+                <label class="dispatch-schedule-option">
                     <input type="radio" name="mode" value="schedule" {% if form_data.mode == "schedule" %}checked{% endif %}>
-                    Programar envío
+                    <span>Programar envío</span>
                 </label>
             </fieldset>
-            <div class="coverage-form-grid">
+            <div class="coverage-form-grid dispatch-schedule-fields" data-dispatch-schedule-fields {% if (form_data.mode or "draft") != "schedule" %}hidden{% endif %}>
                 <div class="form-field">
                     <label for="scheduled_date">Fecha de envío</label>
                     <input id="scheduled_date" name="scheduled_date" type="date" value="{{ form_data.scheduled_date or '' }}">
@@ -131,4 +131,19 @@
 
     <a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const scheduleFields = document.querySelector("[data-dispatch-schedule-fields]");
+    const modeInputs = document.querySelectorAll('input[name="mode"]');
+    const syncScheduleFields = () => {
+        const selectedMode = document.querySelector('input[name="mode"]:checked');
+        scheduleFields.hidden = !selectedMode || selectedMode.value !== "schedule";
+    };
+    modeInputs.forEach((input) => input.addEventListener("change", syncScheduleFields));
+    syncScheduleFields();
+});
+</script>
 {% endblock %}

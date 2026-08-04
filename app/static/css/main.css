@@ -456,6 +456,39 @@ h1 {
     gap: 0.22rem;
 }
 
+.dispatch-schedule-card {
+    display: grid;
+    gap: 0.62rem;
+}
+
+.dispatch-schedule-mode {
+    border: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.9rem;
+    margin: 0;
+    padding: 0;
+}
+
+.dispatch-schedule-mode legend {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 0.42rem;
+    padding: 0;
+}
+
+.dispatch-schedule-option {
+    align-items: center;
+    display: inline-flex;
+    gap: 0.42rem;
+}
+
+.coverage-form .dispatch-schedule-option input {
+    margin: 0;
+    width: auto;
+}
+
 .coverage-form label,
 .edit-dialog-form label {
     font-weight: 600;
