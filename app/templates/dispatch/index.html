@@ -13,7 +13,7 @@
 </section>
 
 {% set statuses = ("Borrador", "Preparando", "Listo", "Programado", "Enviando", "Enviado", "Entregado", "Error", "Cancelado") %}
-<section class="ui-card" aria-labelledby="dispatch-status-summary-title">
+<section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-status-summary-title">
     <h2 id="dispatch-status-summary-title">Resumen por estado</h2>
     <dl class="coverage-meta-grid atlas-grid atlas-grid--3">
         {% for status in statuses %}
@@ -26,7 +26,7 @@
 </section>
 
 {% if shipments %}
-<section class="ui-card" aria-labelledby="dispatch-history-title">
+<section class="ui-card atlas-panel--normal" aria-labelledby="dispatch-history-title">
     <h2 id="dispatch-history-title">Historial de despachos</h2>
     <table>
         <thead>
@@ -58,7 +58,7 @@
     </table>
 </section>
 {% else %}
-<section class="empty-state ui-card">
+<section class="empty-state ui-card atlas-panel--compact">
     <h2>No hay despachos todavía</h2>
     <p>Cuando LENS prepare despachos para distribución, aparecerán en este historial.</p>
 </section>

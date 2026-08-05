@@ -4,8 +4,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const immediateHelp = document.querySelector("[data-dispatch-immediate-help]");
     const modeInputs = document.querySelectorAll('input[name="mode"]');
     const timezoneSelect = document.getElementById("timezone");
-    const timezoneToggle = document.querySelector("[data-timezone-toggle]");
+    const timezoneToggles = document.querySelectorAll("[data-timezone-toggle]");
     const timezoneSelector = document.querySelector("[data-timezone-selector]");
+    const timezonePanel = document.querySelector("[data-timezone-panel]");
     const timezoneSummaries = document.querySelectorAll("[data-timezone-summary]");
     const timezoneDetection = document.querySelector("[data-timezone-detection]");
     const scheduledDate = document.getElementById("scheduled_date");
@@ -117,13 +118,35 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     };
 
+    const setElementVisibility = (element, visible) => {
+        if (!element) {
+            return;
+        }
+        element.hidden = !visible;
+        element.setAttribute("aria-hidden", visible ? "false" : "true");
+    };
+
+    const setScheduleInputsEnabled = (enabled) => {
+        [scheduledDate, scheduledTime].forEach((input) => {
+            if (input) {
+                input.disabled = !enabled;
+            }
+        });
+    };
+
     const syncScheduleFields = () => {
         const mode = getSelectedMode();
-        if (scheduleFields) {
-            scheduleFields.hidden = mode !== "schedule";
+        const isSchedule = mode === "schedule";
+        const isImmediate = mode === "immediate";
+        setElementVisibility(scheduleFields, isSchedule);
+        setElementVisibility(immediateHelp, isImmediate);
+        setElementVisibility(timezonePanel, isSchedule);
+        setScheduleInputsEnabled(isSchedule);
+        if (mode === "draft") {
+            setElementVisibility(timezoneSelector, false);
         }
-        if (immediateHelp) {
-            immediateHelp.hidden = mode !== "immediate";
+        if (timezoneSelect) {
+            timezoneSelect.disabled = false;
         }
         syncSummary();
     };
@@ -135,12 +158,18 @@ document.addEventListener("DOMContentLoaded", () => {
             syncSummary();
         });
     }
-    if (timezoneToggle && timezoneSelector) {
+    timezoneToggles.forEach((timezoneToggle) => {
         timezoneToggle.addEventListener("click", () => {
-            timezoneSelector.hidden = !timezoneSelector.hidden;
-            timezoneToggle.textContent = timezoneSelector.hidden ? "Cambiar" : "Ocultar";
+            if (!timezoneSelector) {
+                return;
+            }
+            const nextVisible = timezoneSelector.hidden;
+            setElementVisibility(timezoneSelector, nextVisible);
+            timezoneToggles.forEach((button) => {
+                button.textContent = nextVisible ? "Ocultar zona horaria" : "Cambiar zona horaria";
+            });
         });
-    }
+    });
     [scheduledDate, scheduledTime, docxInput].forEach((input) => {
         if (input) {
             input.addEventListener("input", syncSummary);

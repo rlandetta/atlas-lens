@@ -4,7 +4,7 @@
 {% block main_class %}coverage-page{% endblock %}
 
 {% block content %}
-<section class="coverage-header-card ui-card">
+<section class="coverage-header-card ui-card atlas-panel--normal">
     <div class="coverage-header-top">
         <p class="coverage-id">ID temporal: {{ coverage_id }}</p>
         <div class="photo-toolbar-actions">
@@ -73,7 +73,7 @@
     <a href="{{ url_for('web.home') }}" class="back-link compact-link">Volver a coberturas</a>
 </section>
 
-<section class="ui-card coverage-tabs-card">
+<section class="ui-card atlas-panel--wide coverage-tabs-card">
     <nav class="coverage-tabs" role="tablist" aria-label="Secciones de cobertura">
         <a class="tab-link" href="{{ url_for('web.home') }}">Coberturas</a>
         <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-button data-tab-target="tab-captions">Captions</button>

@@ -12,7 +12,7 @@
     <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Nueva cobertura</a>
 </section>
 
-<section class="list-tools ui-card" aria-label="Herramientas de listado">
+<section class="list-tools ui-card atlas-panel--compact" aria-label="Herramientas de listado">
     <div class="search-field" aria-label="Búsqueda visual preparada">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.7"/>
@@ -30,7 +30,7 @@
 {% if coverages %}
 <section class="coverage-grid" aria-label="Listado de coberturas">
     {% for item in coverages %}
-    <article class="coverage-card ui-card">
+    <article class="coverage-card ui-card atlas-panel--normal">
         <div class="coverage-card-top">
             <span class="status-pill">{{ item.status }}</span>
             <span class="photo-total">{{ item.photo_count }} fotografías</span>
@@ -86,7 +86,7 @@
     </form>
 </dialog>
 {% else %}
-<section class="empty-state ui-card">
+<section class="empty-state ui-card atlas-panel--compact">
     <h2>Aún no hay coberturas</h2>
     <p>Cree una cobertura para comenzar a organizar fotografías, captions y entregas.</p>
     <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Crear primera cobertura</a>

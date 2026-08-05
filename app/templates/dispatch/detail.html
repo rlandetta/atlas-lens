@@ -4,7 +4,7 @@
 {% block main_class %}dispatch-detail-page{% endblock %}
 
 {% block content %}
-<section class="dispatch-detail-header ui-card">
+<section class="dispatch-detail-header ui-card atlas-panel--normal">
     <div>
         <p class="coverage-id">ID: {{ shipment.id }}</p>
         <h1>{{ shipment.name }}</h1>
@@ -24,7 +24,7 @@
 </aside>
 
 <div class="dispatch-detail-grid">
-    <section class="ui-card" aria-labelledby="dispatch-general-title">
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-general-title">
         <h2 id="dispatch-general-title">Información general</h2>
         <dl class="coverage-meta-grid dispatch-compact-meta">
             <div>
@@ -94,7 +94,7 @@
         </dl>
     </section>
 
-    <section class="ui-card" aria-labelledby="dispatch-coverage-title">
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-coverage-title">
         <h2 id="dispatch-coverage-title">Cobertura</h2>
         <dl class="coverage-meta-grid dispatch-compact-meta">
             <div>
@@ -134,7 +134,7 @@
         </dl>
     </section>
 
-    <section class="ui-card" aria-labelledby="dispatch-content-title">
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-content-title">
         <h2 id="dispatch-content-title">Contenido del despacho</h2>
         <dl class="coverage-meta-grid dispatch-compact-meta">
             <div>
@@ -158,7 +158,7 @@
         </dl>
     </section>
 
-    <section class="ui-card" aria-labelledby="dispatch-recipients-title">
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-recipients-title">
         <h2 id="dispatch-recipients-title">Destinatarios</h2>
         {% if shipment.recipients %}
         <ul class="dispatch-compact-list">
@@ -173,13 +173,13 @@
 </div>
 
 {% if shipment.delivery_note %}
-<section class="ui-card dispatch-detail-section" aria-labelledby="dispatch-note-title">
+<section class="ui-card atlas-panel--compact dispatch-detail-section" aria-labelledby="dispatch-note-title">
     <h2 id="dispatch-note-title">Nota de entrega</h2>
     <p>{{ shipment.delivery_note }}</p>
 </section>
 {% endif %}
 
-<section class="ui-card dispatch-detail-section" aria-labelledby="dispatch-photos-title">
+<section class="ui-card atlas-panel--normal dispatch-detail-section" aria-labelledby="dispatch-photos-title">
     <h2 id="dispatch-photos-title">Fotografías</h2>
     {% if detail_photos %}
     <div class="dispatch-photo-grid">
@@ -211,7 +211,7 @@
     {% endif %}
 </section>
 
-<section class="ui-card dispatch-detail-section" aria-labelledby="dispatch-history-title">
+<section class="ui-card atlas-panel--compact dispatch-detail-section" aria-labelledby="dispatch-history-title">
     <h2 id="dispatch-history-title">Historial de estados</h2>
     {% if history_items %}
     <ol class="dispatch-history-list">

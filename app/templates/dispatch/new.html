@@ -4,7 +4,7 @@
 {% block main_class %}form-page dispatch-new-page{% endblock %}
 
 {% block content %}
-<section class="form-card ui-card">
+<section class="form-card ui-card atlas-panel--normal">
     <h1>Nuevo despacho</h1>
     <p class="subtitle">Cree un despacho desde fotografías con caption de LENS y defina si queda en borrador, inmediato o programado.</p>
 
@@ -36,7 +36,7 @@
             </div>
         </div>
 
-        <section class="ui-card dispatch-schedule-card" aria-labelledby="dispatch-new-schedule-title">
+        <section class="ui-card atlas-panel--compact dispatch-schedule-card" aria-labelledby="dispatch-new-schedule-title">
             <h2 id="dispatch-new-schedule-title">Entrega</h2>
             <fieldset class="dispatch-schedule-mode">
                 <legend>Modo de entrega</legend>
@@ -54,29 +54,30 @@
                 </div>
             </fieldset>
             <p class="dispatch-mode-help" data-dispatch-immediate-help {% if form_data.mode != "immediate" %}hidden{% endif %}>
-                Se preparará inmediatamente usando la hora local detectada: <span data-timezone-summary>{{ timezone_display }}</span>. La entrega real se realizará cuando el servicio de correo esté configurado.
+                Se preparará inmediatamente usando la hora local detectada: <span data-timezone-summary>{{ timezone_display }}</span>.
+                <button type="button" class="secondary-button compact-action dispatch-inline-action" data-timezone-toggle>Cambiar zona horaria</button>
             </p>
             <div class="coverage-form-grid dispatch-schedule-fields" data-dispatch-schedule-fields {% if (form_data.mode or "draft") != "schedule" %}hidden{% endif %}>
                 <div class="form-field">
                     <label for="scheduled_date">Fecha de envío</label>
-                    <input id="scheduled_date" name="scheduled_date" type="date" value="{{ form_data.scheduled_date or '' }}">
+                    <input id="scheduled_date" name="scheduled_date" type="date" value="{{ form_data.scheduled_date or '' }}" {% if (form_data.mode or "draft") != "schedule" %}disabled{% endif %}>
                 </div>
                 <div class="form-field">
                     <label for="scheduled_time">Hora de envío</label>
-                    <input id="scheduled_time" name="scheduled_time" type="time" value="{{ form_data.scheduled_time or '' }}">
+                    <input id="scheduled_time" name="scheduled_time" type="time" value="{{ form_data.scheduled_time or '' }}" {% if (form_data.mode or "draft") != "schedule" %}disabled{% endif %}>
                     <small class="field-help">Ejemplo: 09:45 AM · Hora local en <span data-timezone-summary>{{ timezone_display }}</span></small>
                 </div>
             </div>
-            <div class="dispatch-timezone-compact" data-timezone-panel>
+            <div class="dispatch-timezone-compact" data-timezone-panel {% if form_data.mode != "schedule" %}hidden{% endif %}>
                 <div>
                     <span class="field-help">Zona horaria</span>
                     <strong data-timezone-summary>{{ timezone_display }}</strong>
                     <small data-timezone-detection>Detectada automáticamente</small>
                 </div>
-                <button type="button" class="secondary-button compact-action" data-timezone-toggle>Cambiar</button>
+                <button type="button" class="secondary-button compact-action dispatch-timezone-toggle-secondary" data-timezone-toggle>Cambiar</button>
             </div>
             <div class="form-field dispatch-timezone-selector" data-timezone-selector hidden>
-                <label for="timezone">Zona horaria</label>
+                <label for="timezone">Seleccionar zona horaria</label>
                 <select id="timezone" name="timezone" data-preserve-timezone="{% if request.method == 'POST' %}true{% else %}false{% endif %}">
                     {% for timezone in timezone_options %}
                     <option value="{{ timezone }}" {% if (form_data.timezone or "America/Guayaquil") == timezone %}selected{% endif %}>{{ timezone }}</option>
@@ -86,7 +87,7 @@
             </div>
         </section>
 
-        <section class="ui-card" aria-labelledby="dispatch-new-coverage-title">
+        <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-new-coverage-title">
             <h2 id="dispatch-new-coverage-title">Cobertura</h2>
             {% if coverage_locked and selected_coverage %}
             <p>Cobertura preseleccionada: <strong>{{ selected_coverage.name }}</strong></p>
@@ -108,7 +109,7 @@
             {% endif %}
         </section>
 
-        <section class="ui-card" aria-labelledby="dispatch-new-photos-title">
+        <section class="ui-card atlas-panel--normal" aria-labelledby="dispatch-new-photos-title">
             <h2 id="dispatch-new-photos-title">Fotografías con caption</h2>
             <div class="dispatch-docx-option">
                 <input id="include_caption_docx" type="checkbox" name="include_caption_docx" value="1" {% if form_data.include_caption_docx %}checked{% endif %}>
@@ -149,7 +150,7 @@
             {% endif %}
         </section>
 
-        <section class="ui-card" aria-labelledby="dispatch-new-recipients-title">
+        <section class="ui-card atlas-panel--normal" aria-labelledby="dispatch-new-recipients-title">
             <h2 id="dispatch-new-recipients-title">Destinatarios</h2>
             <div class="dispatch-recipient-list" data-recipient-list>
                 {% for recipient in recipient_rows %}
@@ -172,7 +173,7 @@
             <button type="button" class="secondary-button compact-action" data-recipient-add>Agregar destinatario</button>
         </section>
 
-        <section class="ui-card" aria-labelledby="dispatch-new-note-title">
+        <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-new-note-title">
             <h2 id="dispatch-new-note-title">Nota de entrega</h2>
             <div class="form-field">
                 <label for="delivery_note">Nota opcional</label>

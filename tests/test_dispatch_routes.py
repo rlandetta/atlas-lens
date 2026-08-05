@@ -173,6 +173,49 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Este despacho se guardará como borrador.", body)
         self.assertIn("Incluir documento Word con captions", body)
         self.assertIn('src="/static/js/dispatch_form.js"', body)
+        self.assertIn('data-dispatch-schedule-fields hidden', body)
+        self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="" disabled', body)
+        self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="" disabled', body)
+        self.assertIn('data-timezone-panel hidden', body)
+        self.assertEqual(body.count('name="timezone"'), 1)
+
+    def test_get_dispatch_new_immediate_hides_date_time_and_uses_single_timezone_control(self):
+        response = self.client.post("/dispatch/new", data=self.valid_form(mode="immediate", name=""), follow_redirects=False)
+
+        self.assertEqual(response.status_code, 400)
+        body = response.get_data(as_text=True)
+        self.assertIn('id="dispatch_mode_immediate" type="radio" name="mode" value="immediate" checked', body)
+        self.assertIn("Se preparará inmediatamente usando la hora local detectada:", body)
+        self.assertIn("Cambiar zona horaria", body)
+        self.assertIn('data-dispatch-schedule-fields hidden', body)
+        self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="" disabled', body)
+        self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="" disabled', body)
+        self.assertIn('data-timezone-panel hidden', body)
+        self.assertEqual(body.count('name="timezone"'), 1)
+
+    def test_get_dispatch_new_schedule_shows_date_time_and_single_timezone_reference(self):
+        response = self.client.post(
+            "/dispatch/new",
+            data=self.valid_form(
+                mode="schedule",
+                name="",
+                scheduled_date="2099-08-04",
+                scheduled_time="09:45",
+            ),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        body = response.get_data(as_text=True)
+        self.assertIn('id="dispatch_mode_schedule" type="radio" name="mode" value="schedule" checked', body)
+        self.assertIn('data-dispatch-schedule-fields', body)
+        self.assertNotIn('data-dispatch-schedule-fields hidden', body)
+        self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="2099-08-04"', body)
+        self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="09:45"', body)
+        self.assertIn('data-timezone-panel', body)
+        self.assertNotIn('data-timezone-panel hidden', body)
+        self.assertEqual(body.count('name="timezone"'), 1)
+        self.assertEqual(body.count("<label for=\"timezone\">"), 1)
 
     def test_get_dispatch_new_with_valid_coverage_id(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -417,6 +460,9 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Preparar envío ahora", script)
         self.assertIn("Este despacho se preparará inmediatamente", script)
         self.assertIn("data-timezone-toggle", script)
+        self.assertIn("setScheduleInputsEnabled", script)
+        self.assertIn("aria-hidden", script)
+        self.assertIn("timezoneSelect.disabled = false", script)
 
     def test_dispatch_new_uses_compact_photo_grid_markup(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -438,7 +484,9 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("width: 110px;", stylesheet)
         self.assertIn(".dispatch-photo-options,\n    .dispatch-recipient-row {\n        grid-template-columns: 1fr;", stylesheet)
         self.assertIn(".atlas-grid--2", stylesheet)
-        self.assertIn("--page-max-width: 1640px;", stylesheet)
+        self.assertIn("--page-max-width: 1450px;", stylesheet)
+        self.assertIn(".atlas-container", stylesheet)
+        self.assertIn(".atlas-panel--compact", stylesheet)
 
     def test_post_dispatch_new_rejects_missing_coverage(self):
         response = self.post_new(coverage_id="missing")
@@ -473,6 +521,8 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
+        self.assertIn('class="atlas-container app-header"', body)
+        self.assertIn('class="atlas-container view-content dispatch-page"', body)
         self.assertRegex(
             body,
             r'class="atlas-nav-link is-active"[\s\S]*aria-current="page"[\s\S]*>DISPATCH</a>',
@@ -536,7 +586,12 @@ class DispatchRoutesTest(unittest.TestCase):
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
         self.assertIn("Este despacho está preparado para envío inmediato", body)
-        self.assertIn("La entrega real se realizará cuando el servicio de correo esté configurado", self.client.get("/dispatch/new").get_data(as_text=True))
+        form_body = self.client.post(
+            "/dispatch/new",
+            data=self.valid_form(mode="immediate", name=""),
+            follow_redirects=False,
+        ).get_data(as_text=True)
+        self.assertIn("Se preparará inmediatamente usando la hora local detectada:", form_body)
 
     def test_dispatch_detail_sent_operational_summary_uses_sent_at(self):
         shipment = self.create_docx_shipment_from_route()
