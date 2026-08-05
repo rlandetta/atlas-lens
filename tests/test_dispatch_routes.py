@@ -1,11 +1,13 @@
 import copy
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from app import create_app
 from app.dispatch import DispatchShipmentStore, ShipmentService
+from app.dispatch.scheduler import DispatchScheduler
 from app.lens_read_service import LensReadService
 
 
@@ -139,6 +141,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Despacho Quito", body)
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Ver detalle", body)
+        self.assertNotIn("T", body.split("Historial de despachos", 1)[-1])
 
     def test_dispatch_index_links_to_new_shipment(self):
         response = self.client.get("/dispatch/")
@@ -156,14 +159,18 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Nuevo despacho", body)
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Selecciona una cobertura", body)
-        self.assertIn("Ejemplo: 09:45 AM · Hora de Ecuador", body)
+        self.assertIn("Ejemplo: 09:45 AM", body)
         self.assertIn('name="recipient_name[]"', body)
         self.assertIn('name="recipient_email[]"', body)
         self.assertIn("Agregar destinatario", body)
         self.assertNotIn("Nombre | correo@dominio.com", body)
         self.assertIn("Guardar como borrador", body)
+        self.assertIn("Enviar ahora", body)
         self.assertIn("Programar envío", body)
         self.assertIn("America/Guayaquil", body)
+        self.assertIn("Cambiar", body)
+        self.assertIn("Detectada automáticamente", body)
+        self.assertIn("Este despacho se guardará como borrador.", body)
         self.assertIn("Incluir documento Word con captions", body)
         self.assertIn('src="/static/js/dispatch_form.js"', body)
 
@@ -242,6 +249,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(shipments[0]["export_reference"]["caption_docx"]["generator"], "ExportService")
         self.assertEqual(shipments[0]["scheduled_at"], "")
         self.assertEqual(shipments[0]["timezone"], "America/Guayaquil")
+        self.assertEqual(shipments[0]["requested_delivery_mode"], "draft")
 
     def test_post_dispatch_new_ignores_empty_recipient_rows(self):
         response = self.post_new(
@@ -283,8 +291,40 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         shipment = self.shipment_service.list_shipments()[0]
         self.assertEqual(shipment["status"], "Programado")
-        self.assertEqual(shipment["scheduled_at"], "2099-08-04T09:45:00-05:00")
+        self.assertEqual(shipment["scheduled_at"], "2099-08-04T14:45:00+00:00")
         self.assertEqual(shipment["timezone"], "America/Guayaquil")
+        self.assertEqual(shipment["requested_delivery_mode"], "schedule")
+
+    def test_post_dispatch_new_valid_schedule_accepts_browser_timezone_and_stores_utc(self):
+        response = self.post_new(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+            timezone="Europe/Madrid",
+        )
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["timezone"], "Europe/Madrid")
+        self.assertEqual(datetime.fromisoformat(shipment["scheduled_at"]).tzinfo, timezone.utc)
+        self.assertIn("T07:45:00+00:00", shipment["scheduled_at"])
+
+    def test_post_dispatch_new_immediate_creates_due_programmed_without_marking_sent(self):
+        with patch("app.routes.dispatch.datetime") as datetime_mock:
+            datetime_mock.now.return_value = datetime(2026, 8, 4, 14, 45, tzinfo=timezone.utc)
+            datetime_mock.fromisoformat.side_effect = datetime.fromisoformat
+            response = self.post_new(mode="immediate", timezone="America/Guayaquil")
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["status"], "Programado")
+        self.assertEqual(shipment["requested_delivery_mode"], "immediate")
+        self.assertEqual(shipment["scheduled_at"], "2026-08-04T14:45:00+00:00")
+        self.assertEqual(shipment["timezone"], "America/Guayaquil")
+        self.assertEqual(shipment["sent_at"], "")
+        scheduler = DispatchScheduler(self.shipment_service.store)
+        due = scheduler.list_due_shipments(datetime(2026, 8, 4, 14, 45, tzinfo=timezone.utc))
+        self.assertEqual([item["id"] for item in due], [shipment["id"]])
 
     def test_post_dispatch_new_rejects_past_schedule(self):
         response = self.post_new(
@@ -373,6 +413,10 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("cloneNode", script)
         self.assertIn("renumberRecipients", script)
         self.assertIn('replaceAll("|", "")', script)
+        self.assertIn("Intl.DateTimeFormat().resolvedOptions().timeZone", script)
+        self.assertIn("Preparar envío ahora", script)
+        self.assertIn("Este despacho se preparará inmediatamente", script)
+        self.assertIn("data-timezone-toggle", script)
 
     def test_dispatch_new_uses_compact_photo_grid_markup(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -393,6 +437,8 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("height: 80px;", stylesheet)
         self.assertIn("width: 110px;", stylesheet)
         self.assertIn(".dispatch-photo-options,\n    .dispatch-recipient-row {\n        grid-template-columns: 1fr;", stylesheet)
+        self.assertIn(".atlas-grid--2", stylesheet)
+        self.assertIn("--page-max-width: 1640px;", stylesheet)
 
     def test_post_dispatch_new_rejects_missing_coverage(self):
         response = self.post_new(coverage_id="missing")
@@ -479,10 +525,18 @@ class DispatchRoutesTest(unittest.TestCase):
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
         self.assertIn(
-            "Este despacho se enviará el 4 de agosto de 2099 a las 09:45 "
+            "Este despacho se preparará el 4 de agosto de 2099 a las 09:45 "
             "a Mesa Xinhua &lt;desk@xinhua.com&gt;. Incluye 1 fotografía y un documento Word con captions.",
             body,
         )
+
+    def test_dispatch_detail_immediate_pending_summary(self):
+        shipment = self.create_docx_shipment_from_route(mode="immediate")
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Este despacho está preparado para envío inmediato", body)
+        self.assertIn("La entrega real se realizará cuando el servicio de correo esté configurado", self.client.get("/dispatch/new").get_data(as_text=True))
 
     def test_dispatch_detail_sent_operational_summary_uses_sent_at(self):
         shipment = self.create_docx_shipment_from_route()
@@ -588,7 +642,9 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertIn("Programado para", body)
         self.assertIn("4 de agosto de 2099, 09:45", body)
-        self.assertNotIn("2099-08-04T09:45:00-05:00", body)
+        self.assertIn("America/Guayaquil (UTC-5)", body)
+        self.assertIn("14:45 UTC", body)
+        self.assertNotIn("2099-08-04T14:45:00+00:00", body)
 
     def test_dispatch_detail_truncates_long_caption_excerpt(self):
         long_caption = (

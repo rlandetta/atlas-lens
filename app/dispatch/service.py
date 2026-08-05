@@ -64,6 +64,7 @@ class ShipmentService:
         scheduled_at: str = "",
         timezone: str = "America/Guayaquil",
         include_caption_docx: bool = False,
+        requested_delivery_mode: str = "draft",
     ) -> dict:
         normalized_photo_ids = [str(photo_id) for photo_id in photo_ids if str(photo_id)]
         if not normalized_photo_ids and not include_caption_docx:
@@ -87,6 +88,7 @@ class ShipmentService:
             channel=channel,
             export_reference=deepcopy(export_reference or {}),
             include_caption_docx=include_caption_docx,
+            requested_delivery_mode=requested_delivery_mode,
             status=status,
             scheduled_at=scheduled_at,
             timezone=timezone,

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}DISPATCH | ATLAS LENS{% endblock %}
+{% block title %}DISPATCH | ATLAS{% endblock %}
 {% block main_class %}dispatch-page{% endblock %}
 
 {% block content %}
@@ -15,7 +15,7 @@
 {% set statuses = ("Borrador", "Preparando", "Listo", "Programado", "Enviando", "Enviado", "Entregado", "Error", "Cancelado") %}
 <section class="ui-card" aria-labelledby="dispatch-status-summary-title">
     <h2 id="dispatch-status-summary-title">Resumen por estado</h2>
-    <dl class="coverage-meta-grid">
+    <dl class="coverage-meta-grid atlas-grid atlas-grid--3">
         {% for status in statuses %}
         <div>
             <dt>{{ status }}</dt>
@@ -42,15 +42,15 @@
             </tr>
         </thead>
         <tbody>
-            {% for shipment in shipments %}
+            {% for shipment in shipment_rows %}
             <tr>
                 <td>{{ shipment.name }}</td>
                 <td>{{ shipment.coverage_snapshot.coverage_name or shipment.coverage_id }}</td>
                 <td>{{ shipment.recipients | length }}</td>
                 <td>{{ shipment.photo_ids | length }}</td>
                 <td>{{ shipment.status }}</td>
-                <td>{{ shipment.created_at }}</td>
-                <td>{{ shipment.updated_at }}</td>
+                <td>{{ shipment.created_at_display }}</td>
+                <td>{{ shipment.updated_at_display }}</td>
                 <td><a href="{{ url_for('dispatch.detail', shipment_id=shipment.id) }}">Ver detalle</a></td>
             </tr>
             {% endfor %}

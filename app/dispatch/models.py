@@ -70,6 +70,7 @@ def validate_transition(current_status: str, next_status: str) -> None:
 def normalize_shipment(shipment: dict[str, Any]) -> dict[str, Any]:
     normalized = deepcopy(shipment)
     normalized.setdefault("include_caption_docx", False)
+    normalized.setdefault("requested_delivery_mode", "draft")
     normalized.setdefault("scheduled_at", "")
     normalized.setdefault("timezone", DEFAULT_DISPATCH_TIMEZONE)
     normalized.setdefault("sent_at", "")
@@ -118,6 +119,7 @@ class ShipmentDraft:
     channel: str = "manual"
     export_reference: dict[str, Any] | None = None
     include_caption_docx: bool = False
+    requested_delivery_mode: str = "draft"
     status: str = "Borrador"
     scheduled_at: str = ""
     timezone: str = DEFAULT_DISPATCH_TIMEZONE
@@ -147,6 +149,7 @@ def build_shipment(
         "coverage_id": draft.coverage_id,
         "export_reference": deepcopy(draft.export_reference or {}),
         "include_caption_docx": bool(draft.include_caption_docx),
+        "requested_delivery_mode": draft.requested_delivery_mode.strip() or "draft",
         "photo_ids": [str(photo_id) for photo_id in draft.photo_ids],
         "photo_snapshots": normalize_photo_references(photo_snapshots),
         "coverage_snapshot": deepcopy(coverage_snapshot),

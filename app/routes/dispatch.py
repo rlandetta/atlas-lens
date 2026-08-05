@@ -13,8 +13,20 @@ dispatch_bp = Blueprint("dispatch", __name__, url_prefix="/dispatch")
 
 CHANNEL_OPTIONS = ("Manual", "Correo", "FTP", "SFTP", "API")
 DEFAULT_TIMEZONE = "America/Guayaquil"
-TIMEZONE_OPTIONS = (DEFAULT_TIMEZONE,)
-CREATE_MODES = ("draft", "schedule")
+CREATE_MODES = ("draft", "immediate", "schedule")
+TIMEZONE_OPTIONS = (
+    DEFAULT_TIMEZONE,
+    "America/Bogota",
+    "America/Lima",
+    "America/New_York",
+    "America/Mexico_City",
+    "America/Santiago",
+    "America/Los_Angeles",
+    "Europe/Madrid",
+    "Europe/London",
+    "Asia/Tokyo",
+    "UTC",
+)
 SPANISH_MONTHS = (
     "",
     "enero",
@@ -80,6 +92,19 @@ def format_datetime_es(value: str, timezone_name: str = DEFAULT_TIMEZONE) -> str
         target_timezone = ZoneInfo(DEFAULT_TIMEZONE)
     local = parsed.astimezone(target_timezone)
     return f"{local.day} de {SPANISH_MONTHS[local.month]} de {local.year}, {local:%H:%M}"
+
+
+def format_utc_datetime(value: str) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).strftime("%H:%M UTC")
 
 
 def split_formatted_datetime(value: str) -> dict[str, str]:
@@ -271,6 +296,33 @@ def pluralize(value: int, singular: str, plural: str) -> str:
     return singular if value == 1 else plural
 
 
+def timezone_label(timezone_name: str, value: str = "") -> str:
+    safe_name = timezone_name or DEFAULT_TIMEZONE
+    try:
+        zone = ZoneInfo(safe_name)
+    except ZoneInfoNotFoundError:
+        safe_name = DEFAULT_TIMEZONE
+        zone = ZoneInfo(DEFAULT_TIMEZONE)
+    reference = datetime.now(zone)
+    if value:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            reference = parsed.astimezone(zone)
+        except ValueError:
+            pass
+    offset = reference.utcoffset()
+    if offset is None:
+        return safe_name
+    total_minutes = int(offset.total_seconds() // 60)
+    sign = "+" if total_minutes >= 0 else "-"
+    total_minutes = abs(total_minutes)
+    hours, minutes = divmod(total_minutes, 60)
+    suffix = f"UTC{sign}{hours}" if minutes == 0 else f"UTC{sign}{hours}:{minutes:02d}"
+    return f"{safe_name} ({suffix})"
+
+
 def build_operational_summary(
     shipment: dict[str, Any],
     content_summary: dict[str, Any],
@@ -298,15 +350,21 @@ def build_operational_summary(
     text = (
         f"Este despacho está en estado {status or 'sin estado'}."
     )
+    requested_mode = str(shipment.get("requested_delivery_mode", "")).strip()
     if status == "Borrador":
         text = (
             "Este despacho aún no está programado. "
             f"Se entregará a {recipient_count} {recipient_label} e incluye "
             f"{photo_count} {photo_label}{docx_text}."
         )
+    elif status == "Programado" and requested_mode == "immediate":
+        text = (
+            f"Este despacho está preparado para envío inmediato a {recipient_summary}. "
+            f"Incluye {photo_count} {photo_label}{docx_text}."
+        )
     elif status == "Programado":
         text = (
-            f"Este despacho se enviará el {scheduled['date']} a las {scheduled['time']} "
+            f"Este despacho se preparará el {scheduled['date']} a las {scheduled['time']} "
             f"a {recipient_summary}. Incluye {photo_count} {photo_label}{docx_text}."
         )
     elif status == "Enviando":
@@ -358,8 +416,21 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
         "detail_photos": build_photo_detail_items(shipment),
         "formatted": formatted,
         "operational_summary": build_operational_summary(shipment, content_summary, formatted),
+        "timezone_display": timezone_label(timezone_name, str(shipment.get("scheduled_at") or shipment.get("sent_at") or "")),
+        "scheduled_utc": format_utc_datetime(str(shipment.get("scheduled_at", ""))),
         "history_items": formatted_history,
     }
+
+
+def build_index_rows(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows = []
+    for shipment in shipments:
+        timezone_name = str(shipment.get("timezone") or DEFAULT_TIMEZONE)
+        item = deepcopy(shipment)
+        item["created_at_display"] = format_datetime_es(str(shipment.get("created_at", "")), timezone_name)
+        item["updated_at_display"] = format_datetime_es(str(shipment.get("updated_at", "")), timezone_name)
+        rows.append(item)
+    return rows
 
 
 def parse_recipients(raw_recipients: str) -> list[dict[str, str]]:
@@ -424,14 +495,17 @@ def parse_schedule(form_data: dict[str, Any]) -> tuple[str, str, str]:
     mode = str(form_data.get("mode", "draft")).strip() or "draft"
     if mode not in CREATE_MODES:
         raise DispatchValidationError("Selecciona un modo de creación válido.")
-    if mode == "draft":
-        return "Borrador", "", DEFAULT_TIMEZONE
 
     timezone_name = str(form_data.get("timezone", DEFAULT_TIMEZONE)).strip() or DEFAULT_TIMEZONE
     try:
-        timezone = ZoneInfo(timezone_name)
+        selected_timezone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as error:
         raise DispatchValidationError("La zona horaria seleccionada no es válida.") from error
+
+    if mode == "draft":
+        return "Borrador", "", timezone_name
+    if mode == "immediate":
+        return "Programado", datetime.now(timezone.utc).isoformat(), timezone_name
 
     scheduled_date = str(form_data.get("scheduled_date", "")).strip()
     scheduled_time = str(form_data.get("scheduled_time", "")).strip()
@@ -440,17 +514,19 @@ def parse_schedule(form_data: dict[str, Any]) -> tuple[str, str, str]:
     if not scheduled_time:
         raise DispatchValidationError("La hora de envío es obligatoria para programar.")
     try:
-        scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}").replace(tzinfo=timezone)
+        scheduled_at = datetime.fromisoformat(f"{scheduled_date}T{scheduled_time}").replace(tzinfo=selected_timezone)
     except ValueError as error:
         raise DispatchValidationError("La fecha y hora de envío no son válidas.") from error
 
-    if scheduled_at <= datetime.now(timezone):
+    if scheduled_at <= datetime.now(selected_timezone):
         raise DispatchValidationError("La fecha y hora de envío no puede estar en el pasado.")
-    return "Programado", scheduled_at.isoformat(), timezone_name
+    return "Programado", scheduled_at.astimezone(timezone.utc).isoformat(), timezone_name
 
 
 def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str] | None = None) -> dict[str, Any]:
     form_data = deepcopy(form_data or {})
+    form_data.setdefault("mode", "draft")
+    form_data.setdefault("timezone", DEFAULT_TIMEZONE)
     recipient_rows = deepcopy(form_data.get("recipient_rows") or [{"name": "", "email": ""}])
     recipient_errors = list(form_data.get("recipient_errors") or [""] * len(recipient_rows))
     requested_coverage_id = str(request.args.get("coverage_id", "")).strip()
@@ -496,6 +572,7 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
         "recipient_rows": recipient_rows,
         "selected_coverage": selected_coverage,
         "selected_photo_ids": selected_photo_ids,
+        "timezone_display": timezone_label(str(form_data.get("timezone") or DEFAULT_TIMEZONE)),
         "docx_includes_all_captions": bool(
             form_data.get("include_caption_docx")
             and not selected_photo_ids
@@ -507,9 +584,11 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
 @dispatch_bp.get("/")
 def index() -> str:
     shipment_service = get_dispatch_services()["shipment_service"]
+    shipments = shipment_service.list_shipments()
     return render_template(
         "dispatch/index.html",
-        shipments=shipment_service.list_shipments(),
+        shipments=shipments,
+        shipment_rows=build_index_rows(shipments),
     )
 
 
@@ -601,6 +680,7 @@ def new() -> str:
             scheduled_at=scheduled_at,
             timezone=timezone_name,
             include_caption_docx=bool(form_data["include_caption_docx"]),
+            requested_delivery_mode=form_data["mode"],
         )
     except DispatchValidationError as error:
         return render_template(

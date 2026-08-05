@@ -6,7 +6,7 @@
 {% block content %}
 <section class="form-card ui-card">
     <h1>Nuevo despacho</h1>
-    <p class="subtitle">Cree un despacho en borrador usando fotografías con caption desde LENS.</p>
+    <p class="subtitle">Cree un despacho desde fotografías con caption de LENS y defina si queda en borrador, inmediato o programado.</p>
 
     {% if errors %}
     <div class="form-error" role="alert">
@@ -37,18 +37,25 @@
         </div>
 
         <section class="ui-card dispatch-schedule-card" aria-labelledby="dispatch-new-schedule-title">
-            <h2 id="dispatch-new-schedule-title">Programación</h2>
+            <h2 id="dispatch-new-schedule-title">Entrega</h2>
             <fieldset class="dispatch-schedule-mode">
-                <legend>Modo</legend>
-                <div class="dispatch-schedule-option">
+                <legend>Modo de entrega</legend>
+                <div class="dispatch-schedule-option dispatch-mode-card">
                     <input id="dispatch_mode_draft" type="radio" name="mode" value="draft" {% if (form_data.mode or "draft") == "draft" %}checked{% endif %}>
                     <label for="dispatch_mode_draft">Guardar como borrador</label>
                 </div>
-                <div class="dispatch-schedule-option">
+                <div class="dispatch-schedule-option dispatch-mode-card">
+                    <input id="dispatch_mode_immediate" type="radio" name="mode" value="immediate" {% if form_data.mode == "immediate" %}checked{% endif %}>
+                    <label for="dispatch_mode_immediate">Enviar ahora</label>
+                </div>
+                <div class="dispatch-schedule-option dispatch-mode-card">
                     <input id="dispatch_mode_schedule" type="radio" name="mode" value="schedule" {% if form_data.mode == "schedule" %}checked{% endif %}>
                     <label for="dispatch_mode_schedule">Programar envío</label>
                 </div>
             </fieldset>
+            <p class="dispatch-mode-help" data-dispatch-immediate-help {% if form_data.mode != "immediate" %}hidden{% endif %}>
+                Se preparará inmediatamente usando la hora local detectada: <span data-timezone-summary>{{ timezone_display }}</span>. La entrega real se realizará cuando el servicio de correo esté configurado.
+            </p>
             <div class="coverage-form-grid dispatch-schedule-fields" data-dispatch-schedule-fields {% if (form_data.mode or "draft") != "schedule" %}hidden{% endif %}>
                 <div class="form-field">
                     <label for="scheduled_date">Fecha de envío</label>
@@ -57,16 +64,25 @@
                 <div class="form-field">
                     <label for="scheduled_time">Hora de envío</label>
                     <input id="scheduled_time" name="scheduled_time" type="time" value="{{ form_data.scheduled_time or '' }}">
-                    <small class="field-help">Ejemplo: 09:45 AM · Hora de Ecuador</small>
+                    <small class="field-help">Ejemplo: 09:45 AM · Hora local en <span data-timezone-summary>{{ timezone_display }}</span></small>
                 </div>
-                <div class="form-field">
-                    <label for="timezone">Zona horaria</label>
-                    <select id="timezone" name="timezone">
-                        {% for timezone in timezone_options %}
-                        <option value="{{ timezone }}" {% if (form_data.timezone or "America/Guayaquil") == timezone %}selected{% endif %}>{{ timezone }}</option>
-                        {% endfor %}
-                    </select>
+            </div>
+            <div class="dispatch-timezone-compact" data-timezone-panel>
+                <div>
+                    <span class="field-help">Zona horaria</span>
+                    <strong data-timezone-summary>{{ timezone_display }}</strong>
+                    <small data-timezone-detection>Detectada automáticamente</small>
                 </div>
+                <button type="button" class="secondary-button compact-action" data-timezone-toggle>Cambiar</button>
+            </div>
+            <div class="form-field dispatch-timezone-selector" data-timezone-selector hidden>
+                <label for="timezone">Zona horaria</label>
+                <select id="timezone" name="timezone" data-preserve-timezone="{% if request.method == 'POST' %}true{% else %}false{% endif %}">
+                    {% for timezone in timezone_options %}
+                    <option value="{{ timezone }}" {% if (form_data.timezone or "America/Guayaquil") == timezone %}selected{% endif %}>{{ timezone }}</option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">La hora se interpretará según la ubicación seleccionada y se convertirá automáticamente para el servidor.</small>
             </div>
         </section>
 
@@ -164,7 +180,11 @@
             </div>
         </section>
 
-        <button type="submit" class="primary-button compact-action">Crear despacho</button>
+        <aside class="dispatch-form-summary" data-dispatch-form-summary>
+            Este despacho se guardará como borrador.
+        </aside>
+
+        <button type="submit" class="primary-button compact-action" data-dispatch-submit-button>Guardar borrador</button>
     </form>
 
     <a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>
