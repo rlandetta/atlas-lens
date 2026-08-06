@@ -38,7 +38,7 @@
 
         <section class="ui-card atlas-panel--compact dispatch-schedule-card" aria-labelledby="dispatch-new-schedule-title">
             <h2 id="dispatch-new-schedule-title">Entrega</h2>
-            <fieldset class="dispatch-schedule-mode">
+            <fieldset class="dispatch-schedule-mode delivery-mode-options">
                 <legend>Modo de entrega</legend>
                 <div class="dispatch-schedule-option dispatch-mode-card">
                     <input id="dispatch_mode_draft" type="radio" name="mode" value="draft" {% if (form_data.mode or "draft") == "draft" %}checked{% endif %}>
@@ -53,11 +53,16 @@
                     <label for="dispatch_mode_schedule">Programar envío</label>
                 </div>
             </fieldset>
-            <p class="dispatch-mode-help" data-dispatch-immediate-help {% if form_data.mode != "immediate" %}hidden{% endif %}>
-                Se preparará inmediatamente usando la hora local detectada: <span data-timezone-summary>{{ timezone_display }}</span>.
-                <button type="button" class="secondary-button compact-action dispatch-inline-action" data-timezone-toggle>Cambiar zona horaria</button>
+            <p class="dispatch-mode-help delivery-mode-summary" data-delivery-mode-summary>
+                {% if form_data.mode == "immediate" %}
+                Este despacho se preparará para envío inmediato.
+                {% elif form_data.mode == "schedule" %}
+                Seleccione fecha, hora y zona horaria para programar el despacho.
+                {% else %}
+                Este despacho se guardará como borrador.
+                {% endif %}
             </p>
-            <div class="coverage-form-grid dispatch-schedule-fields" data-dispatch-schedule-fields {% if (form_data.mode or "draft") != "schedule" %}hidden{% endif %}>
+            <div class="scheduled-delivery-fields" data-scheduled-delivery-fields {% if (form_data.mode or "draft") != "schedule" %}hidden aria-hidden="true"{% else %}aria-hidden="false"{% endif %}>
                 <div class="form-field">
                     <label for="scheduled_date">Fecha de envío</label>
                     <input id="scheduled_date" name="scheduled_date" type="date" value="{{ form_data.scheduled_date or '' }}" {% if (form_data.mode or "draft") != "schedule" %}disabled{% endif %}>
@@ -65,48 +70,47 @@
                 <div class="form-field">
                     <label for="scheduled_time">Hora de envío</label>
                     <input id="scheduled_time" name="scheduled_time" type="time" value="{{ form_data.scheduled_time or '' }}" {% if (form_data.mode or "draft") != "schedule" %}disabled{% endif %}>
-                    <small class="field-help">Ejemplo: 09:45 AM · Hora local en <span data-timezone-summary>{{ timezone_display }}</span></small>
                 </div>
-            </div>
-            <div class="dispatch-timezone-compact" data-timezone-panel {% if form_data.mode != "schedule" %}hidden{% endif %}>
-                <div>
-                    <span class="field-help">Zona horaria</span>
-                    <strong data-timezone-summary>{{ timezone_display }}</strong>
-                    <small data-timezone-detection>Detectada automáticamente</small>
+                <div class="form-field atlas-span-full">
+                    <label for="timezone">Zona horaria</label>
+                    <select id="timezone" name="timezone" data-preserve-timezone="{% if request.method == 'POST' %}true{% else %}false{% endif %}" {% if (form_data.mode or "draft") != "schedule" %}disabled{% endif %}>
+                        {% for timezone in timezone_options %}
+                        <option value="{{ timezone }}" {% if (form_data.timezone or "America/Guayaquil") == timezone %}selected{% endif %}>{{ timezone }}</option>
+                        {% endfor %}
+                    </select>
+                    <small class="field-help">La fecha y hora se interpretarán en la zona seleccionada.</small>
                 </div>
-                <button type="button" class="secondary-button compact-action dispatch-timezone-toggle-secondary" data-timezone-toggle>Cambiar</button>
-            </div>
-            <div class="form-field dispatch-timezone-selector" data-timezone-selector hidden>
-                <label for="timezone">Seleccionar zona horaria</label>
-                <select id="timezone" name="timezone" data-preserve-timezone="{% if request.method == 'POST' %}true{% else %}false{% endif %}">
-                    {% for timezone in timezone_options %}
-                    <option value="{{ timezone }}" {% if (form_data.timezone or "America/Guayaquil") == timezone %}selected{% endif %}>{{ timezone }}</option>
-                    {% endfor %}
-                </select>
-                <small class="field-help">La hora se interpretará según la ubicación seleccionada y se convertirá automáticamente para el servidor.</small>
             </div>
         </section>
 
-        <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-new-coverage-title">
-            <h2 id="dispatch-new-coverage-title">Cobertura</h2>
-            {% if coverage_locked and selected_coverage %}
-            <p>Cobertura preseleccionada: <strong>{{ selected_coverage.name }}</strong></p>
-            <input id="coverage_id" type="hidden" name="coverage_id" value="{{ selected_coverage.id }}">
-            {% elif coverage_options %}
-            <div class="form-field">
-                <label for="coverage_id">Selecciona una cobertura</label>
-                <select id="coverage_id" name="coverage_id" required>
-                    <option value="" {% if not form_data.coverage_id %}selected{% endif %}>Selecciona una cobertura</option>
-                    {% for coverage in coverage_options %}
-                    <option value="{{ coverage.id }}" {% if form_data.coverage_id == coverage.id %}selected{% endif %}>
-                        {{ coverage.name }}{% if coverage.city or coverage.country %} · {{ coverage.city }}{% if coverage.city and coverage.country %}, {% endif %}{{ coverage.country }}{% endif %}
-                    </option>
-                    {% endfor %}
-                </select>
+        <section class="coverage-summary-grid" aria-label="Resumen de cobertura y contenido">
+            <div class="ui-card atlas-panel--compact dispatch-summary-tile" aria-labelledby="dispatch-new-coverage-title">
+                <span>Cobertura</span>
+                {% if coverage_locked and selected_coverage %}
+                <strong id="dispatch-new-coverage-title">{{ selected_coverage.name }}</strong>
+                <input id="coverage_id" type="hidden" name="coverage_id" value="{{ selected_coverage.id }}">
+                {% elif coverage_options %}
+                <div class="form-field">
+                    <label for="coverage_id" id="dispatch-new-coverage-title">Selecciona una cobertura</label>
+                    <select id="coverage_id" name="coverage_id" required>
+                        <option value="" {% if not form_data.coverage_id %}selected{% endif %}>Selecciona una cobertura</option>
+                        {% for coverage in coverage_options %}
+                        <option value="{{ coverage.id }}" {% if form_data.coverage_id == coverage.id %}selected{% endif %}>
+                            {{ coverage.name }}{% if coverage.city or coverage.country %} · {{ coverage.city }}{% if coverage.city and coverage.country %}, {% endif %}{{ coverage.country }}{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% else %}
+                <strong id="dispatch-new-coverage-title">Sin coberturas disponibles</strong>
+                {% endif %}
             </div>
-            {% else %}
-            <p>No hay coberturas disponibles.</p>
-            {% endif %}
+            <div class="ui-card atlas-panel--compact dispatch-summary-tile">
+                <span>Contenido</span>
+                {% set selected_count = selected_photo_ids | length %}
+                {% set includes_docx = form_data.include_caption_docx %}
+                <strong data-content-summary>{% if selected_count > 0 and includes_docx %}{{ selected_count }} fotografía{% if selected_count != 1 %}s{% endif %} · documento Word incluido{% elif selected_count > 0 %}{{ selected_count }} fotografía{% if selected_count != 1 %}s{% endif %} · sin documento Word{% elif includes_docx %}Documento Word incluido{% else %}Sin contenido seleccionado{% endif %}</strong>
+            </div>
         </section>
 
         <section class="ui-card atlas-panel--normal" aria-labelledby="dispatch-new-photos-title">
@@ -182,10 +186,26 @@
         </section>
 
         <aside class="dispatch-form-summary" data-dispatch-form-summary>
+            {% if form_data.mode == "schedule" and form_data.scheduled_date and form_data.scheduled_time %}
+            Este despacho se programará para {{ form_data.scheduled_date }} a las {{ form_data.scheduled_time }}.
+            {% elif form_data.mode == "schedule" %}
+            Selecciona fecha y hora para programar este despacho.
+            {% elif form_data.mode == "immediate" %}
+            Este despacho se preparará para envío inmediato.
+            {% else %}
             Este despacho se guardará como borrador.
+            {% endif %}
         </aside>
 
-        <button type="submit" class="primary-button compact-action" data-dispatch-submit-button>Guardar borrador</button>
+        <button type="submit" class="primary-button compact-action" data-dispatch-submit-button>
+            {% if form_data.mode == "schedule" %}
+            Programar envío
+            {% elif form_data.mode == "immediate" %}
+            Preparar envío ahora
+            {% else %}
+            Guardar borrador
+            {% endif %}
+        </button>
     </form>
 
     <a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>

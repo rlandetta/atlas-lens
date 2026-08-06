@@ -61,14 +61,18 @@ a {
 }
 
 .app-header {
+    width: 100%;
     min-height: 62px;
     border-bottom: 1px solid var(--border);
     background: #121c27;
+}
+
+.app-header-inner {
     display: grid;
     grid-template-columns: minmax(0, auto) minmax(0, 1fr);
     align-items: center;
     gap: 0.8rem;
-    padding: 0.48rem var(--space-4);
+    padding-block: 0.48rem;
 }
 
 .atlas-brand {
@@ -324,6 +328,11 @@ h1 {
 .form-card {
     width: min(1060px, 100%);
     justify-self: center;
+}
+
+.dispatch-new-page .form-card {
+    width: 100%;
+    justify-self: stretch;
 }
 
 .page-heading {
@@ -582,44 +591,52 @@ h1 {
 }
 
 .dispatch-mode-help {
-    align-items: center;
     color: var(--text-secondary);
-    display: flex;
-    flex-wrap: wrap;
     font-size: 0.82rem;
-    gap: 0.48rem;
     line-height: 1.4;
     margin: 0;
+}
+
+.scheduled-delivery-fields {
+    display: grid;
+    gap: 0.48rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.scheduled-delivery-fields[hidden] {
+    display: none;
+}
+
+.coverage-summary-grid {
+    display: grid;
+    gap: 0.62rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dispatch-summary-tile {
+    align-content: start;
+    display: grid;
+    gap: 0.18rem;
+    min-height: 0;
+}
+
+.dispatch-summary-tile > span {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.dispatch-summary-tile > strong {
+    color: var(--text-main);
+    font-size: 0.95rem;
+    line-height: 1.28;
 }
 
 .dispatch-inline-action {
     min-width: 0;
     padding: 0.34rem 0.62rem;
-}
-
-.dispatch-timezone-compact {
-    align-items: center;
-    background: rgba(17, 26, 36, 0.7);
-    border: 1px solid rgba(43, 54, 66, 0.7);
-    border-radius: var(--radius-md);
-    display: flex;
-    gap: 0.75rem;
-    justify-content: space-between;
-    padding: 0.46rem 0.58rem;
-}
-
-.dispatch-timezone-compact div {
-    display: grid;
-    gap: 0.1rem;
-}
-
-.dispatch-timezone-compact strong {
-    font-size: 0.9rem;
-}
-
-.dispatch-timezone-compact small {
-    color: var(--text-secondary);
-    font-size: 0.76rem;
 }
 
 .dispatch-timezone-selector {
@@ -917,7 +934,7 @@ h1 {
         --page-fluid-width: calc(100vw - 1.5rem);
     }
 
-    .app-header {
+    .app-header-inner {
         grid-template-columns: 1fr;
     }
 
@@ -946,9 +963,9 @@ h1 {
         grid-template-columns: 1fr;
     }
 
-    .dispatch-timezone-compact {
-        align-items: flex-start;
-        display: grid;
+    .coverage-summary-grid,
+    .scheduled-delivery-fields {
+        grid-template-columns: 1fr;
     }
 
     .dispatch-detail-header {
@@ -2175,9 +2192,9 @@ h1 {
         overflow: visible;
     }
 
-    .app-header {
-        grid-template-columns: auto auto;
-        justify-content: space-between;
+    .app-header-inner {
+        grid-template-columns: 1fr;
+        justify-content: stretch;
     }
 
     .atlas-global-nav {
@@ -2238,9 +2255,12 @@ h1 {
 
     .app-header {
         min-height: 58px;
-        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .app-header-inner {
+        grid-template-columns: minmax(0, 1fr);
         gap: 0.55rem;
-        padding: 0.46rem 0.66rem;
+        padding-block: 0.46rem;
     }
 
     .atlas-brand {

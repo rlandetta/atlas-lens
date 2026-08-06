@@ -497,15 +497,16 @@ def parse_schedule(form_data: dict[str, Any]) -> tuple[str, str, str]:
         raise DispatchValidationError("Selecciona un modo de creación válido.")
 
     timezone_name = str(form_data.get("timezone", DEFAULT_TIMEZONE)).strip() or DEFAULT_TIMEZONE
+
+    if mode == "draft":
+        return "Borrador", "", timezone_name if timezone_name in TIMEZONE_OPTIONS else DEFAULT_TIMEZONE
+    if mode == "immediate":
+        return "Programado", datetime.now(timezone.utc).isoformat(), timezone_name if timezone_name in TIMEZONE_OPTIONS else DEFAULT_TIMEZONE
+
     try:
         selected_timezone = ZoneInfo(timezone_name)
     except ZoneInfoNotFoundError as error:
         raise DispatchValidationError("La zona horaria seleccionada no es válida.") from error
-
-    if mode == "draft":
-        return "Borrador", "", timezone_name
-    if mode == "immediate":
-        return "Programado", datetime.now(timezone.utc).isoformat(), timezone_name
 
     scheduled_date = str(form_data.get("scheduled_date", "")).strip()
     scheduled_time = str(form_data.get("scheduled_time", "")).strip()

@@ -1,17 +1,13 @@
 document.addEventListener("DOMContentLoaded", () => {
     const fallbackTimezone = "America/Guayaquil";
-    const scheduleFields = document.querySelector("[data-dispatch-schedule-fields]");
-    const immediateHelp = document.querySelector("[data-dispatch-immediate-help]");
+    const scheduledFields = document.querySelector("[data-scheduled-delivery-fields]");
     const modeInputs = document.querySelectorAll('input[name="mode"]');
     const timezoneSelect = document.getElementById("timezone");
-    const timezoneToggles = document.querySelectorAll("[data-timezone-toggle]");
-    const timezoneSelector = document.querySelector("[data-timezone-selector]");
-    const timezonePanel = document.querySelector("[data-timezone-panel]");
-    const timezoneSummaries = document.querySelectorAll("[data-timezone-summary]");
-    const timezoneDetection = document.querySelector("[data-timezone-detection]");
     const scheduledDate = document.getElementById("scheduled_date");
     const scheduledTime = document.getElementById("scheduled_time");
-    const summary = document.querySelector("[data-dispatch-form-summary]");
+    const deliveryModeSummary = document.querySelector("[data-delivery-mode-summary]");
+    const formSummary = document.querySelector("[data-dispatch-form-summary]");
+    const contentSummary = document.querySelector("[data-content-summary]");
     const submitButton = document.querySelector("[data-dispatch-submit-button]");
     const recipientList = document.querySelector("[data-recipient-list]");
     const addRecipientButton = document.querySelector("[data-recipient-add]");
@@ -23,26 +19,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return selectedMode ? selectedMode.value : "draft";
     };
 
-    const getTimezone = () => (timezoneSelect && timezoneSelect.value ? timezoneSelect.value : fallbackTimezone);
-
-    const formatOffset = (timeZone) => {
-        try {
-            const parts = new Intl.DateTimeFormat("en-US", {
-                timeZone,
-                timeZoneName: "shortOffset",
-            }).formatToParts(new Date());
-            const offset = parts.find((part) => part.type === "timeZoneName");
-            return offset ? offset.value.replace("GMT", "UTC") : "";
-        } catch (error) {
-            return "";
-        }
-    };
-
-    const formatTimezoneLabel = (timeZone) => {
-        const offset = formatOffset(timeZone);
-        return offset ? `${timeZone} (${offset})` : timeZone;
-    };
-
     const ensureTimezoneOption = (timeZone) => {
         if (!timezoneSelect || !timeZone) {
             return;
@@ -51,13 +27,6 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!exists) {
             timezoneSelect.add(new Option(timeZone, timeZone));
         }
-    };
-
-    const syncTimezoneLabels = () => {
-        const label = formatTimezoneLabel(getTimezone());
-        timezoneSummaries.forEach((item) => {
-            item.textContent = label;
-        });
     };
 
     const detectTimezone = () => {
@@ -72,12 +41,22 @@ document.addEventListener("DOMContentLoaded", () => {
         if (timezoneSelect && !preserveTimezone && (!timezoneSelect.value || timezoneSelect.value === fallbackTimezone)) {
             timezoneSelect.value = detected;
         }
-        if (timezoneDetection) {
-            timezoneDetection.textContent = detected === fallbackTimezone
-                ? "Zona horaria predeterminada"
-                : "Detectada automáticamente";
+    };
+
+    const setElementVisibility = (element, visible) => {
+        if (!element) {
+            return;
         }
-        syncTimezoneLabels();
+        element.hidden = !visible;
+        element.setAttribute("aria-hidden", visible ? "false" : "true");
+    };
+
+    const setScheduleInputsEnabled = (enabled) => {
+        [scheduledDate, scheduledTime, timezoneSelect].forEach((input) => {
+            if (input) {
+                input.disabled = !enabled;
+            }
+        });
     };
 
     const countRecipients = () => {
@@ -93,90 +72,84 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const countSelectedPhotos = () => Array.from(photoInputs).filter((input) => input.checked && !input.disabled).length;
 
-    const syncSummary = () => {
-        const mode = getSelectedMode();
-        const recipients = countRecipients();
+    const formatPhotoCount = (photos) => `${photos} fotografía${photos === 1 ? "" : "s"}`;
+
+    const buildContentText = () => {
         const photos = countSelectedPhotos();
-        const docxText = docxInput && docxInput.checked ? " y un documento Word con captions" : "";
-        if (summary) {
-            if (mode === "immediate") {
-                summary.textContent = `Este despacho se preparará inmediatamente para ${recipients} destinatario(s). Incluye ${photos} fotografía(s)${docxText}.`;
-            } else if (mode === "schedule") {
-                const dateText = scheduledDate && scheduledDate.value ? scheduledDate.value : "la fecha seleccionada";
-                const timeText = scheduledTime && scheduledTime.value ? scheduledTime.value : "la hora seleccionada";
-                summary.textContent = `Este despacho se preparará para ${dateText} a las ${timeText}, hora de ${formatTimezoneLabel(getTimezone())}, para ${recipients} destinatario(s).`;
-            } else {
-                summary.textContent = "Este despacho se guardará como borrador.";
-            }
+        const includesDocx = Boolean(docxInput && docxInput.checked);
+        if (photos > 0 && includesDocx) {
+            return `${formatPhotoCount(photos)} · documento Word incluido`;
         }
-        if (submitButton) {
-            submitButton.textContent = mode === "immediate"
-                ? "Preparar envío ahora"
-                : mode === "schedule"
-                    ? "Programar envío"
-                    : "Guardar borrador";
+        if (photos > 0) {
+            return `${formatPhotoCount(photos)} · sin documento Word`;
         }
+        if (includesDocx) {
+            return "Documento Word incluido";
+        }
+        return "Sin contenido seleccionado";
     };
 
-    const setElementVisibility = (element, visible) => {
-        if (!element) {
-            return;
-        }
-        element.hidden = !visible;
-        element.setAttribute("aria-hidden", visible ? "false" : "true");
-    };
-
-    const setScheduleInputsEnabled = (enabled) => {
-        [scheduledDate, scheduledTime].forEach((input) => {
-            if (input) {
-                input.disabled = !enabled;
-            }
-        });
-    };
-
-    const syncScheduleFields = () => {
+    const applyDeliveryModeState = () => {
         const mode = getSelectedMode();
         const isSchedule = mode === "schedule";
-        const isImmediate = mode === "immediate";
-        setElementVisibility(scheduleFields, isSchedule);
-        setElementVisibility(immediateHelp, isImmediate);
-        setElementVisibility(timezonePanel, isSchedule);
+        setElementVisibility(scheduledFields, isSchedule);
         setScheduleInputsEnabled(isSchedule);
-        if (mode === "draft") {
-            setElementVisibility(timezoneSelector, false);
+
+        if (contentSummary) {
+            contentSummary.textContent = buildContentText();
         }
-        if (timezoneSelect) {
-            timezoneSelect.disabled = false;
+
+        if (mode === "immediate") {
+            if (deliveryModeSummary) {
+                deliveryModeSummary.textContent = "Este despacho se preparará para envío inmediato.";
+            }
+            if (formSummary) {
+                formSummary.textContent = "Este despacho se preparará para envío inmediato.";
+            }
+            if (submitButton) {
+                submitButton.textContent = "Preparar envío ahora";
+            }
+            return;
         }
-        syncSummary();
+
+        if (mode === "schedule") {
+            const hasSchedule = scheduledDate && scheduledDate.value && scheduledTime && scheduledTime.value && timezoneSelect && timezoneSelect.value;
+            if (deliveryModeSummary) {
+                deliveryModeSummary.textContent = hasSchedule
+                    ? `Este despacho se programará para el ${scheduledDate.value} a las ${scheduledTime.value}, en la zona ${timezoneSelect.value}.`
+                    : "Seleccione fecha, hora y zona horaria para programar el despacho.";
+            }
+            if (formSummary) {
+                formSummary.textContent = hasSchedule
+                    ? `Este despacho se programará para el ${scheduledDate.value} a las ${scheduledTime.value}, en la zona ${timezoneSelect.value}.`
+                    : "Seleccione fecha, hora y zona horaria para programar el despacho.";
+            }
+            if (submitButton) {
+                submitButton.textContent = "Programar envío";
+            }
+            return;
+        }
+
+        if (deliveryModeSummary) {
+            deliveryModeSummary.textContent = "Este despacho se guardará como borrador.";
+        }
+        if (formSummary) {
+            formSummary.textContent = "Este despacho se guardará como borrador.";
+        }
+        if (submitButton) {
+            submitButton.textContent = "Guardar borrador";
+        }
     };
 
-    modeInputs.forEach((input) => input.addEventListener("change", syncScheduleFields));
-    if (timezoneSelect) {
-        timezoneSelect.addEventListener("change", () => {
-            syncTimezoneLabels();
-            syncSummary();
-        });
-    }
-    timezoneToggles.forEach((timezoneToggle) => {
-        timezoneToggle.addEventListener("click", () => {
-            if (!timezoneSelector) {
-                return;
-            }
-            const nextVisible = timezoneSelector.hidden;
-            setElementVisibility(timezoneSelector, nextVisible);
-            timezoneToggles.forEach((button) => {
-                button.textContent = nextVisible ? "Ocultar zona horaria" : "Cambiar zona horaria";
-            });
-        });
-    });
-    [scheduledDate, scheduledTime, docxInput].forEach((input) => {
+    modeInputs.forEach((input) => input.addEventListener("change", applyDeliveryModeState));
+    [scheduledDate, scheduledTime, timezoneSelect, docxInput].forEach((input) => {
         if (input) {
-            input.addEventListener("input", syncSummary);
-            input.addEventListener("change", syncSummary);
+            input.addEventListener("input", applyDeliveryModeState);
+            input.addEventListener("change", applyDeliveryModeState);
         }
     });
-    photoInputs.forEach((input) => input.addEventListener("change", syncSummary));
+    photoInputs.forEach((input) => input.addEventListener("change", applyDeliveryModeState));
+
     document.querySelectorAll(".dispatch-photo-option").forEach((card) => {
         card.addEventListener("click", (event) => {
             if (event.target.closest("input, label")) {
@@ -193,7 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const sanitizeRecipientInput = (input) => {
         input.value = input.value.replaceAll("|", "");
-        syncSummary();
+        applyDeliveryModeState();
     };
 
     const renumberRecipients = () => {
@@ -220,7 +193,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 }
             }
         });
-        syncSummary();
+        applyDeliveryModeState();
     };
 
     const attachRecipientEvents = (row) => {
@@ -235,7 +208,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     row.querySelectorAll("input").forEach((input) => {
                         input.value = "";
                     });
-                    syncSummary();
+                    applyDeliveryModeState();
                     return;
                 }
                 row.remove();
@@ -264,5 +237,5 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     detectTimezone();
-    syncScheduleFields();
+    applyDeliveryModeState();
 });

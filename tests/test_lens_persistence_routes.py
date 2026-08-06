@@ -547,7 +547,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/new?coverage_id={coverage_id}").get_data(as_text=True)
 
-        self.assertIn("Cobertura preseleccionada", body)
+        self.assertIn("Cobertura", body)
         self.assertIn("IMG001.jpg", body)
         self.assertIn("Archivo no disponible para envío", body)
         self.assertIn('value="photo-1"  disabled', body)
@@ -695,8 +695,8 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         )
         schedule_body = schedule_response.get_data(as_text=True)
 
-        self.assertIn("data-dispatch-schedule-fields hidden", draft_body)
-        self.assertIn("data-dispatch-schedule-fields >", schedule_body)
+        self.assertIn("data-scheduled-delivery-fields hidden", draft_body)
+        self.assertIn('data-scheduled-delivery-fields aria-hidden="false"', schedule_body)
 
 
 if __name__ == "__main__":

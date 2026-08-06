@@ -159,7 +159,6 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Nuevo despacho", body)
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Selecciona una cobertura", body)
-        self.assertIn("Ejemplo: 09:45 AM", body)
         self.assertIn('name="recipient_name[]"', body)
         self.assertIn('name="recipient_email[]"', body)
         self.assertIn("Agregar destinatario", body)
@@ -168,16 +167,22 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Enviar ahora", body)
         self.assertIn("Programar envío", body)
         self.assertIn("America/Guayaquil", body)
-        self.assertIn("Cambiar", body)
-        self.assertIn("Detectada automáticamente", body)
+        self.assertNotIn("Cambiar zona horaria", body)
+        self.assertNotIn("Detectada automáticamente", body)
         self.assertIn("Este despacho se guardará como borrador.", body)
         self.assertIn("Incluir documento Word con captions", body)
         self.assertIn('src="/static/js/dispatch_form.js"', body)
-        self.assertIn('data-dispatch-schedule-fields hidden', body)
+        self.assertIn('class="dispatch-schedule-mode delivery-mode-options"', body)
+        self.assertIn('class="dispatch-mode-help delivery-mode-summary"', body)
+        self.assertIn('data-scheduled-delivery-fields hidden', body)
         self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="" disabled', body)
         self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="" disabled', body)
-        self.assertIn('data-timezone-panel hidden', body)
+        self.assertNotIn('data-timezone-panel', body)
+        self.assertNotIn("Cambiar", body.split("Entrega", 1)[-1].split("Fotografías con caption", 1)[0])
         self.assertEqual(body.count('name="timezone"'), 1)
+        self.assertIn('class="coverage-summary-grid"', body)
+        self.assertIn('data-content-summary', body)
+        self.assertIn("Documento Word incluido", body)
 
     def test_get_dispatch_new_immediate_hides_date_time_and_uses_single_timezone_control(self):
         response = self.client.post("/dispatch/new", data=self.valid_form(mode="immediate", name=""), follow_redirects=False)
@@ -185,12 +190,14 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         body = response.get_data(as_text=True)
         self.assertIn('id="dispatch_mode_immediate" type="radio" name="mode" value="immediate" checked', body)
-        self.assertIn("Se preparará inmediatamente usando la hora local detectada:", body)
-        self.assertIn("Cambiar zona horaria", body)
-        self.assertIn('data-dispatch-schedule-fields hidden', body)
+        self.assertIn("Este despacho se preparará para envío inmediato.", body)
+        self.assertIn("Preparar envío ahora", body)
+        self.assertNotIn("Cambiar zona horaria", body)
+        self.assertIn('data-scheduled-delivery-fields hidden', body)
         self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="" disabled', body)
         self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="" disabled', body)
-        self.assertIn('data-timezone-panel hidden', body)
+        self.assertNotIn('data-timezone-panel', body)
+        self.assertIn('id="timezone" name="timezone" data-preserve-timezone="true" disabled', body)
         self.assertEqual(body.count('name="timezone"'), 1)
 
     def test_get_dispatch_new_schedule_shows_date_time_and_single_timezone_reference(self):
@@ -208,12 +215,12 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         body = response.get_data(as_text=True)
         self.assertIn('id="dispatch_mode_schedule" type="radio" name="mode" value="schedule" checked', body)
-        self.assertIn('data-dispatch-schedule-fields', body)
-        self.assertNotIn('data-dispatch-schedule-fields hidden', body)
+        self.assertIn('data-scheduled-delivery-fields', body)
+        self.assertNotIn('data-scheduled-delivery-fields hidden', body)
         self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="2099-08-04"', body)
         self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="09:45"', body)
-        self.assertIn('data-timezone-panel', body)
-        self.assertNotIn('data-timezone-panel hidden', body)
+        self.assertNotIn('data-timezone-panel', body)
+        self.assertNotIn('Cambiar zona horaria', body)
         self.assertEqual(body.count('name="timezone"'), 1)
         self.assertEqual(body.count("<label for=\"timezone\">"), 1)
 
@@ -222,7 +229,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn("Cobertura preseleccionada", body)
+        self.assertIn("Cobertura", body)
         self.assertIn("IMG001.jpg", body)
         self.assertIn("IMG002.jpg", body)
         self.assertIn("IMG003.jpg", body)
@@ -458,11 +465,14 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn('replaceAll("|", "")', script)
         self.assertIn("Intl.DateTimeFormat().resolvedOptions().timeZone", script)
         self.assertIn("Preparar envío ahora", script)
-        self.assertIn("Este despacho se preparará inmediatamente", script)
-        self.assertIn("data-timezone-toggle", script)
+        self.assertIn("Este despacho se preparará para envío inmediato", script)
+        self.assertIn("applyDeliveryModeState", script)
+        self.assertIn("data-scheduled-delivery-fields", script)
+        self.assertIn("data-content-summary", script)
+        self.assertNotIn("data-timezone-toggle", script)
         self.assertIn("setScheduleInputsEnabled", script)
         self.assertIn("aria-hidden", script)
-        self.assertIn("timezoneSelect.disabled = false", script)
+        self.assertIn("input.disabled = !enabled", script)
 
     def test_dispatch_new_uses_compact_photo_grid_markup(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -486,7 +496,11 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn(".atlas-grid--2", stylesheet)
         self.assertIn("--page-max-width: 1450px;", stylesheet)
         self.assertIn(".atlas-container", stylesheet)
+        self.assertIn(".app-header-inner", stylesheet)
         self.assertIn(".atlas-panel--compact", stylesheet)
+        self.assertIn(".coverage-summary-grid", stylesheet)
+        self.assertIn(".scheduled-delivery-fields", stylesheet)
+        self.assertIn(".dispatch-new-page .form-card", stylesheet)
 
     def test_post_dispatch_new_rejects_missing_coverage(self):
         response = self.post_new(coverage_id="missing")
@@ -521,7 +535,8 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn('class="atlas-container app-header"', body)
+        self.assertIn('class="app-header"', body)
+        self.assertIn('class="atlas-container app-header-inner"', body)
         self.assertIn('class="atlas-container view-content dispatch-page"', body)
         self.assertRegex(
             body,
@@ -591,7 +606,7 @@ class DispatchRoutesTest(unittest.TestCase):
             data=self.valid_form(mode="immediate", name=""),
             follow_redirects=False,
         ).get_data(as_text=True)
-        self.assertIn("Se preparará inmediatamente usando la hora local detectada:", form_body)
+        self.assertIn("Este despacho se preparará para envío inmediato.", form_body)
 
     def test_dispatch_detail_sent_operational_summary_uses_sent_at(self):
         shipment = self.create_docx_shipment_from_route()
