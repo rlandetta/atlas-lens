@@ -39,7 +39,7 @@
     </form>
     {% endif %}
     {% if detail_actions.can_delete %}
-    <form method="post" action="{{ url_for('dispatch.delete', shipment_id=shipment.id) }}" data-confirm-message="¿Eliminar este borrador? Esta acción no elimina la cobertura ni las fotografías.">
+    <form method="post" action="{{ url_for('dispatch.delete', shipment_id=shipment.id) }}" data-confirm-message="{% if shipment.status == 'Cancelado' %}¿Eliminar este despacho cancelado? Esta acción elimina únicamente el registro de DISPATCH; la cobertura y las fotografías de LENS se conservarán.{% else %}¿Eliminar este borrador? Esta acción no elimina la cobertura ni las fotografías.{% endif %}">
         <button type="submit" class="danger-button compact-action">Eliminar</button>
     </form>
     {% endif %}

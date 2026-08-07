@@ -877,8 +877,57 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(cancelled["history"][0]["note"], "Programación cancelada por el usuario.")
         self.assertEqual(self.client.post(f"/dispatch/{draft['id']}/cancel").status_code, 403)
 
-    def test_dispatch_delete_only_draft_and_never_by_get(self):
+    def test_dispatch_delete_allows_draft_and_cancelled_only_and_never_by_get(self):
         draft = self.create_docx_shipment_from_route()
+        cancelled = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado"), status="Cancelado")
+        protected = {
+            "Programado": self.create_docx_shipment_from_route(
+                name="Programado",
+                mode="schedule",
+                scheduled_date="2099-08-04",
+                scheduled_time="09:45",
+            ),
+            "Enviando": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviando"), status="Enviando"),
+            "Enviado": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado"),
+            "Entregado": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Entregado"), status="Entregado"),
+            "Error": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Error"), status="Error"),
+        }
+
+        self.assertEqual(self.client.get(f"/dispatch/{draft['id']}/delete").status_code, 405)
+        self.assertEqual(self.client.get(f"/dispatch/{cancelled['id']}/delete").status_code, 405)
+        for shipment in protected.values():
+            self.assertEqual(self.client.post(f"/dispatch/{shipment['id']}/delete").status_code, 403)
+            self.assertIsNotNone(self.shipment_service.get_shipment(shipment["id"]))
+
+        draft_response = self.client.post(f"/dispatch/{draft['id']}/delete", follow_redirects=False)
+        cancelled_response = self.client.post(f"/dispatch/{cancelled['id']}/delete", follow_redirects=False)
+
+        self.assertEqual(draft_response.status_code, 302)
+        self.assertEqual(cancelled_response.status_code, 302)
+        self.assertIsNone(self.shipment_service.get_shipment(draft["id"]))
+        self.assertIsNone(self.shipment_service.get_shipment(cancelled["id"]))
+        self.assertEqual(self.coverages, self.original_coverages)
+
+    def test_dispatch_cancelled_delete_actions_are_visible_in_index_and_detail(self):
+        cancelled = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado"), status="Cancelado")
+
+        index_body = self.client.get("/dispatch/?status=Cancelado").get_data(as_text=True)
+        detail_body = self.client.get(f"/dispatch/{cancelled['id']}").get_data(as_text=True)
+
+        self.assertIn("Eliminar cancelados", index_body)
+        self.assertIn("¿Eliminar este despacho cancelado?", index_body)
+        self.assertIn("Eliminar", index_body)
+        self.assertIn("Duplicar", index_body)
+        self.assertIn("¿Eliminar este despacho cancelado?", detail_body)
+        self.assertIn("Eliminar", detail_body)
+        self.assertIn("Duplicar", detail_body)
+        self.assertNotIn("Editar", detail_body)
+        self.assertNotIn("Cancelar programación", detail_body)
+
+    def test_dispatch_bulk_delete_cancelled_removes_only_cancelled(self):
+        cancelled_one = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado 1"), status="Cancelado")
+        cancelled_two = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado 2"), status="Cancelado")
+        draft = self.create_docx_shipment_from_route(name="Borrador")
         scheduled = self.create_docx_shipment_from_route(
             name="Programado",
             mode="schedule",
@@ -886,14 +935,22 @@ class DispatchRoutesTest(unittest.TestCase):
             scheduled_time="09:45",
         )
 
-        self.assertEqual(self.client.get(f"/dispatch/{draft['id']}/delete").status_code, 405)
-        self.assertEqual(self.client.post(f"/dispatch/{scheduled['id']}/delete").status_code, 403)
-        response = self.client.post(f"/dispatch/{draft['id']}/delete", follow_redirects=False)
+        response = self.client.post("/dispatch/delete-cancelled", follow_redirects=False)
 
         self.assertEqual(response.status_code, 302)
-        self.assertIsNone(self.shipment_service.get_shipment(draft["id"]))
+        self.assertIsNone(self.shipment_service.get_shipment(cancelled_one["id"]))
+        self.assertIsNone(self.shipment_service.get_shipment(cancelled_two["id"]))
+        self.assertIsNotNone(self.shipment_service.get_shipment(draft["id"]))
         self.assertIsNotNone(self.shipment_service.get_shipment(scheduled["id"]))
         self.assertEqual(self.coverages, self.original_coverages)
+
+    def test_dispatch_bulk_delete_cancelled_with_none_is_controlled(self):
+        draft = self.create_docx_shipment_from_route(name="Borrador")
+
+        response = self.client.post("/dispatch/delete-cancelled", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNotNone(self.shipment_service.get_shipment(draft["id"]))
 
     def test_dispatch_detail_shows_only_allowed_actions_by_status(self):
         draft = self.create_docx_shipment_from_route()

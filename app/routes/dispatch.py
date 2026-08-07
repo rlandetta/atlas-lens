@@ -384,7 +384,7 @@ def build_action_links(shipment: dict[str, Any]) -> dict[str, bool]:
         "can_edit": status in EDITABLE_STATUSES,
         "can_duplicate": status in DUPLICABLE_STATUSES,
         "can_cancel": status == "Programado",
-        "can_delete": status == "Borrador",
+        "can_delete": status in {"Borrador", "Cancelado"},
     }
 
 
@@ -485,7 +485,7 @@ def build_index_rows(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         item["photo_count"] = len(shipment.get("photo_ids", []))
         item["recipient_count"] = len([recipient for recipient in shipment.get("recipients", []) if isinstance(recipient, dict)])
         item["docx_label"] = "Sí" if build_content_summary(shipment).get("docx_included") else "No"
-        item["can_delete"] = shipment.get("status") == "Borrador"
+        item["can_delete"] = shipment.get("status") in {"Borrador", "Cancelado"}
         item["actions"] = build_action_links(shipment)
         rows.append(item)
     return rows
@@ -942,7 +942,12 @@ def cancel(shipment_id: str) -> str:
 @dispatch_bp.post("/<shipment_id>/delete")
 def delete(shipment_id: str) -> str:
     try:
-        get_dispatch_services()["shipment_service"].delete_draft(shipment_id)
+        get_dispatch_services()["shipment_service"].delete_shipment_record(shipment_id)
     except DispatchValidationError:
         abort(403)
     return redirect(url_for("dispatch.index"))
+
+@dispatch_bp.post("/delete-cancelled")
+def delete_cancelled() -> str:
+    get_dispatch_services()["shipment_service"].delete_cancelled_shipments()
+    return redirect(url_for("dispatch.index", status="Cancelado"))

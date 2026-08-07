@@ -166,13 +166,24 @@ class ShipmentService:
         }]
         return self.store.create(duplicated)
 
-    def delete_draft(self, shipment_id: str) -> dict:
+    def delete_shipment_record(self, shipment_id: str) -> dict:
         shipment = self.store.get(shipment_id)
         if shipment is None:
             raise DispatchValidationError("No existe el despacho solicitado.")
-        if shipment.get("status") != "Borrador":
-            raise DispatchValidationError("Solo se pueden eliminar despachos en borrador.")
+        if shipment.get("status") not in {"Borrador", "Cancelado"}:
+            raise DispatchValidationError("Solo se pueden eliminar despachos en borrador o cancelados.")
         return self.store.delete(shipment_id)
+
+    def delete_cancelled_shipments(self) -> int:
+        deleted_count = 0
+        for shipment in self.store.list_shipments():
+            if shipment.get("status") == "Cancelado":
+                self.store.delete(str(shipment.get("id", "")))
+                deleted_count += 1
+        return deleted_count
+
+    def delete_draft(self, shipment_id: str) -> dict:
+        return self.delete_shipment_record(shipment_id)
 
     def transition_status(self, shipment_id: str, next_status: str, note: str = "") -> dict:
         shipment = self.store.get(shipment_id)

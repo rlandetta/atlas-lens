@@ -792,6 +792,10 @@ h1 {
     min-width: max-content;
 }
 
+.dispatch-bulk-action {
+    margin: 0.75rem 0 0;
+}
+
 .dispatch-filter-chip {
     align-items: center;
     background: #111a24;

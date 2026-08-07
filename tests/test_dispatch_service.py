@@ -159,8 +159,15 @@ class ShipmentServiceTest(unittest.TestCase):
         self.assertTrue(duplicated["include_caption_docx"])
         self.assertIn(shipment["id"], duplicated["history"][0]["note"])
 
-    def test_delete_draft_allows_only_borrador(self):
+    def test_delete_shipment_record_allows_only_borrador_and_cancelado(self):
         draft = self.create_shipment()
+        cancelled = self.service.create_shipment(
+            name="Despacho cancelado",
+            coverage_id="cov-1",
+            photo_ids=["photo-approved"],
+            recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+        )
+        cancelled = self.service.store.update(cancelled["id"], {**cancelled, "status": "Cancelado"})
         scheduled = self.service.create_shipment(
             name="Despacho programado",
             coverage_id="cov-1",
@@ -170,13 +177,32 @@ class ShipmentServiceTest(unittest.TestCase):
             scheduled_at="2026-08-04T09:45:00-05:00",
         )
 
-        removed = self.service.delete_draft(draft["id"])
+        removed_draft = self.service.delete_shipment_record(draft["id"])
+        removed_cancelled = self.service.delete_shipment_record(cancelled["id"])
 
-        self.assertEqual(removed["id"], draft["id"])
+        self.assertEqual(removed_draft["id"], draft["id"])
+        self.assertEqual(removed_cancelled["id"], cancelled["id"])
         self.assertIsNone(self.service.get_shipment(draft["id"]))
+        self.assertIsNone(self.service.get_shipment(cancelled["id"]))
         self.assertIsNotNone(self.service.get_shipment(scheduled["id"]))
         with self.assertRaises(DispatchValidationError):
-            self.service.delete_draft(scheduled["id"])
+            self.service.delete_shipment_record(scheduled["id"])
+
+    def test_delete_cancelled_shipments_removes_only_cancelled(self):
+        draft = self.create_shipment()
+        cancelled = self.service.create_shipment(
+            name="Despacho cancelado",
+            coverage_id="cov-1",
+            photo_ids=["photo-approved"],
+            recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+        )
+        cancelled = self.service.store.update(cancelled["id"], {**cancelled, "status": "Cancelado"})
+
+        deleted_count = self.service.delete_cancelled_shipments()
+
+        self.assertEqual(deleted_count, 1)
+        self.assertIsNone(self.service.get_shipment(cancelled["id"]))
+        self.assertIsNotNone(self.service.get_shipment(draft["id"]))
 
     def test_valid_transition(self):
         shipment = self.create_shipment()
