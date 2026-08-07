@@ -62,6 +62,20 @@ class DispatchShipmentStoreTest(unittest.TestCase):
 
         self.assertEqual(self.store.get("ship-1")["name"], "Despacho actualizado")
 
+    def test_delete_removes_only_requested_shipment(self):
+        self.store.create({"id": "ship-1", "name": "Uno"})
+        self.store.create({"id": "ship-2", "name": "Dos"})
+
+        removed = self.store.delete("ship-1")
+
+        self.assertEqual(removed["id"], "ship-1")
+        self.assertIsNone(self.store.get("ship-1"))
+        self.assertEqual(self.store.get("ship-2")["name"], "Dos")
+
+    def test_delete_missing_raises(self):
+        with self.assertRaises(DispatchStoreError):
+            self.store.delete("missing")
+
     def test_lock_acquisition_and_release(self):
         acquired = threading.Event()
         release = threading.Event()

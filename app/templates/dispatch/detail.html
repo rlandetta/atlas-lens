@@ -6,16 +6,16 @@
 {% block content %}
 <section class="dispatch-detail-header ui-card atlas-panel--normal">
     <div>
-        <p class="coverage-id">ID: {{ shipment.id }}</p>
+        <p class="coverage-id">DISPATCH</p>
         <h1>{{ shipment.name }}</h1>
-        <p class="subtitle">Creado: {{ formatted.created_at }} · Actualizado: {{ formatted.updated_at }}</p>
+        <p class="subtitle">Gestor editorial de entrega preparado desde LENS.</p>
     </div>
     <span class="dispatch-status-badge">{{ shipment.status }}</span>
 </section>
 
-<aside class="dispatch-operational-summary" aria-label="Resumen operativo de entrega">
+<aside class="dispatch-operational-summary atlas-panel--compact" aria-label="Resumen operativo">
     <span class="dispatch-operational-badge">{{ shipment.status }}</span>
-    <div>
+    <div class="dispatch-operational-copy">
         <p>{{ operational_summary.text }}</p>
         {% if operational_summary.secondary %}
         <small>{{ operational_summary.secondary }}</small>
@@ -23,75 +23,67 @@
     </div>
 </aside>
 
-<div class="dispatch-detail-grid">
-    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-general-title">
-        <h2 id="dispatch-general-title">Información general</h2>
+{% if detail_actions.can_edit or detail_actions.can_duplicate or detail_actions.can_cancel or detail_actions.can_delete %}
+<nav class="dispatch-action-bar" aria-label="Acciones del despacho">
+    {% if detail_actions.can_edit %}
+    <a class="secondary-button compact-action" href="{{ url_for('dispatch.edit', shipment_id=shipment.id) }}">Editar</a>
+    {% endif %}
+    {% if detail_actions.can_duplicate %}
+    <form method="post" action="{{ url_for('dispatch.duplicate', shipment_id=shipment.id) }}">
+        <button type="submit" class="secondary-button compact-action">Duplicar</button>
+    </form>
+    {% endif %}
+    {% if detail_actions.can_cancel %}
+    <form method="post" action="{{ url_for('dispatch.cancel', shipment_id=shipment.id) }}" data-confirm-message="¿Cancelar la programación de este despacho?">
+        <button type="submit" class="secondary-button compact-action">Cancelar programación</button>
+    </form>
+    {% endif %}
+    {% if detail_actions.can_delete %}
+    <form method="post" action="{{ url_for('dispatch.delete', shipment_id=shipment.id) }}" data-confirm-message="¿Eliminar este borrador? Esta acción no elimina la cobertura ni las fotografías.">
+        <button type="submit" class="danger-button compact-action">Eliminar</button>
+    </form>
+    {% endif %}
+</nav>
+{% endif %}
+
+<div class="dispatch-detail-grid atlas-grid atlas-grid--2">
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-delivery-title">
+        <h2 id="dispatch-delivery-title">Información del envío</h2>
         <dl class="coverage-meta-grid dispatch-compact-meta">
-            <div>
-                <dt>Estado</dt>
-                <dd>{{ shipment.status }}</dd>
-            </div>
             <div>
                 <dt>Canal</dt>
                 <dd>{{ shipment.channel or "No definido" }}</dd>
             </div>
+            {% if formatted.scheduled_at %}
             <div>
-                <dt>Fotografías</dt>
-                <dd>{{ content_summary.photo_count }}</dd>
+                <dt>{% if shipment.requested_delivery_mode == "immediate" %}Preparado para{% else %}Programado para{% endif %}</dt>
+                <dd>{{ formatted.scheduled_at }}</dd>
+            </div>
+            {% endif %}
+            <div>
+                <dt>Zona horaria</dt>
+                <dd>{{ timezone_display }}</dd>
+            </div>
+            <div>
+                <dt>Documento Word</dt>
+                <dd>{{ "Sí" if content_summary.docx_included else "No" }}</dd>
             </div>
             <div>
                 <dt>Destinatarios</dt>
                 <dd>{{ shipment.recipients | length }}</dd>
             </div>
             <div>
-                <dt>Creado</dt>
-                <dd>{{ formatted.created_at }}</dd>
+                <dt>Fotografías</dt>
+                <dd>{{ content_summary.photo_count }}</dd>
             </div>
-            <div>
-                <dt>Actualizado</dt>
-                <dd>{{ formatted.updated_at }}</dd>
-            </div>
-            {% if shipment.status == "Programado" and formatted.scheduled_at %}
-            <div>
-                <dt>{% if shipment.requested_delivery_mode == "immediate" %}Preparado desde{% else %}Programado para{% endif %}</dt>
-                <dd>{{ formatted.scheduled_at }}</dd>
-            </div>
-            <div>
-                <dt>Hora local</dt>
-                <dd>{{ timezone_display }}</dd>
-            </div>
-            {% if scheduled_utc %}
-            <div>
-                <dt>Referencia UTC</dt>
-                <dd>{{ scheduled_utc }}</dd>
-            </div>
-            {% endif %}
-            {% endif %}
-            {% if shipment.attempt_count %}
-            <div>
-                <dt>Intentos</dt>
-                <dd>{{ shipment.attempt_count }}</dd>
-            </div>
-            {% endif %}
-            {% if formatted.last_attempt_at %}
-            <div>
-                <dt>Último intento</dt>
-                <dd>{{ formatted.last_attempt_at }}</dd>
-            </div>
-            {% endif %}
-            {% if formatted.sent_at %}
-            <div>
-                <dt>Enviado</dt>
-                <dd>{{ formatted.sent_at }}</dd>
-            </div>
-            {% endif %}
-            {% if shipment.last_error %}
-            <div>
-                <dt>Último error</dt>
-                <dd>{{ shipment.last_error }}</dd>
-            </div>
-            {% endif %}
         </dl>
+        {% if shipment.recipients %}
+        <ul class="dispatch-compact-list dispatch-recipient-summary" aria-label="Destinatarios registrados">
+            {% for recipient in shipment.recipients %}
+            <li>{{ recipient.name or "Sin nombre" }}{% if recipient.email %} · {{ recipient.email }}{% endif %}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
     </section>
 
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-coverage-title">
@@ -103,7 +95,7 @@
             </div>
             {% if shipment.coverage_snapshot.city or shipment.coverage_snapshot.country %}
             <div>
-                <dt>Ciudad y país</dt>
+                <dt>Ciudad</dt>
                 <dd>{{ shipment.coverage_snapshot.city }}{% if shipment.coverage_snapshot.city and shipment.coverage_snapshot.country %}, {% endif %}{{ shipment.coverage_snapshot.country }}</dd>
             </div>
             {% endif %}
@@ -121,54 +113,11 @@
             {% endif %}
             {% if shipment.coverage_snapshot.event_date %}
             <div>
-                <dt>Fecha de evento</dt>
+                <dt>Fecha del evento</dt>
                 <dd>{{ shipment.coverage_snapshot.event_date }}</dd>
             </div>
             {% endif %}
-            {% if shipment.coverage_snapshot.submit_date %}
-            <div>
-                <dt>Fecha de envío</dt>
-                <dd>{{ shipment.coverage_snapshot.submit_date }}</dd>
-            </div>
-            {% endif %}
         </dl>
-    </section>
-
-    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-content-title">
-        <h2 id="dispatch-content-title">Contenido del despacho</h2>
-        <dl class="coverage-meta-grid dispatch-compact-meta">
-            <div>
-                <dt>Documento Word con captions</dt>
-                <dd>{{ "Incluido" if content_summary.docx_included else "No incluido" }}</dd>
-            </div>
-            {% if content_summary.docx_included %}
-            <div>
-                <dt>Alcance del documento</dt>
-                <dd>{{ content_summary.docx_scope }}</dd>
-            </div>
-            <div>
-                <dt>Fotografías incluidas</dt>
-                <dd>{{ content_summary.docx_photo_count }}</dd>
-            </div>
-            {% endif %}
-            <div>
-                <dt>Fotografías seleccionadas</dt>
-                <dd>{{ content_summary.photo_count }}</dd>
-            </div>
-        </dl>
-    </section>
-
-    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-recipients-title">
-        <h2 id="dispatch-recipients-title">Destinatarios</h2>
-        {% if shipment.recipients %}
-        <ul class="dispatch-compact-list">
-            {% for recipient in shipment.recipients %}
-            <li>{{ recipient.name or "Sin nombre" }}{% if recipient.email %} · {{ recipient.email }}{% endif %}</li>
-            {% endfor %}
-        </ul>
-        {% else %}
-        <p>No hay destinatarios registrados.</p>
-        {% endif %}
     </section>
 </div>
 
@@ -180,7 +129,7 @@
 {% endif %}
 
 <section class="ui-card atlas-panel--normal dispatch-detail-section" aria-labelledby="dispatch-photos-title">
-    <h2 id="dispatch-photos-title">Fotografías</h2>
+    <h2 id="dispatch-photos-title">Fotografías ({{ content_summary.photo_count }})</h2>
     {% if detail_photos %}
     <div class="dispatch-photo-grid">
         {% for photo in detail_photos %}
@@ -211,8 +160,47 @@
     {% endif %}
 </section>
 
-<section class="ui-card atlas-panel--compact dispatch-detail-section" aria-labelledby="dispatch-history-title">
-    <h2 id="dispatch-history-title">Historial de estados</h2>
+<details class="ui-card atlas-panel--compact dispatch-detail-section dispatch-technical-details">
+    <summary>Información técnica</summary>
+    <dl class="coverage-meta-grid dispatch-compact-meta">
+        <div>
+            <dt>ID</dt>
+            <dd>{{ shipment.id }}</dd>
+        </div>
+        <div>
+            <dt>Creado</dt>
+            <dd>{{ formatted.created_at }}</dd>
+        </div>
+        <div>
+            <dt>Actualizado</dt>
+            <dd>{{ formatted.updated_at }}</dd>
+        </div>
+        {% if scheduled_utc %}
+        <div>
+            <dt>UTC</dt>
+            <dd>{{ scheduled_utc }}</dd>
+        </div>
+        {% endif %}
+        {% if shipment.attempt_count %}
+        <div>
+            <dt>Intentos</dt>
+            <dd>{{ shipment.attempt_count }}</dd>
+        </div>
+        {% endif %}
+        {% if formatted.last_attempt_at %}
+        <div>
+            <dt>Último intento</dt>
+            <dd>{{ formatted.last_attempt_at }}</dd>
+        </div>
+        {% endif %}
+        {% if formatted.sent_at %}
+        <div>
+            <dt>Enviado</dt>
+            <dd>{{ formatted.sent_at }}</dd>
+        </div>
+        {% endif %}
+    </dl>
+    <h3>Historial</h3>
     {% if history_items %}
     <ol class="dispatch-history-list">
         {% for item in history_items %}
@@ -222,7 +210,19 @@
     {% else %}
     <p>No hay historial registrado.</p>
     {% endif %}
-</section>
+</details>
 
 <a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+        if (!window.confirm(form.dataset.confirmMessage)) {
+            event.preventDefault();
+        }
+    });
+});
+</script>
 {% endblock %}

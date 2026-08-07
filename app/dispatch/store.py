@@ -114,6 +114,16 @@ class DispatchShipmentStore:
                     return deepcopy(normalized_shipment)
         raise DispatchStoreError("No existe el despacho solicitado.")
 
+    def delete(self, shipment_id: str) -> dict[str, Any]:
+        with self._locked(shared=False):
+            payload = self._load_unlocked()
+            for index, shipment in enumerate(payload["shipments"]):
+                if shipment.get("id") == shipment_id:
+                    removed = normalize_shipment(payload["shipments"].pop(index))
+                    self._save_unlocked(payload)
+                    return removed
+        raise DispatchStoreError("No existe el despacho solicitado.")
+
     def mutate(self, shipment_id: str, callback) -> dict[str, Any] | None:
         with self._locked(shared=False):
             payload = self._load_unlocked()

@@ -111,13 +111,68 @@ class ShipmentService:
         shipment = self.store.get(shipment_id)
         if shipment is None:
             raise DispatchValidationError("No existe el despacho solicitado.")
+        if shipment.get("status") not in {"Borrador", "Programado", "Error"}:
+            raise DispatchValidationError("Este despacho no puede editarse en su estado actual.")
 
         next_shipment = deepcopy(shipment)
-        for field in ("name", "recipients", "delivery_note", "channel", "export_reference"):
+        editable_fields = (
+            "name",
+            "photo_ids",
+            "photo_snapshots",
+            "recipients",
+            "delivery_note",
+            "channel",
+            "export_reference",
+            "include_caption_docx",
+            "requested_delivery_mode",
+            "status",
+            "scheduled_at",
+            "timezone",
+        )
+        for field in editable_fields:
             if field in updates:
                 next_shipment[field] = deepcopy(updates[field])
-        next_shipment["updated_at"] = utc_now_iso()
+        timestamp = utc_now_iso()
+        next_shipment["updated_at"] = timestamp
+        history = next_shipment.setdefault("history", [])
+        note = "Programación actualizada." if updates.get("schedule_changed") else "Despacho editado."
+        history.insert(0, {"status": next_shipment.get("status", ""), "created_at": timestamp, "note": note})
         return self.store.update(shipment_id, next_shipment)
+
+    def duplicate_shipment(self, shipment_id: str) -> dict:
+        shipment = self.store.get(shipment_id)
+        if shipment is None:
+            raise DispatchValidationError("No existe el despacho solicitado.")
+        if shipment.get("status") not in {"Borrador", "Programado", "Enviado", "Error", "Cancelado"}:
+            raise DispatchValidationError("Este despacho no puede duplicarse en su estado actual.")
+
+        timestamp = utc_now_iso()
+        duplicated = deepcopy(shipment)
+        duplicated["id"] = self.build_shipment_id()
+        duplicated["name"] = f"Copia de {shipment.get('name', '').strip() or shipment_id}"
+        duplicated["status"] = "Borrador"
+        duplicated["scheduled_at"] = ""
+        duplicated["sent_at"] = ""
+        duplicated["last_attempt_at"] = ""
+        duplicated["attempt_count"] = 0
+        duplicated["last_error"] = ""
+        duplicated["requested_delivery_mode"] = "draft"
+        duplicated["created_at"] = timestamp
+        duplicated["updated_at"] = timestamp
+        duplicated["history"] = [{
+            "status": "Borrador",
+            "created_at": timestamp,
+            "note": f"Despacho duplicado desde {shipment_id}.",
+        }]
+        return self.store.create(duplicated)
+
+    def delete_draft(self, shipment_id: str) -> dict:
+        shipment = self.store.get(shipment_id)
+        if shipment is None:
+            raise DispatchValidationError("No existe el despacho solicitado.")
+        if shipment.get("status") != "Borrador":
+            raise DispatchValidationError("Solo se pueden eliminar despachos en borrador.")
+        return self.store.delete(shipment_id)
 
     def transition_status(self, shipment_id: str, next_status: str, note: str = "") -> dict:
         shipment = self.store.get(shipment_id)

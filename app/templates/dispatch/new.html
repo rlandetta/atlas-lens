@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 
-{% block title %}Nuevo despacho | ATLAS{% endblock %}
+{% block title %}{% if form_mode == "edit" %}Editar despacho{% else %}Nuevo despacho{% endif %} | ATLAS{% endblock %}
 {% block main_class %}form-page dispatch-new-page{% endblock %}
 
 {% block content %}
 <section class="form-card ui-card atlas-panel--normal">
-    <h1>Nuevo despacho</h1>
-    <p class="subtitle">Cree un despacho desde fotografías con caption de LENS y defina si queda en borrador, inmediato o programado.</p>
+    <h1>{% if form_mode == "edit" %}Editar despacho{% else %}Nuevo despacho{% endif %}</h1>
+    <p class="subtitle">{% if form_mode == "edit" %}Actualice la preparación editorial del despacho sin cambiar su identificador ni historial base.{% else %}Cree un despacho desde fotografías con caption de LENS y defina si queda en borrador, inmediato o programado.{% endif %}</p>
 
     {% if errors %}
     <div class="form-error" role="alert">
-        <p>No se pudo crear el despacho:</p>
+        <p>{% if form_mode == "edit" %}No se pudo actualizar el despacho:{% else %}No se pudo crear el despacho:{% endif %}</p>
         <ul>
             {% for error in errors %}
             <li>{{ error }}</li>
@@ -19,7 +19,7 @@
     </div>
     {% endif %}
 
-    <form method="post" action="{% if coverage_locked %}{{ url_for('dispatch.new', coverage_id=selected_coverage.id) }}{% else %}{{ url_for('dispatch.new') }}{% endif %}" class="coverage-form">
+    <form method="post" action="{{ form_action }}" class="coverage-form">
         <div class="coverage-form-grid">
             <div class="form-field">
                 <label for="name">Nombre del despacho</label>
@@ -198,7 +198,11 @@
         </aside>
 
         <button type="submit" class="primary-button compact-action" data-dispatch-submit-button>
-            {% if form_data.mode == "schedule" %}
+            {% if form_mode == "edit" and form_data.mode == "schedule" %}
+            Actualizar programación
+            {% elif form_mode == "edit" %}
+            Guardar cambios
+            {% elif form_data.mode == "schedule" %}
             Programar envío
             {% elif form_data.mode == "immediate" %}
             Preparar envío ahora

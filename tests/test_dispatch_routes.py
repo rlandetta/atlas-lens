@@ -108,6 +108,10 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("dispatch.index", self.app.view_functions)
         self.assertIn("dispatch.new", self.app.view_functions)
         self.assertIn("dispatch.detail", self.app.view_functions)
+        self.assertIn("dispatch.edit", self.app.view_functions)
+        self.assertIn("dispatch.duplicate", self.app.view_functions)
+        self.assertIn("dispatch.cancel", self.app.view_functions)
+        self.assertIn("dispatch.delete", self.app.view_functions)
 
     def test_get_dispatch_index(self):
         response = self.client.get("/dispatch/")
@@ -116,16 +120,14 @@ class DispatchRoutesTest(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn("ATLAS", body)
         self.assertIn("Despachos", body)
-        self.assertIn("Resumen por estado", body)
-        self.assertIn("Borrador", body)
-        self.assertIn("Preparando", body)
-        self.assertIn("Listo", body)
-        self.assertIn("Programado", body)
+        self.assertIn("Filtros de despachos", body)
+        self.assertIn("Todos", body)
+        self.assertIn("Borradores", body)
+        self.assertIn("Programados", body)
         self.assertIn("Enviando", body)
-        self.assertIn("Enviado", body)
-        self.assertIn("Entregado", body)
+        self.assertIn("Enviados", body)
         self.assertIn("Error", body)
-        self.assertIn("Cancelado", body)
+        self.assertIn("Cancelados", body)
         self.assertIn("No hay despachos todavía", body)
         self.assertNotIn("Cobertura activa", body)
 
@@ -136,11 +138,17 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn("<table>", body)
         self.assertIn("Historial de despachos", body)
+        self.assertIn("dispatch-shipment-row", body)
         self.assertIn("Despacho Quito", body)
         self.assertIn("Cobertura Quito", body)
-        self.assertIn("Ver detalle", body)
+        self.assertIn(">Ver</a>", body)
+        self.assertIn("Editar", body)
+        self.assertIn("Duplicar", body)
+        self.assertIn("Eliminar", body)
+        self.assertIn("Sin programación", body)
+        self.assertNotIn("<table>", body)
+        self.assertNotIn("Ver detalle", body)
         self.assertNotIn("T", body.split("Historial de despachos", 1)[-1])
 
     def test_dispatch_index_links_to_new_shipment(self):
@@ -555,12 +563,13 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Borrador", body)
         self.assertIn("Cobertura Quito", body)
         self.assertIn("Mesa", body)
-        self.assertIn("Historial de estados", body)
+        self.assertIn("Información técnica", body)
+        self.assertIn("Historial", body)
         self.assertIn("IMG001.jpg", body)
         self.assertIn("Persona participa en evento.", body)
         self.assertIn("Aprobado", body)
         self.assertIn("/coverages/cov-1/photos/photo-approved/media", body)
-        self.assertIn("Fotografías</dt>", body)
+        self.assertIn("Fotografías (1)", body)
         self.assertIn("Destinatarios</dt>", body)
         self.assertNotIn("handoff", body.lower())
         self.assertNotIn("{&#39;", body)
@@ -577,8 +586,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn("Este despacho aún no está programado.", body)
-        self.assertIn("Se entregará a 1 destinatario e incluye 1 fotografía y un documento Word con captions.", body)
+        self.assertIn("Borrador con 1 fotografía y un documento Word para 1 destinatario.", body)
 
     def test_dispatch_detail_programmed_operational_summary(self):
         shipment = self.create_docx_shipment_from_route(
@@ -590,8 +598,7 @@ class DispatchRoutesTest(unittest.TestCase):
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
         self.assertIn(
-            "Este despacho se preparará el 4 de agosto de 2099 a las 09:45 "
-            "a Mesa Xinhua &lt;desk@xinhua.com&gt;. Incluye 1 fotografía y un documento Word con captions.",
+            "Se enviarán 1 fotografía y un documento Word a 1 destinatario el 4 de agosto de 2099 a las 09:45 (America/Guayaquil).",
             body,
         )
 
@@ -600,7 +607,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn("Este despacho está preparado para envío inmediato", body)
+        self.assertIn("Se prepararán 1 fotografía y un documento Word para 1 destinatario", body)
         form_body = self.client.post(
             "/dispatch/new",
             data=self.valid_form(mode="immediate", name=""),
@@ -619,8 +626,7 @@ class DispatchRoutesTest(unittest.TestCase):
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
         self.assertIn(
-            "Este despacho fue enviado el 5 de agosto de 2026 a las 09:45 "
-            "a Mesa Xinhua &lt;desk@xinhua.com&gt;.",
+            "Se enviaron 1 fotografía y un documento Word a 1 destinatario el 5 de agosto de 2026 a las 09:45.",
             body,
         )
 
@@ -638,7 +644,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn("El envío programado para el 4 de agosto de 2099 a las 09:45 no pudo completarse.", body)
+        self.assertIn("El despacho de 1 fotografía y un documento Word para 1 destinatario no pudo completarse.", body)
         self.assertIn("<small>SMTP no configurado.</small>", body)
 
     def test_dispatch_detail_cancelled_operational_summary(self):
@@ -651,7 +657,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn("El envío programado para el 4 de agosto de 2099 a las 09:45 fue cancelado.", body)
+        self.assertIn("La programación de 1 fotografía y un documento Word para 1 destinatario fue cancelada.", body)
 
     def test_dispatch_detail_recipient_summary_for_multiple_recipients(self):
         shipment = self.create_docx_shipment_from_route()
@@ -667,11 +673,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn(
-            "Este despacho está siendo enviado a Ricardo Landetta &lt;rlandetta@gmail.com&gt;, "
-            "desk@xinhua.com y 1 más.",
-            body,
-        )
+        self.assertIn("Se están enviando 1 fotografía y un documento Word a 3 destinatarios.", body)
         self.assertNotIn("[{", body)
         self.assertNotIn("{&#39;", body)
 
@@ -680,21 +682,23 @@ class DispatchRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn("Se entregará a 1 destinatario e incluye 1 fotografía.", body)
-        self.assertNotIn("1 fotografía y un documento Word con captions.", body)
+        self.assertIn("Borrador con 1 fotografía para 1 destinatario.", body)
+        self.assertNotIn("1 fotografía y un documento Word", body)
 
     def test_dispatch_detail_presents_docx_humanly(self):
         shipment = self.create_docx_shipment_from_route()
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn("Contenido del despacho", body)
-        self.assertIn("Documento Word con captions", body)
-        self.assertIn("Incluido", body)
-        self.assertIn("Alcance del documento", body)
-        self.assertIn("Fotografías seleccionadas", body)
-        self.assertIn("Fotografías incluidas", body)
+        self.assertIn("Información del envío", body)
+        self.assertIn("Documento Word", body)
+        self.assertIn("Sí", body)
+        self.assertIn("Fotografías</dt>", body)
         self.assertIn("<dd>1</dd>", body)
+        self.assertNotIn("Contenido del despacho", body)
+        self.assertNotIn("Alcance del documento", body)
+        self.assertNotIn("Fotografías seleccionadas", body)
+        self.assertNotIn("Fotografías incluidas", body)
         self.assertNotIn("caption_docx", body)
         self.assertNotIn("photo_scope", body)
         self.assertNotIn("include", body)
@@ -730,6 +734,199 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Policías verifican documentos", body)
         self.assertIn("…", body)
         self.assertNotIn("durante la jornada.", body)
+
+    def test_dispatch_index_filters_by_status_and_handles_invalid_status(self):
+        draft = self.create_docx_shipment_from_route()
+        scheduled = self.create_docx_shipment_from_route(
+            name="Despacho programado",
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        body = self.client.get("/dispatch/?status=Programado").get_data(as_text=True)
+
+        self.assertIn("Programados", body)
+        self.assertIn("Despacho programado", body)
+        self.assertNotIn(f"<h3>{draft['name']}</h3>", body)
+        self.assertIn('href="/dispatch/?status=Programado" class="dispatch-filter-chip is-active"', body)
+
+        invalid_body = self.client.get("/dispatch/?status=Invalido").get_data(as_text=True)
+        self.assertIn("Despacho programado", invalid_body)
+        self.assertIn(draft["name"], invalid_body)
+        self.assertIn('href="/dispatch/" class="dispatch-filter-chip is-active"', invalid_body)
+
+    def test_dispatch_index_orders_programmed_before_drafts_and_errors(self):
+        draft = self.create_docx_shipment_from_route(name="Borrador final")
+        error = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Error medio"), status="Error")
+        scheduled = self.create_docx_shipment_from_route(
+            name="Programado primero",
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        body = self.client.get("/dispatch/").get_data(as_text=True)
+
+        self.assertLess(body.index(scheduled["name"]), body.index(draft["name"]))
+        self.assertLess(body.index(draft["name"]), body.index(error["name"]))
+
+    def test_dispatch_index_empty_filtered_state_is_clear(self):
+        self.create_docx_shipment_from_route()
+
+        body = self.client.get("/dispatch/?status=Programado").get_data(as_text=True)
+
+        self.assertIn("No hay despachos con este estado", body)
+        self.assertNotIn("<table>", body)
+
+    def test_get_dispatch_edit_loads_existing_data(self):
+        shipment = self.create_docx_shipment_from_route()
+
+        response = self.client.get(f"/dispatch/{shipment['id']}/edit")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("Editar despacho", body)
+        self.assertIn('action="/dispatch/' + shipment["id"] + '/edit"', body)
+        self.assertIn('value="Despacho desde formulario"', body)
+        self.assertIn('value="Mesa Xinhua"', body)
+        self.assertIn("Guardar cambios", body)
+
+    def test_post_dispatch_edit_updates_fields_preserves_identity_and_history(self):
+        shipment = self.create_docx_shipment_from_route()
+        created_at = shipment["created_at"]
+
+        response = self.client.post(
+            f"/dispatch/{shipment['id']}/edit",
+            data=self.valid_form(name="Despacho editado", delivery_note="Nota editada."),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        updated = self.shipment_service.get_shipment(shipment["id"])
+        self.assertEqual(updated["id"], shipment["id"])
+        self.assertEqual(updated["created_at"], created_at)
+        self.assertNotEqual(updated["updated_at"], shipment["updated_at"])
+        self.assertEqual(updated["name"], "Despacho editado")
+        self.assertEqual(updated["delivery_note"], "Nota editada.")
+        self.assertEqual(updated["history"][0]["note"], "Despacho editado.")
+
+    def test_post_dispatch_edit_updates_schedule_history_note(self):
+        shipment = self.create_docx_shipment_from_route()
+
+        response = self.client.post(
+            f"/dispatch/{shipment['id']}/edit",
+            data=self.valid_form(
+                mode="schedule",
+                scheduled_date="2099-08-04",
+                scheduled_time="09:45",
+            ),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        updated = self.shipment_service.get_shipment(shipment["id"])
+        self.assertEqual(updated["status"], "Programado")
+        self.assertEqual(updated["scheduled_at"], "2099-08-04T14:45:00+00:00")
+        self.assertEqual(updated["history"][0]["note"], "Programación actualizada.")
+
+    def test_dispatch_edit_rejects_sending_and_sent(self):
+        sending = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviando"), status="Enviando")
+        sent = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado")
+
+        self.assertEqual(self.client.get(f"/dispatch/{sending['id']}/edit").status_code, 403)
+        self.assertEqual(self.client.post(f"/dispatch/{sent['id']}/edit", data=self.valid_form()).status_code, 403)
+
+    def test_dispatch_duplicate_creates_draft_copy_and_redirects_to_edit(self):
+        shipment = self.create_docx_shipment_from_route(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        response = self.client.post(f"/dispatch/{shipment['id']}/duplicate", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        shipments = self.shipment_service.list_shipments()
+        duplicated = next(item for item in shipments if item["id"] != shipment["id"])
+        self.assertIn(f"/dispatch/{duplicated['id']}/edit", response.headers["Location"])
+        self.assertEqual(duplicated["name"], "Copia de Despacho desde formulario")
+        self.assertEqual(duplicated["status"], "Borrador")
+        self.assertEqual(duplicated["scheduled_at"], "")
+        self.assertEqual(duplicated["sent_at"], "")
+        self.assertEqual(duplicated["attempt_count"], 0)
+        self.assertEqual(duplicated["last_error"], "")
+        self.assertEqual(duplicated["coverage_id"], shipment["coverage_id"])
+        self.assertEqual(duplicated["photo_ids"], shipment["photo_ids"])
+        self.assertIn(f"Despacho duplicado desde {shipment['id']}.", duplicated["history"][0]["note"])
+
+    def test_dispatch_cancel_only_programmed(self):
+        scheduled = self.create_docx_shipment_from_route(
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+        draft = self.create_docx_shipment_from_route(name="Borrador")
+
+        response = self.client.post(f"/dispatch/{scheduled['id']}/cancel", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        cancelled = self.shipment_service.get_shipment(scheduled["id"])
+        self.assertEqual(cancelled["status"], "Cancelado")
+        self.assertEqual(cancelled["scheduled_at"], scheduled["scheduled_at"])
+        self.assertEqual(cancelled["history"][0]["note"], "Programación cancelada por el usuario.")
+        self.assertEqual(self.client.post(f"/dispatch/{draft['id']}/cancel").status_code, 403)
+
+    def test_dispatch_delete_only_draft_and_never_by_get(self):
+        draft = self.create_docx_shipment_from_route()
+        scheduled = self.create_docx_shipment_from_route(
+            name="Programado",
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        self.assertEqual(self.client.get(f"/dispatch/{draft['id']}/delete").status_code, 405)
+        self.assertEqual(self.client.post(f"/dispatch/{scheduled['id']}/delete").status_code, 403)
+        response = self.client.post(f"/dispatch/{draft['id']}/delete", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIsNone(self.shipment_service.get_shipment(draft["id"]))
+        self.assertIsNotNone(self.shipment_service.get_shipment(scheduled["id"]))
+        self.assertEqual(self.coverages, self.original_coverages)
+
+    def test_dispatch_detail_shows_only_allowed_actions_by_status(self):
+        draft = self.create_docx_shipment_from_route()
+        scheduled = self.create_docx_shipment_from_route(
+            name="Programado",
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+        sent = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado")
+        sending = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviando"), status="Enviando")
+
+        draft_body = self.client.get(f"/dispatch/{draft['id']}").get_data(as_text=True)
+        self.assertIn("Editar", draft_body)
+        self.assertIn("Duplicar", draft_body)
+        self.assertIn("Eliminar", draft_body)
+        self.assertNotIn("Cancelar programación", draft_body)
+
+        scheduled_body = self.client.get(f"/dispatch/{scheduled['id']}").get_data(as_text=True)
+        self.assertIn("Editar", scheduled_body)
+        self.assertIn("Duplicar", scheduled_body)
+        self.assertIn("Cancelar programación", scheduled_body)
+        self.assertNotIn("Eliminar", scheduled_body)
+
+        sent_body = self.client.get(f"/dispatch/{sent['id']}").get_data(as_text=True)
+        self.assertNotIn("Editar", sent_body)
+        self.assertIn("Duplicar", sent_body)
+        self.assertNotIn("Eliminar", sent_body)
+
+        sending_body = self.client.get(f"/dispatch/{sending['id']}").get_data(as_text=True)
+        self.assertNotIn("Editar", sending_body)
+        self.assertNotIn("Duplicar", sending_body)
+        self.assertNotIn("Eliminar", sending_body)
 
     def test_get_dispatch_detail_missing(self):
         response = self.client.get("/dispatch/missing")

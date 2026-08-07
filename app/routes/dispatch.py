@@ -336,59 +336,110 @@ def build_operational_summary(
     ]
     recipient_count = len(recipients)
     photo_count = int(content_summary.get("photo_count", 0) or 0)
-    docx_text = (
-        " y un documento Word con captions"
-        if content_summary.get("docx_included")
-        else ""
-    )
+    docx_text = " y un documento Word" if content_summary.get("docx_included") else ""
     scheduled = split_formatted_datetime(formatted.get("scheduled_at", ""))
     sent = split_formatted_datetime(formatted.get("sent_at", ""))
-    recipient_summary = summarize_recipients(recipients)
     recipient_label = pluralize(recipient_count, "destinatario", "destinatarios")
     photo_label = pluralize(photo_count, "fotografía", "fotografías")
-
-    text = (
-        f"Este despacho está en estado {status or 'sin estado'}."
-    )
     requested_mode = str(shipment.get("requested_delivery_mode", "")).strip()
+
+    text = f"Este despacho está en estado {status or 'sin estado'}."
     if status == "Borrador":
-        text = (
-            "Este despacho aún no está programado. "
-            f"Se entregará a {recipient_count} {recipient_label} e incluye "
-            f"{photo_count} {photo_label}{docx_text}."
-        )
+        text = f"Borrador con {photo_count} {photo_label}{docx_text} para {recipient_count} {recipient_label}."
     elif status == "Programado" and requested_mode == "immediate":
-        text = (
-            f"Este despacho está preparado para envío inmediato a {recipient_summary}. "
-            f"Incluye {photo_count} {photo_label}{docx_text}."
-        )
+        text = f"Se prepararán {photo_count} {photo_label}{docx_text} para {recipient_count} {recipient_label} en cuanto el gestor de envíos lo procese."
     elif status == "Programado":
-        text = (
-            f"Este despacho se preparará el {scheduled['date']} a las {scheduled['time']} "
-            f"a {recipient_summary}. Incluye {photo_count} {photo_label}{docx_text}."
-        )
+        text = f"Se enviarán {photo_count} {photo_label}{docx_text} a {recipient_count} {recipient_label} el {scheduled['date']} a las {scheduled['time']} ({shipment.get('timezone') or DEFAULT_TIMEZONE})."
     elif status == "Enviando":
-        text = f"Este despacho está siendo enviado a {recipient_summary}."
+        text = f"Se están enviando {photo_count} {photo_label}{docx_text} a {recipient_count} {recipient_label}."
     elif status == "Enviado":
-        text = (
-            f"Este despacho fue enviado el {sent['date']} a las {sent['time']} "
-            f"a {recipient_summary}."
-        )
+        text = f"Se enviaron {photo_count} {photo_label}{docx_text} a {recipient_count} {recipient_label} el {sent['date']} a las {sent['time']}."
     elif status == "Error":
-        text = (
-            f"El envío programado para el {scheduled['date']} a las {scheduled['time']} "
-            "no pudo completarse."
-        )
+        text = f"El despacho de {photo_count} {photo_label}{docx_text} para {recipient_count} {recipient_label} no pudo completarse."
     elif status == "Cancelado":
-        text = (
-            f"El envío programado para el {scheduled['date']} a las {scheduled['time']} "
-            "fue cancelado."
-        )
+        text = f"La programación de {photo_count} {photo_label}{docx_text} para {recipient_count} {recipient_label} fue cancelada."
 
     return {
         "text": text,
         "secondary": str(shipment.get("last_error", "")).strip() if status == "Error" else "",
     }
+
+
+INDEX_FILTERS = (
+    ("Todos", "", None),
+    ("Borradores", "Borrador", "Borrador"),
+    ("Programados", "Programado", "Programado"),
+    ("Enviando", "Enviando", "Enviando"),
+    ("Enviados", "Enviado", "Enviado"),
+    ("Error", "Error", "Error"),
+    ("Cancelados", "Cancelado", "Cancelado"),
+)
+EDITABLE_STATUSES = {"Borrador", "Programado", "Error"}
+DUPLICABLE_STATUSES = {"Borrador", "Programado", "Enviado", "Error", "Cancelado"}
+
+
+def build_action_links(shipment: dict[str, Any]) -> dict[str, bool]:
+    status = str(shipment.get("status", ""))
+    return {
+        "can_edit": status in EDITABLE_STATUSES,
+        "can_duplicate": status in DUPLICABLE_STATUSES,
+        "can_cancel": status == "Programado",
+        "can_delete": status == "Borrador",
+    }
+
+
+def build_index_filters(shipments: list[dict[str, Any]], selected_status: str = "") -> list[dict[str, Any]]:
+    valid_statuses = {status for _, _, status in INDEX_FILTERS if status}
+    active_status = selected_status if selected_status in valid_statuses else ""
+    return [
+        {
+            "label": label,
+            "status": query_value,
+            "is_active": status == active_status if status else not active_status,
+            "count": len(shipments) if status is None else len([item for item in shipments if item.get("status") == status]),
+        }
+        for label, query_value, status in INDEX_FILTERS
+    ]
+
+
+def filter_shipments(shipments: list[dict[str, Any]], selected_status: str) -> list[dict[str, Any]]:
+    valid_statuses = {status for _, _, status in INDEX_FILTERS if status}
+    if selected_status not in valid_statuses:
+        return shipments
+    return [shipment for shipment in shipments if shipment.get("status") == selected_status]
+
+
+def sort_timestamp(value: str) -> datetime:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def sort_shipments(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    status_rank = {
+        "Programado": 0,
+        "Borrador": 1,
+        "Error": 2,
+        "Enviado": 3,
+        "Entregado": 3,
+        "Cancelado": 4,
+    }
+
+    def key(shipment: dict[str, Any]) -> tuple[int, float]:
+        status = str(shipment.get("status", ""))
+        rank = status_rank.get(status, 5)
+        if status == "Programado":
+            return (rank, sort_timestamp(str(shipment.get("scheduled_at", ""))).timestamp())
+        return (rank, -sort_timestamp(str(shipment.get("updated_at", ""))).timestamp())
+
+    return sorted(shipments, key=key)
 
 
 def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
@@ -416,6 +467,7 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
         "detail_photos": build_photo_detail_items(shipment),
         "formatted": formatted,
         "operational_summary": build_operational_summary(shipment, content_summary, formatted),
+        "detail_actions": build_action_links(shipment),
         "timezone_display": timezone_label(timezone_name, str(shipment.get("scheduled_at") or shipment.get("sent_at") or "")),
         "scheduled_utc": format_utc_datetime(str(shipment.get("scheduled_at", ""))),
         "history_items": formatted_history,
@@ -429,6 +481,12 @@ def build_index_rows(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         item = deepcopy(shipment)
         item["created_at_display"] = format_datetime_es(str(shipment.get("created_at", "")), timezone_name)
         item["updated_at_display"] = format_datetime_es(str(shipment.get("updated_at", "")), timezone_name)
+        item["scheduled_at_display"] = format_datetime_es(str(shipment.get("scheduled_at", "")), timezone_name)
+        item["photo_count"] = len(shipment.get("photo_ids", []))
+        item["recipient_count"] = len([recipient for recipient in shipment.get("recipients", []) if isinstance(recipient, dict)])
+        item["docx_label"] = "Sí" if build_content_summary(shipment).get("docx_included") else "No"
+        item["can_delete"] = shipment.get("status") == "Borrador"
+        item["actions"] = build_action_links(shipment)
         rows.append(item)
     return rows
 
@@ -524,7 +582,135 @@ def parse_schedule(form_data: dict[str, Any]) -> tuple[str, str, str]:
     return "Programado", scheduled_at.astimezone(timezone.utc).isoformat(), timezone_name
 
 
-def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str] | None = None) -> dict[str, Any]:
+def local_schedule_parts(shipment: dict[str, Any]) -> dict[str, str]:
+    scheduled_at = str(shipment.get("scheduled_at", "")).strip()
+    if not scheduled_at:
+        return {"scheduled_date": "", "scheduled_time": ""}
+    timezone_name = str(shipment.get("timezone") or DEFAULT_TIMEZONE)
+    try:
+        parsed = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        local = parsed.astimezone(ZoneInfo(timezone_name))
+    except (ValueError, ZoneInfoNotFoundError):
+        return {"scheduled_date": "", "scheduled_time": ""}
+    return {"scheduled_date": local.date().isoformat(), "scheduled_time": local.strftime("%H:%M")}
+
+
+def shipment_to_form_data(shipment: dict[str, Any]) -> dict[str, Any]:
+    schedule_parts = local_schedule_parts(shipment)
+    mode = str(shipment.get("requested_delivery_mode") or "draft")
+    if shipment.get("status") == "Programado" and mode not in CREATE_MODES:
+        mode = "schedule" if shipment.get("scheduled_at") else "immediate"
+    if shipment.get("status") in {"Borrador", "Error"}:
+        mode = "draft"
+    return {
+        "name": str(shipment.get("name", "")),
+        "coverage_id": str(shipment.get("coverage_id", "")),
+        "photo_ids": list(shipment.get("photo_ids", [])),
+        "delivery_note": str(shipment.get("delivery_note", "")),
+        "channel": str(shipment.get("channel", "")),
+        "mode": mode,
+        "scheduled_date": schedule_parts["scheduled_date"],
+        "scheduled_time": schedule_parts["scheduled_time"],
+        "timezone": str(shipment.get("timezone") or DEFAULT_TIMEZONE),
+        "include_caption_docx": bool(shipment.get("include_caption_docx")),
+        "recipient_rows": [
+            {"name": str(recipient.get("name", "")), "email": str(recipient.get("email", ""))}
+            for recipient in shipment.get("recipients", [])
+            if isinstance(recipient, dict)
+        ] or [{"name": "", "email": ""}],
+        "_auto_select_photos": False,
+    }
+
+
+def collect_form_data() -> dict[str, Any]:
+    return {
+        "name": request.form.get("name", "").strip(),
+        "coverage_id": request.form.get("coverage_id", "").strip(),
+        "photo_ids": request.form.getlist("photo_ids"),
+        "recipients": request.form.get("recipients", "").strip(),
+        "delivery_note": request.form.get("delivery_note", "").strip(),
+        "channel": request.form.get("channel", "").strip(),
+        "mode": request.form.get("mode", "draft").strip() or "draft",
+        "scheduled_date": request.form.get("scheduled_date", "").strip(),
+        "scheduled_time": request.form.get("scheduled_time", "").strip(),
+        "timezone": request.form.get("timezone", DEFAULT_TIMEZONE).strip() or DEFAULT_TIMEZONE,
+        "include_caption_docx": "include_caption_docx" in request.form,
+        "recipient_rows": build_recipient_rows(
+            request.form.getlist("recipient_name[]"),
+            request.form.getlist("recipient_email[]"),
+        ),
+        "_auto_select_photos": False,
+    }
+
+
+def validate_form_data(form_data: dict[str, Any], *, locked_coverage_id: str = "") -> tuple[list[str], list[dict[str, str]], str, str, str]:
+    errors = []
+    if locked_coverage_id:
+        if locked_coverage_id not in read_coverages():
+            errors.append("La cobertura indicada no existe.")
+            form_data["coverage_id"] = ""
+        else:
+            form_data["coverage_id"] = locked_coverage_id
+
+    recipients = []
+    if not form_data["name"]:
+        errors.append("El nombre del despacho es obligatorio.")
+    if not form_data["coverage_id"]:
+        errors.append("Selecciona una cobertura.")
+    if not form_data["photo_ids"] and not form_data["include_caption_docx"]:
+        errors.append("Seleccione al menos una fotografía o incluya el documento Word con captions.")
+    if form_data["photo_ids"]:
+        approved_photo_options = get_caption_photo_options(form_data["coverage_id"])
+        unavailable_photo_ids = {
+            photo["id"]
+            for photo in approved_photo_options
+            if not photo["available_on_disk"]
+        }
+        if any(photo_id in unavailable_photo_ids for photo_id in form_data["photo_ids"]):
+            errors.append("Selecciona únicamente fotografías con caption y archivo disponible para envío.")
+    if form_data["channel"] not in CHANNEL_OPTIONS:
+        errors.append("Selecciona un canal válido.")
+    recipients, recipient_errors = parse_recipient_rows(form_data["recipient_rows"])
+    form_data["recipient_errors"] = recipient_errors
+    if any(recipient_errors):
+        errors.append("Corrige los destinatarios marcados.")
+    status = "Borrador"
+    scheduled_at = ""
+    timezone_name = DEFAULT_TIMEZONE
+    try:
+        status, scheduled_at, timezone_name = parse_schedule(form_data)
+    except DispatchValidationError as error:
+        errors.append(str(error))
+    return errors, recipients, status, scheduled_at, timezone_name
+
+
+def build_export_reference(form_data: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "caption_docx": {
+            "include": bool(form_data["include_caption_docx"]),
+            "format": "docx",
+            "photo_scope": "selected" if form_data["photo_ids"] else "all_eligible",
+            "generator": "ExportService",
+        }
+    }
+
+
+def build_photo_snapshots(coverage_id: str, photo_ids: list[str]) -> list[dict[str, Any]]:
+    if not photo_ids:
+        return []
+    return get_dispatch_services()["lens_reader"].get_approved_photos_by_ids(coverage_id, photo_ids)
+
+
+def build_form_context(
+    form_data: dict[str, Any] | None = None,
+    errors: list[str] | None = None,
+    *,
+    form_mode: str = "create",
+    form_action: str = "",
+    shipment: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     form_data = deepcopy(form_data or {})
     form_data.setdefault("mode", "draft")
     form_data.setdefault("timezone", DEFAULT_TIMEZONE)
@@ -559,12 +745,13 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
         if photo["available_on_disk"]
     }
     selected_photo_ids = set(form_data.get("photo_ids", []))
-    if request.method == "GET" and not selected_photo_ids:
+    auto_select_photos = bool(form_data.pop("_auto_select_photos", form_mode == "create"))
+    if request.method == "GET" and auto_select_photos and not selected_photo_ids:
         selected_photo_ids = set(eligible_photo_ids)
     return {
         "channel_options": CHANNEL_OPTIONS,
         "coverage_options": coverage_options,
-        "coverage_locked": bool(requested_coverage_id and selected_coverage),
+        "coverage_locked": bool((requested_coverage_id or form_mode == "edit") and selected_coverage),
         "timezone_options": TIMEZONE_OPTIONS,
         "errors": context_errors,
         "form_data": form_data,
@@ -579,6 +766,9 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
             and not selected_photo_ids
             and eligible_photo_ids
         ),
+        "form_mode": form_mode,
+        "form_action": form_action or url_for("dispatch.new"),
+        "shipment": shipment,
     }
 
 
@@ -586,79 +776,37 @@ def build_form_context(form_data: dict[str, Any] | None = None, errors: list[str
 def index() -> str:
     shipment_service = get_dispatch_services()["shipment_service"]
     shipments = shipment_service.list_shipments()
+    selected_status = str(request.args.get("status", "")).strip()
+    visible_shipments = sort_shipments(filter_shipments(shipments, selected_status))
+    active_status = selected_status if selected_status in {status for _, _, status in INDEX_FILTERS if status} else ""
     return render_template(
         "dispatch/index.html",
         shipments=shipments,
-        shipment_rows=build_index_rows(shipments),
+        shipment_rows=build_index_rows(visible_shipments),
+        dispatch_filters=build_index_filters(shipments, selected_status),
+        active_status=active_status,
     )
 
 
 @dispatch_bp.route("/new", methods=["GET", "POST"])
 def new() -> str:
     if request.method == "GET":
-        return render_template("dispatch/new.html", **build_form_context())
+        return render_template(
+            "dispatch/new.html",
+            **build_form_context(form_action=url_for("dispatch.new")),
+        )
 
-    form_data = {
-        "name": request.form.get("name", "").strip(),
-        "coverage_id": request.form.get("coverage_id", "").strip(),
-        "photo_ids": request.form.getlist("photo_ids"),
-        "recipients": request.form.get("recipients", "").strip(),
-        "delivery_note": request.form.get("delivery_note", "").strip(),
-        "channel": request.form.get("channel", "").strip(),
-        "mode": request.form.get("mode", "draft").strip() or "draft",
-        "scheduled_date": request.form.get("scheduled_date", "").strip(),
-        "scheduled_time": request.form.get("scheduled_time", "").strip(),
-        "timezone": request.form.get("timezone", DEFAULT_TIMEZONE).strip() or DEFAULT_TIMEZONE,
-        "include_caption_docx": "include_caption_docx" in request.form,
-        "recipient_rows": build_recipient_rows(
-            request.form.getlist("recipient_name[]"),
-            request.form.getlist("recipient_email[]"),
-        ),
-    }
-
-    errors = []
+    form_data = collect_form_data()
     requested_coverage_id = str(request.args.get("coverage_id", "")).strip()
-    if requested_coverage_id:
-        if requested_coverage_id not in read_coverages():
-            errors.append("La cobertura indicada no existe.")
-            form_data["coverage_id"] = ""
-        else:
-            form_data["coverage_id"] = requested_coverage_id
-
-    recipients = []
-    if not form_data["name"]:
-        errors.append("El nombre del despacho es obligatorio.")
-    if not form_data["coverage_id"]:
-        errors.append("Selecciona una cobertura.")
-    if not form_data["photo_ids"] and not form_data["include_caption_docx"]:
-        errors.append("Seleccione al menos una fotografía o incluya el documento Word con captions.")
-    if form_data["photo_ids"]:
-        approved_photo_options = get_caption_photo_options(form_data["coverage_id"])
-        unavailable_photo_ids = {
-            photo["id"]
-            for photo in approved_photo_options
-            if not photo["available_on_disk"]
-        }
-        if any(photo_id in unavailable_photo_ids for photo_id in form_data["photo_ids"]):
-            errors.append("Selecciona únicamente fotografías con caption y archivo disponible para envío.")
-    if form_data["channel"] not in CHANNEL_OPTIONS:
-        errors.append("Selecciona un canal válido.")
-    recipients, recipient_errors = parse_recipient_rows(form_data["recipient_rows"])
-    form_data["recipient_errors"] = recipient_errors
-    if any(recipient_errors):
-        errors.append("Corrige los destinatarios marcados.")
-    status = "Borrador"
-    scheduled_at = ""
-    timezone_name = DEFAULT_TIMEZONE
-    try:
-        status, scheduled_at, timezone_name = parse_schedule(form_data)
-    except DispatchValidationError as error:
-        errors.append(str(error))
+    errors, recipients, status, scheduled_at, timezone_name = validate_form_data(
+        form_data,
+        locked_coverage_id=requested_coverage_id,
+    )
 
     if errors:
         return render_template(
             "dispatch/new.html",
-            **build_form_context(form_data, errors),
+            **build_form_context(form_data, errors, form_action=url_for("dispatch.new")),
         ), 400
 
     try:
@@ -669,14 +817,7 @@ def new() -> str:
             recipients=recipients,
             delivery_note=form_data["delivery_note"],
             channel=form_data["channel"],
-            export_reference={
-                "caption_docx": {
-                    "include": bool(form_data["include_caption_docx"]),
-                    "format": "docx",
-                    "photo_scope": "selected" if form_data["photo_ids"] else "all_eligible",
-                    "generator": "ExportService",
-                }
-            },
+            export_reference=build_export_reference(form_data),
             status=status,
             scheduled_at=scheduled_at,
             timezone=timezone_name,
@@ -686,7 +827,7 @@ def new() -> str:
     except DispatchValidationError as error:
         return render_template(
             "dispatch/new.html",
-            **build_form_context(form_data, [str(error)]),
+            **build_form_context(form_data, [str(error)], form_action=url_for("dispatch.new")),
         ), 400
 
     return redirect(url_for("dispatch.detail", shipment_id=shipment["id"]))
@@ -699,3 +840,109 @@ def detail(shipment_id: str) -> str:
     if shipment is None:
         abort(404)
     return render_template("dispatch/detail.html", **build_detail_context(shipment))
+
+
+@dispatch_bp.route("/<shipment_id>/edit", methods=["GET", "POST"])
+def edit(shipment_id: str) -> str:
+    shipment_service = get_dispatch_services()["shipment_service"]
+    shipment = shipment_service.get_shipment(shipment_id)
+    if shipment is None:
+        abort(404)
+    if shipment.get("status") not in EDITABLE_STATUSES:
+        abort(403)
+
+    form_action = url_for("dispatch.edit", shipment_id=shipment_id)
+    if request.method == "GET":
+        return render_template(
+            "dispatch/new.html",
+            **build_form_context(
+                shipment_to_form_data(shipment),
+                form_mode="edit",
+                form_action=form_action,
+                shipment=shipment,
+            ),
+        )
+
+    form_data = collect_form_data()
+    form_data["coverage_id"] = str(shipment.get("coverage_id", ""))
+    previous_schedule = (
+        shipment.get("status"),
+        shipment.get("scheduled_at"),
+        shipment.get("timezone"),
+        shipment.get("requested_delivery_mode"),
+    )
+    errors, recipients, status, scheduled_at, timezone_name = validate_form_data(form_data)
+
+    if errors:
+        return render_template(
+            "dispatch/new.html",
+            **build_form_context(
+                form_data,
+                errors,
+                form_mode="edit",
+                form_action=form_action,
+                shipment=shipment,
+            ),
+        ), 400
+
+    try:
+        updates = {
+            "name": form_data["name"],
+            "photo_ids": form_data["photo_ids"],
+            "photo_snapshots": build_photo_snapshots(form_data["coverage_id"], form_data["photo_ids"]),
+            "recipients": recipients,
+            "delivery_note": form_data["delivery_note"],
+            "channel": form_data["channel"],
+            "export_reference": build_export_reference(form_data),
+            "include_caption_docx": bool(form_data["include_caption_docx"]),
+            "requested_delivery_mode": form_data["mode"],
+            "status": status,
+            "scheduled_at": scheduled_at,
+            "timezone": timezone_name,
+            "schedule_changed": previous_schedule != (status, scheduled_at, timezone_name, form_data["mode"]),
+        }
+        updated = shipment_service.update_shipment(shipment_id, updates)
+    except DispatchValidationError as error:
+        return render_template(
+            "dispatch/new.html",
+            **build_form_context(
+                form_data,
+                [str(error)],
+                form_mode="edit",
+                form_action=form_action,
+                shipment=shipment,
+            ),
+        ), 400
+
+    return redirect(url_for("dispatch.detail", shipment_id=updated["id"]))
+
+
+@dispatch_bp.post("/<shipment_id>/duplicate")
+def duplicate(shipment_id: str) -> str:
+    try:
+        duplicated = get_dispatch_services()["shipment_service"].duplicate_shipment(shipment_id)
+    except DispatchValidationError:
+        abort(403)
+    return redirect(url_for("dispatch.edit", shipment_id=duplicated["id"]))
+
+
+@dispatch_bp.post("/<shipment_id>/cancel")
+def cancel(shipment_id: str) -> str:
+    try:
+        get_dispatch_services()["shipment_service"].transition_status(
+            shipment_id,
+            "Cancelado",
+            "Programación cancelada por el usuario.",
+        )
+    except DispatchValidationError:
+        abort(403)
+    return redirect(url_for("dispatch.detail", shipment_id=shipment_id))
+
+
+@dispatch_bp.post("/<shipment_id>/delete")
+def delete(shipment_id: str) -> str:
+    try:
+        get_dispatch_services()["shipment_service"].delete_draft(shipment_id)
+    except DispatchValidationError:
+        abort(403)
+    return redirect(url_for("dispatch.index"))

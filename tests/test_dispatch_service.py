@@ -132,6 +132,52 @@ class ShipmentServiceTest(unittest.TestCase):
         self.assertEqual(updated["delivery_note"], "Nota nueva")
         self.assertNotEqual(updated["updated_at"], shipment["updated_at"])
 
+    def test_duplicate_shipment_copies_safe_fields_and_resets_delivery_state(self):
+        shipment = self.service.create_shipment(
+            name="Despacho programado",
+            coverage_id="cov-1",
+            photo_ids=["photo-approved"],
+            recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+            delivery_note="Lista.",
+            status="Programado",
+            scheduled_at="2026-08-04T09:45:00-05:00",
+            include_caption_docx=True,
+            requested_delivery_mode="schedule",
+        )
+
+        duplicated = self.service.duplicate_shipment(shipment["id"])
+
+        self.assertNotEqual(duplicated["id"], shipment["id"])
+        self.assertEqual(duplicated["name"], "Copia de Despacho programado")
+        self.assertEqual(duplicated["status"], "Borrador")
+        self.assertEqual(duplicated["scheduled_at"], "")
+        self.assertEqual(duplicated["sent_at"], "")
+        self.assertEqual(duplicated["attempt_count"], 0)
+        self.assertEqual(duplicated["last_error"], "")
+        self.assertEqual(duplicated["coverage_id"], shipment["coverage_id"])
+        self.assertEqual(duplicated["photo_ids"], shipment["photo_ids"])
+        self.assertTrue(duplicated["include_caption_docx"])
+        self.assertIn(shipment["id"], duplicated["history"][0]["note"])
+
+    def test_delete_draft_allows_only_borrador(self):
+        draft = self.create_shipment()
+        scheduled = self.service.create_shipment(
+            name="Despacho programado",
+            coverage_id="cov-1",
+            photo_ids=["photo-approved"],
+            recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+            status="Programado",
+            scheduled_at="2026-08-04T09:45:00-05:00",
+        )
+
+        removed = self.service.delete_draft(draft["id"])
+
+        self.assertEqual(removed["id"], draft["id"])
+        self.assertIsNone(self.service.get_shipment(draft["id"]))
+        self.assertIsNotNone(self.service.get_shipment(scheduled["id"]))
+        with self.assertRaises(DispatchValidationError):
+            self.service.delete_draft(scheduled["id"])
+
     def test_valid_transition(self):
         shipment = self.create_shipment()
 
