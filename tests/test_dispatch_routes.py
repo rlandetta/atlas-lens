@@ -9,6 +9,7 @@ from app import create_app
 from app.dispatch import DispatchShipmentStore, ShipmentService
 from app.dispatch.scheduler import DispatchScheduler
 from app.lens_read_service import LensReadService
+from app.settings import OutboundChannelDraft
 
 
 class DispatchRoutesTest(unittest.TestCase):
@@ -17,9 +18,11 @@ class DispatchRoutesTest(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         self.lens_media_root = self.root / "lens_media"
         self.dispatch_store_path = self.root / "dispatch_shipments.json"
+        self.settings_store_path = self.root / "settings.json"
         self.lens_store_path = self.root / "lens_coverages.json"
         self.patches = [
             patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
+            patch("app.config.SETTINGS_STORE_PATH", str(self.settings_store_path)),
             patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.lens_store_path)),
             patch("app.config.LENS_MEDIA_ROOT", str(self.lens_media_root)),
         ]
@@ -103,6 +106,26 @@ class DispatchRoutesTest(unittest.TestCase):
         response = self.post_new(**overrides)
         self.assertEqual(response.status_code, 302)
         return self.shipment_service.list_shipments()[0]
+
+    def create_outbound_channel(self, **overrides):
+        defaults = {
+            "id": "xinhua",
+            "name": "Xinhua",
+            "display_name": "Xinhua News Agency",
+            "sender_email": "atlas@lavoceria.com",
+            "reply_to": "",
+            "smtp_host": "smtp.zoho.com",
+            "smtp_port": 465,
+            "smtp_security": "ssl",
+            "smtp_username": "atlas@lavoceria.com",
+            "credential_ref": "ATLAS_SMTP_CHANNEL_XINHUA",
+            "is_active": True,
+            "is_default": True,
+        }
+        defaults.update(overrides)
+        return self.app.extensions["settings"]["settings_service"].create_outbound_channel(
+            OutboundChannelDraft(**defaults)
+        )
 
     def test_dispatch_blueprint_is_registered(self):
         self.assertIn("dispatch.index", self.app.view_functions)
@@ -582,7 +605,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertNotIn("T18:", body)
 
     def test_dispatch_detail_draft_operational_summary(self):
-        shipment = self.create_docx_shipment_from_route()
+        shipment = self.create_docx_shipment_from_route(channel_id="xinhua")
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
@@ -984,6 +1007,48 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertNotIn("Editar", sending_body)
         self.assertNotIn("Duplicar", sending_body)
         self.assertNotIn("Eliminar", sending_body)
+
+    def test_dispatch_new_lists_active_settings_channels_and_uses_default(self):
+        default = self.create_outbound_channel(id="xinhua", name="Xinhua", credential_ref="ATLAS_SMTP_CHANNEL_XINHUA", is_default=True)
+        self.create_outbound_channel(id="inactive", name="Inactivo", sender_email="inactive@example.com", credential_ref="ATLAS_SMTP_INACTIVE", is_active=False, is_default=False)
+
+        body = self.client.get("/dispatch/new").get_data(as_text=True)
+
+        self.assertIn('name="channel_id"', body)
+        self.assertIn('value="xinhua" selected', body)
+        self.assertIn("Xinhua", body)
+        self.assertNotIn("Inactivo", body)
+        self.assertNotIn("No hay canales de salida configurados", body)
+
+        response = self.post_new(channel_id=default["id"])
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["channel_id"], default["id"])
+        self.assertEqual(shipment["channel_name_snapshot"], "Xinhua")
+
+    def test_dispatch_new_shows_settings_link_when_no_channels_exist(self):
+        body = self.client.get("/dispatch/new").get_data(as_text=True)
+
+        self.assertIn("No hay canales de salida configurados", body)
+        self.assertIn('href="/settings/channels"', body)
+        self.assertIn('name="channel"', body)
+
+    def test_dispatch_snapshot_survives_deleted_settings_channel(self):
+        self.create_outbound_channel(id="xinhua", name="Xinhua", credential_ref="ATLAS_SMTP_CHANNEL_XINHUA")
+        shipment = self.create_docx_shipment_from_route(channel_id="xinhua")
+        self.app.extensions["settings"]["settings_service"].delete_outbound_channel("xinhua")
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Xinhua", body)
+        self.assertEqual(self.shipment_service.get_shipment(shipment["id"])["channel_name_snapshot"], "Xinhua")
+
+    def test_dispatch_legacy_channel_string_still_displays(self):
+        shipment = self.create_shipment()
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("manual", body)
 
     def test_get_dispatch_detail_missing(self):
         response = self.client.get("/dispatch/missing")

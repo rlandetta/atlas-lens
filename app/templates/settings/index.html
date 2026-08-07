@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}SETTINGS | ATLAS{% endblock %}
+{% block main_class %}settings-page{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <p class="coverage-id">ATLAS</p>
+        <h1>SETTINGS</h1>
+        <p class="subtitle">Configuración global para módulos editoriales.</p>
+    </div>
+</section>
+
+<section class="atlas-grid atlas-grid--3 settings-section-grid" aria-label="Secciones de configuración">
+    {% for section in sections %}
+    <article class="ui-card atlas-panel--compact settings-section-card{% if not section.enabled %} is-disabled{% endif %}">
+        <h2>{{ section.title }}</h2>
+        <p>{{ section.description }}</p>
+        {% if section.enabled %}
+        <a href="{{ url_for(section.endpoint) }}" class="secondary-button compact-action">Abrir</a>
+        {% else %}
+        <span class="dispatch-status-badge">Próximamente</span>
+        {% endif %}
+    </article>
+    {% endfor %}
+</section>
+{% endblock %}

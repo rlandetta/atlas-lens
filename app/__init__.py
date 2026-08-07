@@ -20,6 +20,12 @@ ATLAS_NAVIGATION = (
         "blueprint": "dispatch",
         "enabled": True,
     },
+    {
+        "label": "SETTINGS",
+        "endpoint": "settings.index",
+        "blueprint": "settings",
+        "enabled": True,
+    },
 )
 
 
@@ -29,14 +35,17 @@ def create_app():
     from app.config import (
         DISPATCH_STORE_PATH,
         LENS_COVERAGE_STORE_PATH,
+        SETTINGS_STORE_PATH,
         LENS_MAX_PHOTO_BYTES,
         LENS_MEDIA_ROOT,
     )
     from app.dispatch import DispatchShipmentStore, ShipmentService
     from app.lens import LensCoverageStore
+    from app.settings import SettingsService, SettingsStore
     from app.lens_read_service import LensReadService
     from app.routes.dispatch import dispatch_bp
     from app.routes.dispatch import WebCoverageProvider
+    from app.routes.settings import settings_bp
     from app.routes.web import configure_coverage_store, web_bp
 
     app = Flask(__name__)
@@ -46,13 +55,20 @@ def create_app():
     coverage_provider = WebCoverageProvider()
     lens_reader = LensReadService(coverage_provider)
     dispatch_store = DispatchShipmentStore(DISPATCH_STORE_PATH)
+    settings_store = SettingsStore(SETTINGS_STORE_PATH)
+    settings_service = SettingsService(settings_store)
     app.extensions["lens"] = {
         "coverage_store": lens_coverage_store,
+    }
+    app.extensions["settings"] = {
+        "store": settings_store,
+        "settings_service": settings_service,
     }
     app.extensions["dispatch"] = {
         "coverage_provider": coverage_provider,
         "store": dispatch_store,
         "lens_reader": lens_reader,
+        "settings_service": settings_service,
         "shipment_service": ShipmentService(
             store=dispatch_store,
             lens_reader=lens_reader,
@@ -65,4 +81,5 @@ def create_app():
 
     app.register_blueprint(web_bp)
     app.register_blueprint(dispatch_bp)
+    app.register_blueprint(settings_bp)
     return app

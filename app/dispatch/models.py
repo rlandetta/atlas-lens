@@ -73,6 +73,8 @@ def normalize_shipment(shipment: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("requested_delivery_mode", "draft")
     normalized.setdefault("scheduled_at", "")
     normalized.setdefault("timezone", DEFAULT_DISPATCH_TIMEZONE)
+    normalized.setdefault("channel_id", "")
+    normalized.setdefault("channel_name_snapshot", str(normalized.get("channel", "")))
     normalized.setdefault("sent_at", "")
     normalized.setdefault("last_attempt_at", "")
     normalized.setdefault("attempt_count", 0)
@@ -117,6 +119,8 @@ class ShipmentDraft:
     recipients: list[dict[str, str]]
     delivery_note: str = ""
     channel: str = "manual"
+    channel_id: str = ""
+    channel_name_snapshot: str = ""
     export_reference: dict[str, Any] | None = None
     include_caption_docx: bool = False
     requested_delivery_mode: str = "draft"
@@ -156,6 +160,8 @@ def build_shipment(
         "recipients": normalize_recipients(draft.recipients),
         "delivery_note": draft.delivery_note.strip(),
         "channel": draft.channel.strip() or "manual",
+        "channel_id": draft.channel_id.strip(),
+        "channel_name_snapshot": draft.channel_name_snapshot.strip(),
         "status": status,
         "scheduled_at": draft.scheduled_at.strip(),
         "timezone": draft.timezone.strip() or DEFAULT_DISPATCH_TIMEZONE,

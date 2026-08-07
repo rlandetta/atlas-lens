@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Canales de salida | SETTINGS{% endblock %}
+{% block main_class %}settings-page{% endblock %}
+
+{% block content %}
+<section class="page-heading">
+    <div>
+        <p class="coverage-id">SETTINGS</p>
+        <h1>Canales de salida</h1>
+        <p class="subtitle">Cuentas SMTP disponibles para que DISPATCH prepare entregas futuras.</p>
+    </div>
+    <a href="{{ url_for('settings.new_channel') }}" class="secondary-button compact-action">Nuevo canal</a>
+</section>
+
+{% if channels %}
+<section class="settings-channel-list" aria-label="Canales configurados">
+    {% for channel in channels %}
+    <article class="ui-card atlas-panel--compact settings-channel-card">
+        <div class="settings-channel-main">
+            <h2>{{ channel.name }}</h2>
+            <p>{{ channel.sender_email }}</p>
+            <p>{{ channel.smtp_host }} · {{ channel.smtp_port }} · {{ channel.smtp_security | upper }}</p>
+        </div>
+        <div class="settings-channel-badges">
+            {% if channel.is_default %}<span class="dispatch-status-badge">Predeterminado</span>{% endif %}
+            <span class="dispatch-status-badge">{{ "Activo" if channel.is_active else "Inactivo" }}</span>
+        </div>
+        <div class="dispatch-row-actions" aria-label="Acciones para {{ channel.name }}">
+            <a href="{{ url_for('settings.edit_channel', channel_id=channel.id) }}">Editar</a>
+            <form method="post" action="{{ url_for('settings.delete_channel', channel_id=channel.id) }}" data-confirm-message="¿Eliminar este canal de salida? No se eliminarán despachos existentes.">
+                <button type="submit">Eliminar</button>
+            </form>
+        </div>
+    </article>
+    {% endfor %}
+</section>
+{% else %}
+<section class="empty-state ui-card atlas-panel--compact">
+    <h2>No hay canales de salida configurados</h2>
+    <p>Configure un canal para que DISPATCH pueda asociar futuros despachos a una cuenta de salida.</p>
+    <a href="{{ url_for('settings.new_channel') }}" class="secondary-button compact-action">Crear canal</a>
+</section>
+{% endif %}
+
+<a href="{{ url_for('settings.index') }}" class="back-link">Volver a SETTINGS</a>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+        if (!window.confirm(form.dataset.confirmMessage)) {
+            event.preventDefault();
+        }
+    });
+});
+</script>
+{% endblock %}

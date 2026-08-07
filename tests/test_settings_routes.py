@@ -1,0 +1,167 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+from app import create_app
+from app.settings import OutboundChannelDraft, SettingsSecretError, SettingsService, SettingsStore, SettingsValidationError
+
+
+class SettingsRoutesTest(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+        self.settings_store_path = self.root / "settings.json"
+        self.dispatch_store_path = self.root / "dispatch_shipments.json"
+        self.lens_store_path = self.root / "lens_coverages.json"
+        self.lens_media_root = self.root / "lens_media"
+        self.patches = [
+            patch("app.config.SETTINGS_STORE_PATH", str(self.settings_store_path)),
+            patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
+            patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.lens_store_path)),
+            patch("app.config.LENS_MEDIA_ROOT", str(self.lens_media_root)),
+        ]
+        for item in self.patches:
+            item.start()
+        self.app = create_app()
+        self.app.config.update(TESTING=True)
+        self.client = self.app.test_client()
+        self.service = self.app.extensions["settings"]["settings_service"]
+
+    def tearDown(self):
+        for item in reversed(self.patches):
+            item.stop()
+        self.temp_dir.cleanup()
+
+    def valid_form(self, **overrides):
+        form = {
+            "id": "xinhua",
+            "name": "Xinhua",
+            "display_name": "Xinhua News Agency",
+            "sender_email": "atlas@lavoceria.com",
+            "reply_to": "desk@xinhua.com",
+            "smtp_host": "smtp.zoho.com",
+            "smtp_port": "465",
+            "smtp_security": "ssl",
+            "smtp_username": "atlas@lavoceria.com",
+            "credential_ref": "ATLAS_SMTP_CHANNEL_XINHUA",
+            "is_active": "1",
+            "is_default": "1",
+        }
+        form.update(overrides)
+        return {key: value for key, value in form.items() if value is not None}
+
+    def create_channel(self, **overrides):
+        response = self.client.post("/settings/channels/new", data=self.valid_form(**overrides), follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        return self.service.list_outbound_channels()[0]
+
+    def test_settings_blueprint_and_header_are_registered(self):
+        response = self.client.get("/settings/")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("SETTINGS", body)
+        self.assertIn("Canales de salida", body)
+        self.assertIn("Usuarios", body)
+        self.assertIn("Próximamente", body)
+        self.assertIn('href="/settings/"', body)
+
+    def test_create_edit_and_delete_channel_without_secret(self):
+        channel = self.create_channel()
+
+        self.assertEqual(channel["id"], "xinhua")
+        self.assertTrue(channel["is_default"])
+        payload = json.loads(self.settings_store_path.read_text(encoding="utf-8"))
+        raw_json = json.dumps(payload)
+        self.assertIn("credential_ref", raw_json)
+        self.assertNotIn("smtp_password", raw_json)
+        self.assertNotIn("app_password", raw_json)
+        self.assertNotIn("super-secret", raw_json)
+
+        response = self.client.post(
+            "/settings/channels/xinhua/edit",
+            data=self.valid_form(name="Xinhua Editado", smtp_port="587", smtp_security="starttls", smtp_password="super-secret"),
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        updated = self.service.get_outbound_channel("xinhua")
+        self.assertEqual(updated["name"], "Xinhua Editado")
+        self.assertEqual(updated["smtp_port"], 587)
+        self.assertEqual(updated["smtp_security"], "starttls")
+        self.assertNotIn("smtp_password", updated)
+
+        response = self.client.post("/settings/channels/xinhua/delete", follow_redirects=False)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.service.list_outbound_channels(), [])
+
+    def test_form_does_not_request_password_and_list_does_not_expose_secret(self):
+        self.create_channel()
+
+        form_body = self.client.get("/settings/channels/new").get_data(as_text=True)
+        list_body = self.client.get("/settings/channels").get_data(as_text=True)
+
+        self.assertNotIn('name="password"', form_body)
+        self.assertNotIn('name="smtp_password"', form_body)
+        self.assertNotIn("ATLAS_SMTP_CHANNEL_XINHUA", list_body)
+        self.assertIn("Xinhua", list_body)
+
+    def test_validations_reject_invalid_email_port_security_and_missing_credential_ref(self):
+        cases = [
+            {"sender_email": "invalid"},
+            {"smtp_port": "70000"},
+            {"smtp_security": "none"},
+            {"credential_ref": ""},
+        ]
+        for override in cases:
+            response = self.client.post("/settings/channels/new", data=self.valid_form(**override), follow_redirects=False)
+            self.assertEqual(response.status_code, 400)
+
+    def test_only_one_default_channel(self):
+        self.create_channel(id="xinhua", name="Xinhua", credential_ref="ATLAS_SMTP_CHANNEL_XINHUA")
+        self.create_channel(id="afp", name="AFP", sender_email="afp@example.com", credential_ref="ATLAS_SMTP_CHANNEL_AFP")
+
+        channels = {channel["id"]: channel for channel in self.service.list_outbound_channels()}
+        self.assertFalse(channels["xinhua"]["is_default"])
+        self.assertTrue(channels["afp"]["is_default"])
+
+    def test_resolve_channel_secret_from_environment_and_fails_cleanly(self):
+        channel = self.create_channel()
+
+        with patch.dict("os.environ", {"ATLAS_SMTP_CHANNEL_XINHUA": "runtime-secret"}):
+            self.assertEqual(self.service.resolve_channel_secret(channel), "runtime-secret")
+        with self.assertRaises(SettingsSecretError) as context:
+            self.service.resolve_channel_secret(channel)
+        self.assertEqual(str(context.exception), "Credencial SMTP no configurada.")
+
+
+class SettingsServiceStoreTest(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.store = SettingsStore(Path(self.temp_dir.name) / "settings.json")
+        self.service = SettingsService(self.store)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def test_duplicate_channel_id_is_rejected(self):
+        draft = OutboundChannelDraft(
+            id="xinhua",
+            name="Xinhua",
+            display_name="Xinhua",
+            sender_email="atlas@lavoceria.com",
+            reply_to="",
+            smtp_host="smtp.zoho.com",
+            smtp_port=465,
+            smtp_security="ssl",
+            smtp_username="atlas@lavoceria.com",
+            credential_ref="ATLAS_SMTP_CHANNEL_XINHUA",
+        )
+        self.service.create_outbound_channel(draft)
+        with self.assertRaises(SettingsValidationError):
+            self.service.create_outbound_channel(draft)
+
+
+if __name__ == "__main__":
+    unittest.main()

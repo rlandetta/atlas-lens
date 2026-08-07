@@ -60,6 +60,43 @@ def get_dispatch_services() -> dict[str, Any]:
     return current_app.extensions["dispatch"]
 
 
+def get_settings_service():
+    return current_app.extensions.get("settings", {}).get("settings_service") or get_dispatch_services().get("settings_service")
+
+
+def list_active_outbound_channels() -> list[dict[str, Any]]:
+    service = get_settings_service()
+    if service is None:
+        return []
+    return service.list_active_outbound_channels()
+
+
+def get_default_outbound_channel() -> dict[str, Any] | None:
+    service = get_settings_service()
+    if service is None:
+        return None
+    return service.get_default_outbound_channel()
+
+
+def get_outbound_channel(channel_id: str) -> dict[str, Any] | None:
+    service = get_settings_service()
+    if service is None or not channel_id:
+        return None
+    return service.get_outbound_channel(channel_id)
+
+
+def channel_display(shipment: dict[str, Any]) -> str:
+    snapshot = str(shipment.get("channel_name_snapshot", "")).strip()
+    if snapshot:
+        return snapshot
+    channel_id = str(shipment.get("channel_id", "")).strip()
+    if channel_id:
+        channel = get_outbound_channel(channel_id)
+        if channel:
+            return str(channel.get("name", channel_id))
+    return str(shipment.get("channel", "") or "No definido")
+
+
 def get_coverage_provider():
     services = get_dispatch_services()
     provider = services.get("coverage_provider")
@@ -471,6 +508,7 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
         "timezone_display": timezone_label(timezone_name, str(shipment.get("scheduled_at") or shipment.get("sent_at") or "")),
         "scheduled_utc": format_utc_datetime(str(shipment.get("scheduled_at", ""))),
         "history_items": formatted_history,
+        "channel_display": channel_display(shipment),
     }
 
 
@@ -485,6 +523,7 @@ def build_index_rows(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         item["photo_count"] = len(shipment.get("photo_ids", []))
         item["recipient_count"] = len([recipient for recipient in shipment.get("recipients", []) if isinstance(recipient, dict)])
         item["docx_label"] = "Sí" if build_content_summary(shipment).get("docx_included") else "No"
+        item["channel_display"] = channel_display(shipment)
         item["can_delete"] = shipment.get("status") in {"Borrador", "Cancelado"}
         item["actions"] = build_action_links(shipment)
         rows.append(item)
@@ -610,6 +649,7 @@ def shipment_to_form_data(shipment: dict[str, Any]) -> dict[str, Any]:
         "photo_ids": list(shipment.get("photo_ids", [])),
         "delivery_note": str(shipment.get("delivery_note", "")),
         "channel": str(shipment.get("channel", "")),
+        "channel_id": str(shipment.get("channel_id", "")),
         "mode": mode,
         "scheduled_date": schedule_parts["scheduled_date"],
         "scheduled_time": schedule_parts["scheduled_time"],
@@ -632,6 +672,7 @@ def collect_form_data() -> dict[str, Any]:
         "recipients": request.form.get("recipients", "").strip(),
         "delivery_note": request.form.get("delivery_note", "").strip(),
         "channel": request.form.get("channel", "").strip(),
+        "channel_id": request.form.get("channel_id", "").strip(),
         "mode": request.form.get("mode", "draft").strip() or "draft",
         "scheduled_date": request.form.get("scheduled_date", "").strip(),
         "scheduled_time": request.form.get("scheduled_time", "").strip(),
@@ -670,7 +711,12 @@ def validate_form_data(form_data: dict[str, Any], *, locked_coverage_id: str = "
         }
         if any(photo_id in unavailable_photo_ids for photo_id in form_data["photo_ids"]):
             errors.append("Selecciona únicamente fotografías con caption y archivo disponible para envío.")
-    if form_data["channel"] not in CHANNEL_OPTIONS:
+    active_channels = list_active_outbound_channels()
+    active_channel_ids = {channel["id"] for channel in active_channels}
+    if active_channels:
+        if form_data.get("channel_id") not in active_channel_ids:
+            errors.append("Selecciona un canal de salida activo.")
+    elif form_data["channel"] not in CHANNEL_OPTIONS:
         errors.append("Selecciona un canal válido.")
     recipients, recipient_errors = parse_recipient_rows(form_data["recipient_rows"])
     form_data["recipient_errors"] = recipient_errors
@@ -738,6 +784,10 @@ def build_form_context(
         form_data["name"] = selected_coverage["name"]
     if "include_caption_docx" not in form_data:
         form_data["include_caption_docx"] = True
+    outbound_channels = list_active_outbound_channels()
+    default_channel = get_default_outbound_channel()
+    if outbound_channels and not form_data.get("channel_id"):
+        form_data["channel_id"] = (default_channel or outbound_channels[0])["id"]
     photo_options = get_caption_photo_options(selected_coverage_id)
     eligible_photo_ids = {
         photo["id"]
@@ -750,6 +800,8 @@ def build_form_context(
         selected_photo_ids = set(eligible_photo_ids)
     return {
         "channel_options": CHANNEL_OPTIONS,
+        "outbound_channels": outbound_channels,
+        "default_channel": default_channel,
         "coverage_options": coverage_options,
         "coverage_locked": bool((requested_coverage_id or form_mode == "edit") and selected_coverage),
         "timezone_options": TIMEZONE_OPTIONS,
@@ -817,6 +869,8 @@ def new() -> str:
             recipients=recipients,
             delivery_note=form_data["delivery_note"],
             channel=form_data["channel"],
+            channel_id=form_data.get("channel_id", ""),
+            channel_name_snapshot=channel_display({"channel_id": form_data.get("channel_id", ""), "channel": form_data["channel"]}),
             export_reference=build_export_reference(form_data),
             status=status,
             scheduled_at=scheduled_at,
@@ -893,6 +947,8 @@ def edit(shipment_id: str) -> str:
             "recipients": recipients,
             "delivery_note": form_data["delivery_note"],
             "channel": form_data["channel"],
+            "channel_id": form_data.get("channel_id", ""),
+            "channel_name_snapshot": channel_display({"channel_id": form_data.get("channel_id", ""), "channel": form_data["channel"]}),
             "export_reference": build_export_reference(form_data),
             "include_caption_docx": bool(form_data["include_caption_docx"]),
             "requested_delivery_mode": form_data["mode"],

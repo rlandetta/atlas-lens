@@ -18,10 +18,12 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.coverage_store_path = self.root / "lens_coverages.json"
         self.media_root = self.root / "media"
         self.dispatch_store_path = self.root / "dispatch_shipments.json"
+        self.settings_store_path = self.root / "settings.json"
         self.patches = [
             patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.coverage_store_path)),
             patch("app.config.LENS_MEDIA_ROOT", str(self.media_root)),
             patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
+            patch("app.config.SETTINGS_STORE_PATH", str(self.settings_store_path)),
         ]
         for item in self.patches:
             item.start()

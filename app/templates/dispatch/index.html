@@ -40,6 +40,7 @@
             <div class="dispatch-shipment-main">
                 <h3>{{ shipment.name }}</h3>
                 <p>{{ shipment.coverage_snapshot.coverage_name or shipment.coverage_id }}</p>
+                <p>Canal: {{ shipment.channel_display }}</p>
             </div>
             <dl class="dispatch-shipment-facts">
                 <div>

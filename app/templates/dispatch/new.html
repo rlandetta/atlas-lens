@@ -27,12 +27,22 @@
             </div>
 
             <div class="form-field">
-                <label for="channel">Canal</label>
+                <label for="channel_id">Canal de salida</label>
+                {% if outbound_channels %}
+                <select id="channel_id" name="channel_id" required>
+                    {% for channel in outbound_channels %}
+                    <option value="{{ channel.id }}" {% if form_data.channel_id == channel.id %}selected{% endif %}>{{ channel.name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="hidden" name="channel" value="Manual">
+                {% else %}
                 <select id="channel" name="channel" required>
                     {% for channel in channel_options %}
                     <option value="{{ channel }}" {% if (form_data.channel or "Manual") == channel %}selected{% endif %}>{{ channel }}</option>
                     {% endfor %}
                 </select>
+                <p class="field-help">No hay canales de salida configurados. <a href="{{ url_for('settings.channels') }}">Configurar canales</a></p>
+                {% endif %}
             </div>
         </div>
 
