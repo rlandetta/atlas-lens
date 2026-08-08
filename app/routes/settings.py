@@ -4,7 +4,7 @@ from typing import Any
 
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
-from app.settings import OutboundChannelDraft, SettingsValidationError
+from app.settings import CHANNEL_TYPES, OutboundChannelDraft, SettingsValidationError
 from app.settings.models import SMTP_SECURITY_OPTIONS
 
 settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
@@ -39,6 +39,7 @@ def collect_channel_form(channel_id: str = "") -> dict[str, Any]:
         "id": raw_id,
         "name": request.form.get("name", "").strip(),
         "display_name": request.form.get("display_name", "").strip(),
+        "channel_type": request.form.get("channel_type", "smtp").strip(),
         "sender_email": request.form.get("sender_email", "").strip(),
         "reply_to": request.form.get("reply_to", "").strip(),
         "smtp_host": request.form.get("smtp_host", "").strip(),
@@ -46,6 +47,11 @@ def collect_channel_form(channel_id: str = "") -> dict[str, Any]:
         "smtp_security": request.form.get("smtp_security", "").strip(),
         "smtp_username": request.form.get("smtp_username", "").strip(),
         "credential_ref": request.form.get("credential_ref", "").strip(),
+        "host": request.form.get("host", "").strip(),
+        "port": request.form.get("port", "").strip(),
+        "username": request.form.get("username", "").strip(),
+        "remote_path": request.form.get("remote_path", "").strip(),
+        "host_key_fingerprint": request.form.get("host_key_fingerprint", "").strip(),
         "is_active": parse_bool("is_active"),
         "is_default": parse_bool("is_default"),
     }
@@ -56,6 +62,7 @@ def form_to_draft(form_data: dict[str, Any]) -> OutboundChannelDraft:
         id=str(form_data.get("id", "")),
         name=str(form_data.get("name", "")),
         display_name=str(form_data.get("display_name", "")),
+        channel_type=str(form_data.get("channel_type", "smtp")),
         sender_email=str(form_data.get("sender_email", "")),
         reply_to=str(form_data.get("reply_to", "")),
         smtp_host=str(form_data.get("smtp_host", "")),
@@ -63,6 +70,11 @@ def form_to_draft(form_data: dict[str, Any]) -> OutboundChannelDraft:
         smtp_security=str(form_data.get("smtp_security", "")),
         smtp_username=str(form_data.get("smtp_username", "")),
         credential_ref=str(form_data.get("credential_ref", "")),
+        host=str(form_data.get("host", "")),
+        port=form_data.get("port", ""),
+        username=str(form_data.get("username", "")),
+        remote_path=str(form_data.get("remote_path", "")),
+        host_key_fingerprint=str(form_data.get("host_key_fingerprint", "")),
         is_active=bool(form_data.get("is_active")),
         is_default=bool(form_data.get("is_default")),
     )
@@ -89,8 +101,9 @@ def new_channel() -> str:
             errors=[],
             form_action=url_for("settings.new_channel"),
             form_mode="create",
-            form_data={"smtp_port": 465, "smtp_security": "ssl", "is_active": True},
+            form_data={"channel_type": "smtp", "smtp_port": 465, "smtp_security": "ssl", "port": 22, "is_active": True},
             smtp_security_options=SMTP_SECURITY_OPTIONS,
+            channel_types=CHANNEL_TYPES,
         )
     form_data = collect_channel_form()
     try:
@@ -103,6 +116,7 @@ def new_channel() -> str:
             form_mode="create",
             form_data=form_data,
             smtp_security_options=SMTP_SECURITY_OPTIONS,
+            channel_types=CHANNEL_TYPES,
         ), 400
     return redirect(url_for("settings.channels"))
 
@@ -121,6 +135,7 @@ def edit_channel(channel_id: str) -> str:
             form_mode="edit",
             form_data=channel,
             smtp_security_options=SMTP_SECURITY_OPTIONS,
+            channel_types=CHANNEL_TYPES,
         )
     form_data = collect_channel_form(channel_id)
     try:
@@ -133,6 +148,7 @@ def edit_channel(channel_id: str) -> str:
             form_mode="edit",
             form_data=form_data,
             smtp_security_options=SMTP_SECURITY_OPTIONS,
+            channel_types=CHANNEL_TYPES,
         ), 400
     return redirect(url_for("settings.channels"))
 

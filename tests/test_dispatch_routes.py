@@ -112,6 +112,7 @@ class DispatchRoutesTest(unittest.TestCase):
             "id": "xinhua",
             "name": "Xinhua",
             "display_name": "Xinhua News Agency",
+            "channel_type": "smtp",
             "sender_email": "atlas@lavoceria.com",
             "reply_to": "",
             "smtp_host": "smtp.zoho.com",
@@ -324,7 +325,8 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(len(shipments), 1)
         self.assertEqual(shipments[0]["name"], "Despacho desde formulario")
         self.assertEqual(shipments[0]["status"], "Borrador")
-        self.assertEqual(shipments[0]["channel"], "Manual")
+        self.assertEqual(shipments[0]["channel"], "Enlace de descarga")
+        self.assertEqual(shipments[0]["delivery_method"], "download_link")
         self.assertEqual(shipments[0]["recipients"], [{"name": "Mesa Xinhua", "email": "desk@xinhua.com"}])
         self.assertTrue(shipments[0]["include_caption_docx"])
         self.assertEqual(shipments[0]["export_reference"]["caption_docx"]["generator"], "ExportService")
@@ -1014,17 +1016,17 @@ class DispatchRoutesTest(unittest.TestCase):
 
         body = self.client.get("/dispatch/new").get_data(as_text=True)
 
-        self.assertIn('name="channel_id"', body)
-        self.assertIn('value="xinhua" selected', body)
-        self.assertIn("Xinhua", body)
+        self.assertIn('value="download_link" selected', body)
+        self.assertIn("Correo (SMTP)", body)
         self.assertNotIn("Inactivo", body)
         self.assertNotIn("No hay canales de salida configurados", body)
 
-        response = self.post_new(channel_id=default["id"])
+        response = self.post_new(delivery_method="smtp", channel="smtp", channel_id=default["id"])
         self.assertEqual(response.status_code, 302)
         shipment = self.shipment_service.list_shipments()[0]
         self.assertEqual(shipment["channel_id"], default["id"])
         self.assertEqual(shipment["channel_name_snapshot"], "Xinhua")
+        self.assertEqual(shipment["delivery_method"], "smtp")
 
     def test_dispatch_new_shows_settings_link_when_no_channels_exist(self):
         body = self.client.get("/dispatch/new").get_data(as_text=True)
@@ -1035,7 +1037,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
     def test_dispatch_snapshot_survives_deleted_settings_channel(self):
         self.create_outbound_channel(id="xinhua", name="Xinhua", credential_ref="ATLAS_SMTP_CHANNEL_XINHUA")
-        shipment = self.create_docx_shipment_from_route(channel_id="xinhua")
+        shipment = self.create_docx_shipment_from_route(delivery_method="smtp", channel="smtp", channel_id="xinhua")
         self.app.extensions["settings"]["settings_service"].delete_outbound_channel("xinhua")
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)

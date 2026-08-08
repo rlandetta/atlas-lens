@@ -51,6 +51,24 @@ class DispatchWorkerTest(unittest.TestCase):
         exit_code = main([*args, "--store-path", str(self.store_path)], out=stdout, err=stderr)
         return exit_code, stdout.getvalue(), stderr.getvalue()
 
+    def run_cleanup_worker(self, *args, delivery_root, links_store):
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        exit_code = main(
+            [
+                *args,
+                "--store-path",
+                str(self.store_path),
+                "--delivery-root",
+                str(delivery_root),
+                "--links-store-path",
+                str(links_store),
+            ],
+            out=stdout,
+            err=stderr,
+        )
+        return exit_code, stdout.getvalue(), stderr.getvalue()
+
     def test_dry_run_without_shipments(self):
         exit_code, stdout, stderr = self.run_worker("--dry-run")
 
@@ -149,6 +167,62 @@ class DispatchWorkerTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertIn("No hay despachos vencidos", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_cleanup_deliveries_dry_run_does_not_delete_candidate(self):
+        delivery_root = Path(self.temp_dir.name) / "deliveries"
+        candidate = delivery_root / "ship-old"
+        candidate.mkdir(parents=True)
+        (candidate / "package.zip").write_bytes(b"zip")
+        links_store = Path(self.temp_dir.name) / "links.json"
+
+        exit_code, stdout, stderr = self.run_cleanup_worker(
+            "--cleanup-deliveries",
+            "--dry-run",
+            delivery_root=delivery_root,
+            links_store=links_store,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(candidate.exists())
+        self.assertIn("DRY-RUN", stdout)
+        self.assertEqual(stderr, "")
+
+    def test_cleanup_deliveries_removes_only_packages_without_active_link(self):
+        delivery_root = Path(self.temp_dir.name) / "deliveries"
+        stale = delivery_root / "ship-stale"
+        active = delivery_root / "ship-active"
+        stale.mkdir(parents=True)
+        active.mkdir(parents=True)
+        links_store = Path(self.temp_dir.name) / "links.json"
+        links_store.write_text(
+            json.dumps({
+                "links": [{
+                    "id": "link-1",
+                    "shipment_id": "ship-active",
+                    "token": "secure-token",
+                    "created_at": "2026-08-07T00:00:00+00:00",
+                    "expires_at": "",
+                    "revoked_at": "",
+                    "download_count": 0,
+                    "last_download_at": "",
+                    "password_hash": "",
+                    "is_active": True,
+                }]
+            }),
+            encoding="utf-8",
+        )
+
+        exit_code, stdout, stderr = self.run_cleanup_worker(
+            "--cleanup-deliveries",
+            delivery_root=delivery_root,
+            links_store=links_store,
+        )
+
+        self.assertEqual(exit_code, 0)
+        self.assertFalse(stale.exists())
+        self.assertTrue(active.exists())
+        self.assertIn("ELIMINADO", stdout)
         self.assertEqual(stderr, "")
 
 

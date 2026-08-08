@@ -33,18 +33,22 @@ def create_app():
     from flask import Flask
 
     from app.config import (
+        DELIVERY_LINKS_STORE_PATH,
+        DELIVERY_ROOT,
         DISPATCH_STORE_PATH,
         LENS_COVERAGE_STORE_PATH,
+        PUBLIC_BASE_URL,
         SETTINGS_STORE_PATH,
         LENS_MAX_PHOTO_BYTES,
         LENS_MEDIA_ROOT,
     )
-    from app.dispatch import DispatchShipmentStore, ShipmentService
+    from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DispatchShipmentStore, ShipmentService
     from app.lens import LensCoverageStore
     from app.settings import SettingsService, SettingsStore
     from app.lens_read_service import LensReadService
     from app.routes.dispatch import dispatch_bp
     from app.routes.dispatch import WebCoverageProvider
+    from app.routes.downloads import downloads_bp
     from app.routes.settings import settings_bp
     from app.routes.web import configure_coverage_store, web_bp
 
@@ -55,6 +59,9 @@ def create_app():
     coverage_provider = WebCoverageProvider()
     lens_reader = LensReadService(coverage_provider)
     dispatch_store = DispatchShipmentStore(DISPATCH_STORE_PATH)
+    delivery_link_store = DeliveryLinkStore(DELIVERY_LINKS_STORE_PATH)
+    delivery_link_service = DeliveryLinkService(delivery_link_store, PUBLIC_BASE_URL)
+    delivery_package_service = DeliveryPackageService(delivery_root=DELIVERY_ROOT, media_root=LENS_MEDIA_ROOT)
     settings_store = SettingsStore(SETTINGS_STORE_PATH)
     settings_service = SettingsService(settings_store)
     app.extensions["lens"] = {
@@ -69,6 +76,9 @@ def create_app():
         "store": dispatch_store,
         "lens_reader": lens_reader,
         "settings_service": settings_service,
+        "delivery_link_store": delivery_link_store,
+        "delivery_link_service": delivery_link_service,
+        "delivery_package_service": delivery_package_service,
         "shipment_service": ShipmentService(
             store=dispatch_store,
             lens_reader=lens_reader,
@@ -81,5 +91,6 @@ def create_app():
 
     app.register_blueprint(web_bp)
     app.register_blueprint(dispatch_bp)
+    app.register_blueprint(downloads_bp)
     app.register_blueprint(settings_bp)
     return app

@@ -1,4 +1,5 @@
 from app.settings.models import (
+    CHANNEL_TYPES,
     OutboundChannelDraft,
     SettingsSecretError,
     SettingsStoreError,
@@ -9,6 +10,7 @@ from app.settings.store import SettingsStore
 
 __all__ = [
     "OutboundChannelDraft",
+    "CHANNEL_TYPES",
     "SettingsSecretError",
     "SettingsService",
     "SettingsStore",

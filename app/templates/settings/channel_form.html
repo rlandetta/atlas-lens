@@ -6,7 +6,7 @@
 {% block content %}
 <section class="form-card ui-card atlas-panel--normal">
     <h1>{% if form_mode == "edit" %}Editar canal{% else %}Nuevo canal{% endif %}</h1>
-    <p class="subtitle">Configure la referencia SMTP sin guardar contraseñas en ATLAS.</p>
+    <p class="subtitle">Configure canales de entrega sin guardar contraseñas en ATLAS.</p>
 
     {% if errors %}
     <div class="form-error" role="alert">
@@ -31,8 +31,19 @@
                 <input id="display_name" name="display_name" type="text" value="{{ form_data.display_name or '' }}">
             </div>
             <div class="form-field">
+                <label for="channel_type">Tipo de canal</label>
+                <select id="channel_type" name="channel_type" required>
+                    {% for option in channel_types %}
+                    <option value="{{ option }}" {% if (form_data.channel_type or 'smtp') == option %}selected{% endif %}>
+                        {% if option == 'download_link' %}Enlace de descarga{% elif option == 'sftp' %}SFTP{% elif option == 'smtp' %}Correo (SMTP){% else %}API · Próximamente{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <small class="field-help">Los canales antiguos sin tipo se interpretan como SMTP.</small>
+            </div>
+            <div class="form-field">
                 <label for="sender_email">Correo remitente</label>
-                <input id="sender_email" name="sender_email" type="email" value="{{ form_data.sender_email or '' }}" required>
+                <input id="sender_email" name="sender_email" type="email" value="{{ form_data.sender_email or '' }}">
             </div>
             <div class="form-field">
                 <label for="reply_to">Reply-To</label>
@@ -40,15 +51,15 @@
             </div>
             <div class="form-field">
                 <label for="smtp_host">Servidor SMTP</label>
-                <input id="smtp_host" name="smtp_host" type="text" value="{{ form_data.smtp_host or '' }}" required>
+                <input id="smtp_host" name="smtp_host" type="text" value="{{ form_data.smtp_host or '' }}">
             </div>
             <div class="form-field">
                 <label for="smtp_port">Puerto</label>
-                <input id="smtp_port" name="smtp_port" type="number" min="1" max="65535" value="{{ form_data.smtp_port or 465 }}" required>
+                <input id="smtp_port" name="smtp_port" type="number" min="1" max="65535" value="{{ form_data.smtp_port or 465 }}">
             </div>
             <div class="form-field">
                 <label for="smtp_security">Seguridad</label>
-                <select id="smtp_security" name="smtp_security" required>
+                <select id="smtp_security" name="smtp_security">
                     {% for option in smtp_security_options %}
                     <option value="{{ option }}" {% if (form_data.smtp_security or 'ssl') == option %}selected{% endif %}>{{ option | upper }}</option>
                     {% endfor %}
@@ -56,12 +67,33 @@
             </div>
             <div class="form-field">
                 <label for="smtp_username">Usuario SMTP</label>
-                <input id="smtp_username" name="smtp_username" type="text" value="{{ form_data.smtp_username or '' }}" required>
+                <input id="smtp_username" name="smtp_username" type="text" value="{{ form_data.smtp_username or '' }}">
             </div>
             <div class="form-field">
                 <label for="credential_ref">Referencia de credencial</label>
-                <input id="credential_ref" name="credential_ref" type="text" value="{{ form_data.credential_ref or '' }}" required>
+                <input id="credential_ref" name="credential_ref" type="text" value="{{ form_data.credential_ref or '' }}">
                 <small class="field-help">Nombre de la variable de entorno que contendrá la contraseña. Ejemplo: ATLAS_SMTP_CHANNEL_XINHUA</small>
+            </div>
+            <div class="form-field">
+                <label for="host">Servidor SFTP</label>
+                <input id="host" name="host" type="text" value="{{ form_data.host or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="port">Puerto SFTP</label>
+                <input id="port" name="port" type="number" min="1" max="65535" value="{{ form_data.port or 22 }}">
+            </div>
+            <div class="form-field">
+                <label for="username">Usuario SFTP</label>
+                <input id="username" name="username" type="text" value="{{ form_data.username or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="remote_path">Ruta remota SFTP</label>
+                <input id="remote_path" name="remote_path" type="text" value="{{ form_data.remote_path or '' }}" placeholder="/incoming">
+            </div>
+            <div class="form-field atlas-span-full">
+                <label for="host_key_fingerprint">Fingerprint host key</label>
+                <input id="host_key_fingerprint" name="host_key_fingerprint" type="text" value="{{ form_data.host_key_fingerprint or '' }}">
+                <small class="field-help">Opcional en esta fase. No se guardan private keys ni passwords.</small>
             </div>
         </div>
         <div class="settings-toggle-row">

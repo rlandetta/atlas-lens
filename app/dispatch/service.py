@@ -61,6 +61,10 @@ class ShipmentService:
         channel: str = "manual",
         channel_id: str = "",
         channel_name_snapshot: str = "",
+        delivery_method: str = "download_link",
+        delivery_link_id: str = "",
+        delivery_package: dict | None = None,
+        remote_path: str = "",
         export_reference: dict | None = None,
         status: str = "Borrador",
         scheduled_at: str = "",
@@ -90,6 +94,10 @@ class ShipmentService:
             channel=channel,
             channel_id=channel_id,
             channel_name_snapshot=channel_name_snapshot,
+            delivery_method=delivery_method,
+            delivery_link_id=delivery_link_id,
+            delivery_package=deepcopy(delivery_package or {}),
+            remote_path=remote_path,
             export_reference=deepcopy(export_reference or {}),
             include_caption_docx=include_caption_docx,
             requested_delivery_mode=requested_delivery_mode,
@@ -128,6 +136,10 @@ class ShipmentService:
             "channel",
             "channel_id",
             "channel_name_snapshot",
+            "delivery_method",
+            "delivery_link_id",
+            "delivery_package",
+            "remote_path",
             "export_reference",
             "include_caption_docx",
             "requested_delivery_mode",
@@ -145,6 +157,36 @@ class ShipmentService:
         history.insert(0, {"status": next_shipment.get("status", ""), "created_at": timestamp, "note": note})
         return self.store.update(shipment_id, next_shipment)
 
+    def record_delivery_ready(
+        self,
+        shipment_id: str,
+        *,
+        delivery_package: dict,
+        delivery_link_id: str = "",
+        remote_path: str = "",
+        note: str = "Entrega preparada.",
+        status: str = "Listo",
+    ) -> dict:
+        shipment = self.store.get(shipment_id)
+        if shipment is None:
+            raise DispatchValidationError("No existe el despacho solicitado.")
+        timestamp = utc_now_iso()
+        next_shipment = deepcopy(shipment)
+        next_shipment["status"] = status
+        next_shipment["delivery_package"] = deepcopy(delivery_package)
+        if delivery_link_id:
+            next_shipment["delivery_link_id"] = delivery_link_id
+        if remote_path:
+            next_shipment["remote_path"] = remote_path
+        next_shipment["updated_at"] = timestamp
+        next_shipment["last_error"] = ""
+        next_shipment.setdefault("history", []).insert(0, {
+            "status": status,
+            "created_at": timestamp,
+            "note": note,
+        })
+        return self.store.update(shipment_id, next_shipment)
+
     def duplicate_shipment(self, shipment_id: str) -> dict:
         shipment = self.store.get(shipment_id)
         if shipment is None:
@@ -159,6 +201,9 @@ class ShipmentService:
         duplicated["status"] = "Borrador"
         duplicated["scheduled_at"] = ""
         duplicated["sent_at"] = ""
+        duplicated["delivery_link_id"] = ""
+        duplicated["delivery_package"] = {}
+        duplicated["remote_path"] = ""
         duplicated["last_attempt_at"] = ""
         duplicated["attempt_count"] = 0
         duplicated["last_error"] = ""

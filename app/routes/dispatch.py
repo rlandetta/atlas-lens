@@ -7,11 +7,20 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
-from app.dispatch import DispatchValidationError
+from app.dispatch import DELIVERY_METHODS, DispatchValidationError
+from app.dispatch.delivery_package import DeliveryPackageError
+from app.dispatch.sftp_transport import SFTPTransport, SFTPTransportError
 
 dispatch_bp = Blueprint("dispatch", __name__, url_prefix="/dispatch")
 
 CHANNEL_OPTIONS = ("Manual", "Correo", "FTP", "SFTP", "API")
+DELIVERY_METHOD_LABELS = {
+    "download_link": "Enlace de descarga",
+    "sftp": "SFTP",
+    "smtp": "Correo (SMTP)",
+    "api": "API",
+}
+DELIVERY_EXPIRATION_OPTIONS = ("1", "3", "7", "14", "30", "none")
 DEFAULT_TIMEZONE = "America/Guayaquil"
 CREATE_MODES = ("draft", "immediate", "schedule")
 TIMEZONE_OPTIONS = (
@@ -60,6 +69,11 @@ def get_dispatch_services() -> dict[str, Any]:
     return current_app.extensions["dispatch"]
 
 
+def has_delivery_services() -> bool:
+    services = get_dispatch_services()
+    return "delivery_package_service" in services and "delivery_link_service" in services and "delivery_link_store" in services
+
+
 def get_settings_service():
     return current_app.extensions.get("settings", {}).get("settings_service") or get_dispatch_services().get("settings_service")
 
@@ -95,6 +109,35 @@ def channel_display(shipment: dict[str, Any]) -> str:
         if channel:
             return str(channel.get("name", channel_id))
     return str(shipment.get("channel", "") or "No definido")
+
+
+def delivery_method_display(value: str) -> str:
+    return DELIVERY_METHOD_LABELS.get(str(value or ""), str(value or "No definido"))
+
+
+def channel_type(channel: dict[str, Any]) -> str:
+    return str(channel.get("channel_type") or "smtp").strip().lower()
+
+
+def list_active_channels_by_type(delivery_method: str) -> list[dict[str, Any]]:
+    return [
+        channel
+        for channel in list_active_outbound_channels()
+        if channel_type(channel) == delivery_method
+    ]
+
+
+def channel_snapshot(channel_id: str, fallback: str = "") -> str:
+    channel = get_outbound_channel(channel_id)
+    if channel:
+        return str(channel.get("name") or channel_id)
+    return fallback
+
+
+def delivery_public_url(link: dict[str, Any] | None) -> str:
+    if not link:
+        return ""
+    return str(link.get("url", ""))
 
 
 def get_coverage_provider():
@@ -498,6 +541,16 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
         "sent_at": format_datetime_es(str(shipment.get("sent_at", "")), timezone_name),
         "last_attempt_at": format_datetime_es(str(shipment.get("last_attempt_at", "")), timezone_name),
     }
+    if has_delivery_services():
+        active_link = get_dispatch_services()["delivery_link_service"].get_active_for_shipment(str(shipment.get("id", "")))
+        link_history = get_dispatch_services()["delivery_link_store"].list_for_shipment(str(shipment.get("id", "")))
+        current_link = active_link or (get_dispatch_services()["delivery_link_service"].with_url(link_history[0]) if link_history else None)
+    else:
+        current_link = None
+    delivery_link_dates = {
+        "expires_at": format_datetime_es(str((current_link or {}).get("expires_at", "")), timezone_name),
+        "last_download_at": format_datetime_es(str((current_link or {}).get("last_download_at", "")), timezone_name),
+    }
     return {
         "shipment": shipment,
         "content_summary": content_summary,
@@ -509,6 +562,11 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
         "scheduled_utc": format_utc_datetime(str(shipment.get("scheduled_at", ""))),
         "history_items": formatted_history,
         "channel_display": channel_display(shipment),
+        "delivery_method_display": delivery_method_display(str(shipment.get("delivery_method", ""))),
+        "delivery_link": current_link,
+        "delivery_link_dates": delivery_link_dates,
+        "delivery_url": delivery_public_url(current_link),
+        "delivery_package": shipment.get("delivery_package", {}),
     }
 
 
@@ -524,6 +582,7 @@ def build_index_rows(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         item["recipient_count"] = len([recipient for recipient in shipment.get("recipients", []) if isinstance(recipient, dict)])
         item["docx_label"] = "Sí" if build_content_summary(shipment).get("docx_included") else "No"
         item["channel_display"] = channel_display(shipment)
+        item["delivery_method_display"] = delivery_method_display(str(shipment.get("delivery_method", "")))
         item["can_delete"] = shipment.get("status") in {"Borrador", "Cancelado"}
         item["actions"] = build_action_links(shipment)
         rows.append(item)
@@ -650,6 +709,8 @@ def shipment_to_form_data(shipment: dict[str, Any]) -> dict[str, Any]:
         "delivery_note": str(shipment.get("delivery_note", "")),
         "channel": str(shipment.get("channel", "")),
         "channel_id": str(shipment.get("channel_id", "")),
+        "delivery_method": str(shipment.get("delivery_method", "download_link")),
+        "link_expires_in": "7",
         "mode": mode,
         "scheduled_date": schedule_parts["scheduled_date"],
         "scheduled_time": schedule_parts["scheduled_time"],
@@ -673,6 +734,8 @@ def collect_form_data() -> dict[str, Any]:
         "delivery_note": request.form.get("delivery_note", "").strip(),
         "channel": request.form.get("channel", "").strip(),
         "channel_id": request.form.get("channel_id", "").strip(),
+        "delivery_method": request.form.get("delivery_method", "download_link").strip() or "download_link",
+        "link_expires_in": request.form.get("link_expires_in", "7").strip() or "7",
         "mode": request.form.get("mode", "draft").strip() or "draft",
         "scheduled_date": request.form.get("scheduled_date", "").strip(),
         "scheduled_time": request.form.get("scheduled_time", "").strip(),
@@ -711,13 +774,23 @@ def validate_form_data(form_data: dict[str, Any], *, locked_coverage_id: str = "
         }
         if any(photo_id in unavailable_photo_ids for photo_id in form_data["photo_ids"]):
             errors.append("Selecciona únicamente fotografías con caption y archivo disponible para envío.")
-    active_channels = list_active_outbound_channels()
-    active_channel_ids = {channel["id"] for channel in active_channels}
-    if active_channels:
+    delivery_method = str(form_data.get("delivery_method", "download_link"))
+    if delivery_method not in DELIVERY_METHODS:
+        errors.append("Selecciona un método de entrega válido.")
+    if delivery_method == "api":
+        errors.append("API estará disponible próximamente.")
+    typed_channels = list_active_channels_by_type(delivery_method)
+    if delivery_method in {"sftp", "smtp"}:
+        active_channel_ids = {channel["id"] for channel in typed_channels}
         if form_data.get("channel_id") not in active_channel_ids:
             errors.append("Selecciona un canal de salida activo.")
+    elif delivery_method == "download_link":
+        form_data["channel_id"] = ""
+        form_data["channel"] = "Enlace de descarga"
     elif form_data["channel"] not in CHANNEL_OPTIONS:
         errors.append("Selecciona un canal válido.")
+    if str(form_data.get("link_expires_in", "7")) not in DELIVERY_EXPIRATION_OPTIONS:
+        errors.append("Selecciona una expiración válida para el enlace.")
     recipients, recipient_errors = parse_recipient_rows(form_data["recipient_rows"])
     form_data["recipient_errors"] = recipient_errors
     if any(recipient_errors):
@@ -747,6 +820,62 @@ def build_photo_snapshots(coverage_id: str, photo_ids: list[str]) -> list[dict[s
     if not photo_ids:
         return []
     return get_dispatch_services()["lens_reader"].get_approved_photos_by_ids(coverage_id, photo_ids)
+
+
+def package_summary(package) -> dict[str, Any]:
+    return {
+        "created_at": package.created_at,
+        "manifest": str(package.manifest_path),
+        "zip": str(package.zip_path),
+        "files": [item.__dict__ for item in package.files],
+        "total_bytes": package.total_bytes,
+    }
+
+
+def prepare_download_link_delivery(shipment: dict[str, Any], *, expires_in: str = "7") -> dict[str, Any]:
+    services = get_dispatch_services()
+    if not has_delivery_services():
+        raise DispatchValidationError("Servicios de entrega no disponibles.")
+    coverage = services["lens_reader"].get_coverage(str(shipment.get("coverage_id", "")))
+    package = services["delivery_package_service"].prepare_package(shipment=shipment, coverage=coverage)
+    link = services["delivery_link_service"].regenerate_for_shipment(str(shipment.get("id", "")), expires_in=expires_in)
+    return services["shipment_service"].record_delivery_ready(
+        str(shipment.get("id", "")),
+        delivery_package=package_summary(package),
+        delivery_link_id=str(link.get("id", "")),
+        note="Enlace de descarga generado.",
+        status="Listo",
+    )
+
+
+def prepare_sftp_delivery(shipment: dict[str, Any]) -> dict[str, Any]:
+    services = get_dispatch_services()
+    if not has_delivery_services():
+        raise DispatchValidationError("Servicios de entrega no disponibles.")
+    channel = get_outbound_channel(str(shipment.get("channel_id", "")))
+    if not channel:
+        raise DispatchValidationError("Canal SFTP no disponible.")
+    coverage = services["lens_reader"].get_coverage(str(shipment.get("coverage_id", "")))
+    package = services["delivery_package_service"].prepare_package(shipment=shipment, coverage=coverage)
+    transport = SFTPTransport(settings_service=get_settings_service())
+    manifest = services["delivery_package_service"].load_manifest(str(shipment.get("id", "")))
+    result = transport.upload_package(channel=channel, package_root=package.root, files=list(manifest.get("files", [])))
+    return services["shipment_service"].record_delivery_ready(
+        str(shipment.get("id", "")),
+        delivery_package=package_summary(package),
+        remote_path=str(result.get("remote_path", "")),
+        note="Paquete entregado por SFTP.",
+        status="Entregado",
+    )
+
+
+def run_immediate_delivery(shipment: dict[str, Any], form_data: dict[str, Any]) -> dict[str, Any]:
+    method = str(shipment.get("delivery_method", "download_link"))
+    if method == "download_link":
+        return prepare_download_link_delivery(shipment, expires_in=str(form_data.get("link_expires_in", "7")))
+    if method == "sftp":
+        return prepare_sftp_delivery(shipment)
+    return shipment
 
 
 def build_form_context(
@@ -784,10 +913,18 @@ def build_form_context(
         form_data["name"] = selected_coverage["name"]
     if "include_caption_docx" not in form_data:
         form_data["include_caption_docx"] = True
+    form_data.setdefault("delivery_method", "download_link")
+    form_data.setdefault("link_expires_in", "7")
     outbound_channels = list_active_outbound_channels()
     default_channel = get_default_outbound_channel()
-    if outbound_channels and not form_data.get("channel_id"):
-        form_data["channel_id"] = (default_channel or outbound_channels[0])["id"]
+    channel_groups = {
+        method: [channel for channel in outbound_channels if channel_type(channel) == method]
+        for method in DELIVERY_METHODS
+    }
+    selected_method = str(form_data.get("delivery_method", "download_link"))
+    if selected_method in {"sftp", "smtp"} and channel_groups[selected_method] and not form_data.get("channel_id"):
+        typed_default = default_channel if default_channel and channel_type(default_channel) == selected_method else None
+        form_data["channel_id"] = (typed_default or channel_groups[selected_method][0])["id"]
     photo_options = get_caption_photo_options(selected_coverage_id)
     eligible_photo_ids = {
         photo["id"]
@@ -800,6 +937,9 @@ def build_form_context(
         selected_photo_ids = set(eligible_photo_ids)
     return {
         "channel_options": CHANNEL_OPTIONS,
+        "delivery_methods": DELIVERY_METHOD_LABELS,
+        "delivery_expiration_options": DELIVERY_EXPIRATION_OPTIONS,
+        "channel_groups": channel_groups,
         "outbound_channels": outbound_channels,
         "default_channel": default_channel,
         "coverage_options": coverage_options,
@@ -870,7 +1010,8 @@ def new() -> str:
             delivery_note=form_data["delivery_note"],
             channel=form_data["channel"],
             channel_id=form_data.get("channel_id", ""),
-            channel_name_snapshot=channel_display({"channel_id": form_data.get("channel_id", ""), "channel": form_data["channel"]}),
+            channel_name_snapshot=channel_snapshot(form_data.get("channel_id", ""), form_data["channel"]),
+            delivery_method=form_data["delivery_method"],
             export_reference=build_export_reference(form_data),
             status=status,
             scheduled_at=scheduled_at,
@@ -883,6 +1024,16 @@ def new() -> str:
             "dispatch/new.html",
             **build_form_context(form_data, [str(error)], form_action=url_for("dispatch.new")),
         ), 400
+    if form_data["mode"] == "immediate" and form_data["delivery_method"] in {"download_link", "sftp"} and has_delivery_services():
+        try:
+            shipment = run_immediate_delivery(shipment, form_data)
+        except (DispatchValidationError, DeliveryPackageError, SFTPTransportError) as error:
+            get_dispatch_services()["shipment_service"].record_delivery_ready(
+                shipment["id"],
+                delivery_package={},
+                note=str(error),
+                status="Error",
+            )
 
     return redirect(url_for("dispatch.detail", shipment_id=shipment["id"]))
 
@@ -948,7 +1099,8 @@ def edit(shipment_id: str) -> str:
             "delivery_note": form_data["delivery_note"],
             "channel": form_data["channel"],
             "channel_id": form_data.get("channel_id", ""),
-            "channel_name_snapshot": channel_display({"channel_id": form_data.get("channel_id", ""), "channel": form_data["channel"]}),
+            "channel_name_snapshot": channel_snapshot(form_data.get("channel_id", ""), form_data["channel"]),
+            "delivery_method": form_data["delivery_method"],
             "export_reference": build_export_reference(form_data),
             "include_caption_docx": bool(form_data["include_caption_docx"]),
             "requested_delivery_mode": form_data["mode"],
@@ -993,6 +1145,45 @@ def cancel(shipment_id: str) -> str:
     except DispatchValidationError:
         abort(403)
     return redirect(url_for("dispatch.detail", shipment_id=shipment_id))
+
+
+@dispatch_bp.post("/<shipment_id>/delivery-link/revoke")
+def revoke_delivery_link(shipment_id: str) -> str:
+    shipment_service = get_dispatch_services()["shipment_service"]
+    shipment = shipment_service.get_shipment(shipment_id)
+    if shipment is None:
+        abort(404)
+    link = get_dispatch_services()["delivery_link_service"].revoke_for_shipment(shipment_id)
+    if link:
+        shipment_service.record_delivery_ready(
+            shipment_id,
+            delivery_package=shipment.get("delivery_package", {}),
+            note="Enlace de descarga revocado.",
+            status=str(shipment.get("status", "Listo")),
+        )
+    return redirect(url_for("dispatch.detail", shipment_id=shipment_id))
+
+
+@dispatch_bp.post("/<shipment_id>/delivery-link/regenerate")
+def regenerate_delivery_link(shipment_id: str) -> str:
+    shipment_service = get_dispatch_services()["shipment_service"]
+    shipment = shipment_service.get_shipment(shipment_id)
+    if shipment is None:
+        abort(404)
+    if str(shipment.get("delivery_method", "")) != "download_link":
+        abort(403)
+    try:
+        updated = prepare_download_link_delivery(shipment, expires_in=request.form.get("link_expires_in", "7"))
+    except (DispatchValidationError, DeliveryPackageError) as error:
+        shipment_service.record_delivery_ready(
+            shipment_id,
+            delivery_package=shipment.get("delivery_package", {}),
+            note=str(error),
+            status="Error",
+        )
+    else:
+        shipment = updated
+    return redirect(url_for("dispatch.detail", shipment_id=shipment["id"]))
 
 
 @dispatch_bp.post("/<shipment_id>/delete")

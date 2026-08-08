@@ -51,6 +51,10 @@
         <h2 id="dispatch-delivery-title">Información del envío</h2>
         <dl class="coverage-meta-grid dispatch-compact-meta">
             <div>
+                <dt>Método</dt>
+                <dd>{{ delivery_method_display }}</dd>
+            </div>
+            <div>
                 <dt>Canal</dt>
                 <dd>{{ channel_display }}</dd>
             </div>
@@ -85,6 +89,72 @@
         </ul>
         {% endif %}
     </section>
+
+    {% if shipment.delivery_method == "download_link" %}
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-link-title">
+        <h2 id="dispatch-link-title">Entrega</h2>
+        {% if delivery_link %}
+        <dl class="coverage-meta-grid dispatch-compact-meta">
+            <div>
+                <dt>Enlace de descarga</dt>
+                <dd>{{ "Activo" if delivery_link.is_active and not delivery_link.revoked_at else "Revocado" }}</dd>
+            </div>
+            <div>
+                <dt>Descargas</dt>
+                <dd>{{ delivery_link.download_count }}</dd>
+            </div>
+            <div>
+                <dt>Activo hasta</dt>
+                <dd>{{ delivery_link_dates.expires_at or "Sin expiración" }}</dd>
+            </div>
+            {% if delivery_link.last_download_at %}
+            <div>
+                <dt>Última descarga</dt>
+                <dd>{{ delivery_link_dates.last_download_at or delivery_link.last_download_at }}</dd>
+            </div>
+            {% endif %}
+            <div class="atlas-span-full">
+                <dt>URL</dt>
+                <dd><input class="dispatch-link-field" type="text" value="{{ delivery_url }}" readonly></dd>
+            </div>
+        </dl>
+        <div class="dispatch-row-actions">
+            <a href="{{ delivery_url }}" target="_blank" rel="noopener">Abrir</a>
+            <form method="post" action="{{ url_for('dispatch.revoke_delivery_link', shipment_id=shipment.id) }}" data-confirm-message="¿Revocar este enlace de descarga?">
+                <button type="submit">Revocar</button>
+            </form>
+            <form method="post" action="{{ url_for('dispatch.regenerate_delivery_link', shipment_id=shipment.id) }}" data-confirm-message="¿Regenerar el enlace? El token anterior quedará revocado.">
+                <button type="submit">Regenerar</button>
+            </form>
+        </div>
+        {% else %}
+        <p>No hay enlace generado todavía.</p>
+        <form method="post" action="{{ url_for('dispatch.regenerate_delivery_link', shipment_id=shipment.id) }}">
+            <button type="submit" class="secondary-button compact-action">Generar enlace</button>
+        </form>
+        {% endif %}
+    </section>
+    {% elif shipment.delivery_method == "sftp" %}
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-sftp-title">
+        <h2 id="dispatch-sftp-title">Entrega</h2>
+        <dl class="coverage-meta-grid dispatch-compact-meta">
+            <div>
+                <dt>SFTP</dt>
+                <dd>{{ channel_display }}</dd>
+            </div>
+            {% if shipment.remote_path %}
+            <div>
+                <dt>Ruta remota</dt>
+                <dd>{{ shipment.remote_path }}</dd>
+            </div>
+            {% endif %}
+            <div>
+                <dt>Estado</dt>
+                <dd>{{ shipment.status }}</dd>
+            </div>
+        </dl>
+    </section>
+    {% endif %}
 
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-coverage-title">
         <h2 id="dispatch-coverage-title">Cobertura</h2>

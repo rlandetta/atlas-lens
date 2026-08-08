@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -8,8 +9,9 @@ from pathlib import Path
 from typing import TextIO
 from zoneinfo import ZoneInfo
 
-from app.config import DISPATCH_STORE_PATH
+from app.config import DELIVERY_LINKS_STORE_PATH, DELIVERY_ROOT, DISPATCH_STORE_PATH
 from app.dispatch import DispatchShipmentStore, DispatchStoreError
+from app.dispatch.delivery_links import DeliveryLinkStore
 from app.dispatch.scheduler import DispatchScheduler
 
 DISPLAY_TIMEZONE = ZoneInfo("America/Guayaquil")
@@ -28,14 +30,17 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m app.dispatch_worker",
         description="Revisa despachos programados de DISPATCH.",
     )
-    mode = parser.add_mutually_exclusive_group(required=True)
+    mode = parser.add_mutually_exclusive_group(required=False)
     mode.add_argument("--dry-run", action="store_true", help="Revisar sin modificar despachos.")
     mode.add_argument("--claim", action="store_true", help="Reclamar despachos vencidos sin enviarlos.")
+    parser.add_argument("--cleanup-deliveries", action="store_true", help="Limpiar paquetes sin links activos.")
     parser.add_argument(
         "--store-path",
         default=DISPATCH_STORE_PATH,
         help="Ruta opcional al dispatch_shipments.json.",
     )
+    parser.add_argument("--delivery-root", default=DELIVERY_ROOT, help="Ruta al directorio instance/deliveries.")
+    parser.add_argument("--links-store-path", default=DELIVERY_LINKS_STORE_PATH, help="Ruta a delivery_links.json.")
     return parser
 
 
@@ -147,12 +152,42 @@ def run_claim(store: DispatchShipmentStore, out: TextIO) -> int:
     return 0
 
 
+def run_cleanup(delivery_root: Path, link_store: DeliveryLinkStore, *, dry_run: bool, out: TextIO) -> int:
+    links = link_store.list_links()
+    active_shipment_ids = {
+        str(link.get("shipment_id", ""))
+        for link in links
+        if link_store.is_usable(link)
+    }
+    candidates = []
+    if delivery_root.exists():
+        for child in delivery_root.iterdir():
+            if child.is_dir() and child.name not in active_shipment_ids:
+                candidates.append(child)
+    print("DISPATCH cleanup: paquetes sin links activos", file=out)
+    if not candidates:
+        print("No hay paquetes para limpiar.", file=out)
+    for candidate in candidates:
+        print(f"- {'DRY-RUN' if dry_run else 'ELIMINADO'}: {candidate}", file=out)
+        if not dry_run:
+            shutil.rmtree(candidate)
+    print(f"Resumen: candidatos={len(candidates)} dry_run={dry_run}", file=out)
+    return 0
+
+
 def main(argv: list[str] | None = None, out: TextIO = sys.stdout, err: TextIO = sys.stderr) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     store = DispatchShipmentStore(Path(args.store_path))
 
     try:
+        if args.cleanup_deliveries:
+            return run_cleanup(
+                Path(args.delivery_root),
+                DeliveryLinkStore(Path(args.links_store_path)),
+                dry_run=bool(args.dry_run),
+                out=out,
+            )
         if args.dry_run:
             return run_dry_run(store, out)
         if args.claim:
@@ -160,6 +195,7 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout, err: TextIO = 
     except DispatchStoreError as error:
         print(f"ERROR: {error}", file=err)
         return 2
+    parser.print_help(out)
     return 2
 
 

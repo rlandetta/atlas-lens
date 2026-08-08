@@ -25,6 +25,16 @@ DISPATCH_STORE_PATH = os.getenv(
     "DISPATCH_STORE_PATH",
     os.path.join("instance", "dispatch_shipments.json"),
 )
+DELIVERY_ROOT = os.getenv(
+    "DELIVERY_ROOT",
+    os.path.join("instance", "deliveries"),
+)
+DELIVERY_LINKS_STORE_PATH = os.getenv(
+    "DELIVERY_LINKS_STORE_PATH",
+    os.path.join("instance", "delivery_links.json"),
+)
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+DELIVERY_REVOKED_RETENTION_DAYS = get_int_env("DELIVERY_REVOKED_RETENTION_DAYS", 7)
 SETTINGS_STORE_PATH = os.getenv(
     "SETTINGS_STORE_PATH",
     os.path.join("instance", "settings.json"),

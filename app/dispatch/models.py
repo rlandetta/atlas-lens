@@ -30,6 +30,7 @@ DISPATCH_TRANSITIONS = {
 }
 
 DEFAULT_DISPATCH_TIMEZONE = "America/Guayaquil"
+DELIVERY_METHODS = ("download_link", "sftp", "smtp", "api")
 
 
 class DispatchError(ValueError):
@@ -75,6 +76,12 @@ def normalize_shipment(shipment: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("timezone", DEFAULT_DISPATCH_TIMEZONE)
     normalized.setdefault("channel_id", "")
     normalized.setdefault("channel_name_snapshot", str(normalized.get("channel", "")))
+    normalized.setdefault("delivery_method", "smtp" if normalized.get("channel_id") else "download_link")
+    if normalized["delivery_method"] not in DELIVERY_METHODS:
+        normalized["delivery_method"] = "smtp"
+    normalized.setdefault("delivery_link_id", "")
+    normalized.setdefault("delivery_package", {})
+    normalized.setdefault("remote_path", "")
     normalized.setdefault("sent_at", "")
     normalized.setdefault("last_attempt_at", "")
     normalized.setdefault("attempt_count", 0)
@@ -121,6 +128,10 @@ class ShipmentDraft:
     channel: str = "manual"
     channel_id: str = ""
     channel_name_snapshot: str = ""
+    delivery_method: str = "download_link"
+    delivery_link_id: str = ""
+    delivery_package: dict[str, Any] | None = None
+    remote_path: str = ""
     export_reference: dict[str, Any] | None = None
     include_caption_docx: bool = False
     requested_delivery_mode: str = "draft"
@@ -146,6 +157,9 @@ def build_shipment(
     if not draft.photo_ids and not draft.include_caption_docx:
         raise DispatchValidationError("Seleccione al menos una fotografía o incluya el documento Word con captions.")
     status = validate_status(draft.status)
+    delivery_method = draft.delivery_method.strip() or "download_link"
+    if delivery_method not in DELIVERY_METHODS:
+        raise DispatchValidationError("Método de entrega no soportado.")
 
     shipment = {
         "id": shipment_id,
@@ -162,6 +176,10 @@ def build_shipment(
         "channel": draft.channel.strip() or "manual",
         "channel_id": draft.channel_id.strip(),
         "channel_name_snapshot": draft.channel_name_snapshot.strip(),
+        "delivery_method": delivery_method,
+        "delivery_link_id": draft.delivery_link_id.strip(),
+        "delivery_package": deepcopy(draft.delivery_package or {}),
+        "remote_path": draft.remote_path.strip(),
         "status": status,
         "scheduled_at": draft.scheduled_at.strip(),
         "timezone": draft.timezone.strip() or DEFAULT_DISPATCH_TIMEZONE,

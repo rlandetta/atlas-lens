@@ -8,7 +8,7 @@
     <div>
         <p class="coverage-id">SETTINGS</p>
         <h1>Canales de salida</h1>
-        <p class="subtitle">Cuentas SMTP disponibles para que DISPATCH prepare entregas futuras.</p>
+        <p class="subtitle">Canales de entrega disponibles para DISPATCH.</p>
     </div>
     <a href="{{ url_for('settings.new_channel') }}" class="secondary-button compact-action">Nuevo canal</a>
 </section>
@@ -19,8 +19,8 @@
     <article class="ui-card atlas-panel--compact settings-channel-card">
         <div class="settings-channel-main">
             <h2>{{ channel.name }}</h2>
-            <p>{{ channel.sender_email }}</p>
-            <p>{{ channel.smtp_host }} · {{ channel.smtp_port }} · {{ channel.smtp_security | upper }}</p>
+            <p>{% if channel.channel_type == "download_link" %}Enlace de descarga{% elif channel.channel_type == "sftp" %}SFTP{% elif channel.channel_type == "api" %}API · Próximamente{% else %}Correo (SMTP){% endif %}</p>
+            <p>{% if channel.channel_type == "sftp" %}{{ channel.host }} · {{ channel.port }} · {{ channel.remote_path }}{% elif channel.channel_type == "smtp" %}{{ channel.sender_email }} · {{ channel.smtp_host }} · {{ channel.smtp_port }} · {{ channel.smtp_security | upper }}{% else %}Sin credenciales locales{% endif %}</p>
         </div>
         <div class="settings-channel-badges">
             {% if channel.is_default %}<span class="dispatch-status-badge">Predeterminado</span>{% endif %}

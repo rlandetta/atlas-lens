@@ -39,6 +39,7 @@ class SettingsRoutesTest(unittest.TestCase):
             "id": "xinhua",
             "name": "Xinhua",
             "display_name": "Xinhua News Agency",
+            "channel_type": "smtp",
             "sender_email": "atlas@lavoceria.com",
             "reply_to": "desk@xinhua.com",
             "smtp_host": "smtp.zoho.com",
@@ -135,6 +136,37 @@ class SettingsRoutesTest(unittest.TestCase):
             self.service.resolve_channel_secret(channel)
         self.assertEqual(str(context.exception), "Credencial SMTP no configurada.")
 
+    def test_sftp_channel_stores_remote_fields_without_secret(self):
+        channel = self.create_channel(
+            id="xinhua-sftp",
+            name="Xinhua SFTP",
+            display_name="Xinhua SFTP",
+            channel_type="sftp",
+            sender_email="",
+            reply_to="",
+            smtp_host="",
+            smtp_username="",
+            credential_ref="ATLAS_SFTP_XINHUA",
+            host="sftp.example.com",
+            port="22",
+            username="atlas",
+            remote_path="/incoming",
+            host_key_fingerprint="SHA256:test",
+            smtp_password="do-not-store",
+        )
+
+        raw_json = self.settings_store_path.read_text(encoding="utf-8")
+        self.assertEqual(channel["channel_type"], "sftp")
+        self.assertEqual(channel["host"], "sftp.example.com")
+        self.assertEqual(channel["remote_path"], "/incoming")
+        self.assertNotIn("do-not-store", raw_json)
+
+    def test_download_link_and_api_types_are_visible(self):
+        body = self.client.get("/settings/channels/new").get_data(as_text=True)
+
+        self.assertIn("Enlace de descarga", body)
+        self.assertIn("API · Próximamente", body)
+
 
 class SettingsServiceStoreTest(unittest.TestCase):
     def setUp(self):
@@ -150,6 +182,7 @@ class SettingsServiceStoreTest(unittest.TestCase):
             id="xinhua",
             name="Xinhua",
             display_name="Xinhua",
+            channel_type="smtp",
             sender_email="atlas@lavoceria.com",
             reply_to="",
             smtp_host="smtp.zoho.com",
