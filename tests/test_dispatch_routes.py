@@ -161,10 +161,21 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(dashboard.status_code, 200)
         dashboard_body = dashboard.get_data(as_text=True)
+        self.assertIn("BIENVENIDO A ATLAS", dashboard_body)
         self.assertIn("Centro editorial", dashboard_body)
+        self.assertIn("MÓDULOS ACTIVOS", dashboard_body)
+        self.assertIn("SETTINGS", dashboard_body)
         self.assertIn("Abrir LENS", dashboard_body)
         self.assertIn("Abrir DISPATCH", dashboard_body)
+        self.assertIn("Abrir SETTINGS", dashboard_body)
+        self.assertIn('href="/lens"', dashboard_body)
+        self.assertIn('href="/dispatch/"', dashboard_body)
+        self.assertIn('href="/settings/"', dashboard_body)
+        self.assertIn("PRÓXIMOS MÓDULOS", dashboard_body)
         self.assertIn("NEXUS", dashboard_body)
+        self.assertIn("PULSE", dashboard_body)
+        self.assertIn("ARCHIVE", dashboard_body)
+        self.assertIn("Próximamente", dashboard_body)
         self.assertEqual(lens.status_code, 200)
         self.assertIn("Coberturas", lens.get_data(as_text=True))
 
@@ -547,6 +558,12 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn(".dispatch-photo-options,\n    .dispatch-recipient-row {\n        grid-template-columns: 1fr;", stylesheet)
         self.assertIn(".atlas-grid--2", stylesheet)
         self.assertIn("--page-max-width: 1450px;", stylesheet)
+        self.assertIn(".atlas-dashboard-hero", stylesheet)
+        self.assertIn(".atlas-module-grid", stylesheet)
+        self.assertIn(".atlas-upcoming-grid", stylesheet)
+        self.assertIn(".atlas-module-card__cta", stylesheet)
+        self.assertIn("@media (max-width: 1024px)", stylesheet)
+        self.assertIn("@media (max-width: 720px)", stylesheet)
         self.assertIn(".atlas-container", stylesheet)
         self.assertIn(".app-header-inner", stylesheet)
         self.assertIn(".atlas-panel--compact", stylesheet)
@@ -572,7 +589,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(self.coverages, self.original_coverages)
 
     def test_lens_route_uses_atlas_shell_with_lens_active(self):
-        response = self.client.get("/")
+        response = self.client.get("/lens")
 
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
