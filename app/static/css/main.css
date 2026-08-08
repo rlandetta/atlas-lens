@@ -3026,13 +3026,13 @@ h1 {
 
 .delivery-public-page {
     position: relative;
-    overflow: hidden;
     min-height: 100vh;
     margin: 0;
-    display: grid;
-    place-items: center;
-    padding: clamp(1rem, 3vw, 3rem);
-    background: radial-gradient(circle at top, rgba(184, 115, 51, 0.18), transparent 34%), #07111f;
+    overflow-x: hidden;
+    overflow-y: auto;
+    display: block;
+    padding: clamp(1rem, 3vw, 2.25rem) 0;
+    background: radial-gradient(circle at top, rgba(184, 115, 51, 0.16), transparent 34%), #07111f;
     color: #f8fafc;
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -3051,13 +3051,13 @@ h1 {
     opacity: 0;
     background-position: center;
     background-size: cover;
-    filter: blur(18px) saturate(0.62) brightness(0.5);
+    filter: blur(22px) saturate(0.54) brightness(0.42);
     transform: scale(1.02);
     transition: opacity 1.8s ease;
 }
 
 .delivery-background-layer.is-active {
-    opacity: 1;
+    opacity: 0.38;
 }
 
 .delivery-background-layer.is-loaded.is-active {
@@ -3068,8 +3068,8 @@ h1 {
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(circle at 50% 40%, rgba(7, 17, 31, 0.72), rgba(7, 17, 31, 0.94) 68%),
-        rgba(7, 17, 31, 0.82);
+        radial-gradient(circle at 50% 26%, rgba(7, 17, 31, 0.62), rgba(7, 17, 31, 0.96) 70%),
+        linear-gradient(180deg, rgba(7, 17, 31, 0.82), rgba(7, 17, 31, 0.94));
 }
 
 @keyframes deliveryKenBurns {
@@ -3082,71 +3082,155 @@ h1 {
     }
 }
 
-.delivery-public-card {
+.delivery-public-shell {
     position: relative;
     z-index: 1;
-    width: min(860px, 100%);
-    border: 1px solid rgba(148, 163, 184, 0.22);
-    border-radius: 24px;
-    padding: clamp(1.35rem, 3vw, 2.4rem);
-    background: rgba(15, 23, 42, 0.91);
-    backdrop-filter: blur(10px);
-    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
-}
-
-.delivery-summary-meta {
+    width: min(1120px, 92vw);
+    margin: 0 auto;
     display: grid;
-    gap: 0.25rem;
-    margin: 1rem 0 1.15rem;
+    gap: 0.95rem;
 }
 
-.delivery-summary-meta dt {
-    color: #94a3b8;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+.delivery-hero,
+.delivery-file-summary,
+.delivery-section {
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.9);
+    backdrop-filter: blur(10px);
 }
 
-.delivery-summary-meta dd {
-    margin: 0;
-    color: #dce5ef;
+.delivery-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.25rem;
+    min-height: 148px;
+    border-radius: 18px;
+    padding: clamp(1rem, 2.2vw, 1.55rem);
+}
+
+.delivery-hero-copy {
+    min-width: 0;
+}
+
+.delivery-hero h1 {
+    margin: 0.08rem 0 0.28rem;
+    color: #f8fafc;
+    font-size: clamp(1.45rem, 3vw, 2.25rem);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+}
+
+.delivery-expiration {
+    margin: 0.34rem 0 0;
+    color: #aeb9c8;
+    font-size: 0.9rem;
 }
 
 .delivery-download-all {
-    min-height: 42px;
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding-inline: 1.1rem;
 }
 
-.delivery-file-list {
+.delivery-file-summary {
     display: grid;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+    border-radius: 14px;
+    padding: 0.7rem 0.9rem;
+}
+
+.delivery-file-summary div {
+    min-width: 0;
+}
+
+.delivery-file-summary span,
+.delivery-section-header span,
+.delivery-file-row p {
+    color: #94a3b8;
+}
+
+.delivery-file-summary span {
+    display: block;
+    margin-bottom: 0.12rem;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+}
+
+.delivery-file-summary strong {
+    display: block;
+    color: #e5edf7;
+    font-size: 0.94rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.delivery-section {
+    border-radius: 16px;
+    padding: 0.78rem;
+}
+
+.delivery-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.65rem;
+}
+
+.delivery-section-header h2 {
+    margin: 0;
+    color: #f8fafc;
+    font-size: 0.82rem;
+    font-weight: 850;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.delivery-section-header span {
+    font-size: 0.8rem;
+}
+
+.delivery-photo-grid,
+.delivery-document-list {
+    display: grid;
+    gap: 0.5rem;
 }
 
 .delivery-file-row {
     display: grid;
-    grid-template-columns: 72px 1fr auto;
-    gap: 1rem;
+    grid-template-columns: 56px minmax(0, 1fr) auto;
+    gap: 0.72rem;
     align-items: center;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    border-radius: 18px;
-    padding: 0.75rem;
-    background: rgba(15, 23, 42, 0.64);
+    min-height: 64px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 10px;
+    padding: 0.46rem 0.55rem;
+    background: rgba(15, 23, 42, 0.58);
 }
 
 .delivery-file-thumb {
     display: grid;
     place-items: center;
-    width: 72px;
-    height: 54px;
+    width: 56px;
+    height: 44px;
     overflow: hidden;
-    border-radius: 12px;
-    background: #001450;
-    color: #fff;
-    font-size: 0.72rem;
-    font-weight: 700;
+    border-radius: 8px;
+    background: rgba(0, 20, 80, 0.72);
+    color: #d8e2ef;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.delivery-file-thumb--document {
+    background: rgba(163, 107, 44, 0.2);
+    color: #f4b46b;
+    font-size: 0.62rem;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
 }
 
 .delivery-file-thumb img {
@@ -3156,14 +3240,46 @@ h1 {
     object-fit: cover;
 }
 
-.delivery-file-row p {
-    margin: 0.2rem 0 0;
-    color: #94a3b8;
+.delivery-file-copy {
+    min-width: 0;
 }
 
-.delivery-file-row a {
+.delivery-file-copy strong {
+    display: block;
+    overflow: hidden;
+    color: #f1f5f9;
+    font-size: 0.9rem;
+    font-weight: 760;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.delivery-file-row p {
+    margin: 0.16rem 0 0;
+    font-size: 0.76rem;
+}
+
+.delivery-file-action {
+    border-radius: 999px;
+    padding: 0.34rem 0.7rem;
     color: #f4b46b;
-    font-weight: 700;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.delivery-file-action:hover,
+.delivery-file-action:focus-visible {
+    background: rgba(244, 180, 107, 0.12);
+    outline: 1px solid rgba(244, 180, 107, 0.38);
+    outline-offset: 2px;
+}
+
+@media (min-width: 1100px) {
+    .delivery-photo-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 .atlas-dashboard {

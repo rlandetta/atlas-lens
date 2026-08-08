@@ -41,10 +41,19 @@ def format_expiration(value: str) -> str:
     return parsed.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
 
 
-def public_files(manifest: dict[str, Any], previews: list[dict[str, Any]] | None = None, token: str = "") -> list[dict[str, Any]]:
-    preview_by_file = {
+def format_bytes(value: int) -> str:
+    size = float(value or 0)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.1f} {unit}" if unit != "B" else f"{int(size)} B"
+        size /= 1024
+    return f"{int(value)} B"
+
+
+def public_files(manifest: dict[str, Any], thumbnails: list[dict[str, Any]] | None = None, token: str = "") -> list[dict[str, Any]]:
+    thumbnail_by_file = {
         str(preview.get("file_id", "")): preview
-        for preview in previews or []
+        for preview in thumbnails or []
         if isinstance(preview, dict)
     }
     items = []
@@ -56,30 +65,31 @@ def public_files(manifest: dict[str, Any], previews: list[dict[str, Any]] | None
             "filename": str(item.get("filename", "")),
             "type": str(item.get("type", "")),
             "size": int(item.get("size") or 0),
-            "preview_url": "",
+            "size_label": format_bytes(int(item.get("size") or 0)),
+            "thumbnail_url": "",
         }
-        preview = preview_by_file.get(public_item["id"])
-        if token and preview:
-            public_item["preview_url"] = url_for(
+        thumbnail = thumbnail_by_file.get(public_item["id"])
+        if token and thumbnail:
+            public_item["thumbnail_url"] = url_for(
                 "downloads.preview",
                 token=token,
-                preview_id=str(preview.get("id", "")),
+                preview_id=str(thumbnail.get("id", "")),
             )
         items.append(public_item)
     return items
 
 
-def public_backgrounds(previews: list[dict[str, Any]], token: str, *, limit: int = 4) -> list[dict[str, str]]:
-    backgrounds = []
-    for preview in previews[:limit]:
+def public_backgrounds(backgrounds: list[dict[str, Any]], token: str, *, limit: int = 4) -> list[dict[str, str]]:
+    public_items = []
+    for preview in backgrounds[:limit]:
         preview_id = str(preview.get("id", "")).strip()
         if not preview_id:
             continue
-        backgrounds.append({
+        public_items.append({
             "id": preview_id,
             "url": url_for("downloads.preview", token=token, preview_id=preview_id),
         })
-    return backgrounds
+    return public_items
 
 
 @downloads_bp.get("/d/<token>")
@@ -91,19 +101,25 @@ def landing(token: str) -> str:
     except DeliveryPackageError:
         abort(404)
     preview_service = get_services().get("delivery_preview_service")
-    previews = preview_service.ensure_previews(str(shipment.get("id", "")), manifest, limit=4) if preview_service else []
-    files = public_files(manifest, previews, token=token)
-    photo_count = sum(1 for item in files if item["type"] == "photo")
-    docx_included = any(item["type"] == "document" for item in files)
+    preview_payload = preview_service.ensure_previews(str(shipment.get("id", "")), manifest, background_limit=4) if preview_service else {"thumbnails": [], "backgrounds": []}
+    files = public_files(manifest, preview_payload.get("thumbnails", []), token=token)
+    photo_files = [item for item in files if item["type"] == "photo"]
+    document_files = [item for item in files if item["type"] == "document"]
+    photo_count = len(photo_files)
+    docx_included = bool(document_files)
     return render_template(
         "downloads/landing.html",
         token=token,
         link=link,
         shipment=shipment,
         files=files,
-        backgrounds=public_backgrounds(previews, token, limit=4),
+        photo_files=photo_files,
+        document_files=document_files,
+        backgrounds=public_backgrounds(preview_payload.get("backgrounds", []), token, limit=4),
         photo_count=photo_count,
+        document_count=len(document_files),
         docx_included=docx_included,
+        total_bytes_label=format_bytes(int(manifest.get("total_bytes") or 0)),
         expires_at_display=format_expiration(str(link.get("expires_at", ""))),
     )
 

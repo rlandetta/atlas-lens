@@ -8,39 +8,83 @@
 </head>
 <body class="delivery-public-page{% if backgrounds %} has-delivery-backgrounds{% endif %}" data-delivery-backgrounds='{{ backgrounds | tojson }}'>
     <div class="delivery-background" aria-hidden="true">
-        <div class="delivery-background-layer is-active" data-delivery-background-layer></div>
+        <div class="delivery-background-layer" data-delivery-background-layer></div>
         <div class="delivery-background-layer" data-delivery-background-layer></div>
         <div class="delivery-background-overlay"></div>
     </div>
-    <main class="delivery-public-card">
-        <p class="coverage-id">ATLAS DISPATCH</p>
-        <h1>{{ shipment.coverage_snapshot.coverage_name or shipment.name }}</h1>
-        <p class="subtitle">{{ photo_count }} fotografía{% if photo_count != 1 %}s{% endif %}{% if docx_included %} · Documento Word incluido{% endif %}</p>
-        <dl class="delivery-summary-meta">
-            <div>
-                <dt>Activo hasta</dt>
-                <dd>{{ expires_at_display }}</dd>
+    <main class="delivery-public-shell" aria-labelledby="delivery-title">
+        <header class="delivery-hero">
+            <div class="delivery-hero-copy">
+                <p class="coverage-id">ATLAS DISPATCH</p>
+                <h1 id="delivery-title">{{ shipment.coverage_snapshot.coverage_name or shipment.name }}</h1>
+                <p class="subtitle">{{ photo_count }} fotografía{% if photo_count != 1 %}s{% endif %}{% if docx_included %} · Documento Word incluido{% endif %}</p>
+                <p class="delivery-expiration">Disponible hasta {{ expires_at_display }}</p>
             </div>
-        </dl>
-        <a class="primary-button compact-action delivery-download-all" href="{{ url_for('downloads.download_zip', token=token) }}">Descargar todo</a>
-        <section class="delivery-file-list" aria-label="Archivos disponibles">
-            {% for file in files %}
-            <article class="delivery-file-row">
-                <div class="delivery-file-thumb">
-                    {% if file.type == 'photo' and file.preview_url %}
-                    <img src="{{ file.preview_url }}" alt="" loading="lazy" decoding="async">
-                    {% else %}
-                    <span>{% if file.type == 'photo' %}Foto{% else %}DOCX{% endif %}</span>
-                    {% endif %}
-                </div>
-                <div>
-                    <strong>{{ file.filename }}</strong>
-                    <p>{% if file.type == 'photo' %}Fotografía{% elif file.type == 'document' %}Documento Word{% else %}{{ file.type }}{% endif %}</p>
-                </div>
-                <a href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">Descargar</a>
-            </article>
-            {% endfor %}
+            <a class="primary-button compact-action delivery-download-all" href="{{ url_for('downloads.download_zip', token=token) }}">Descargar todo</a>
+        </header>
+
+        <section class="delivery-file-summary" aria-label="Resumen de archivos">
+            <div>
+                <span>Archivos</span>
+                <strong>{{ photo_count }} fotografía{% if photo_count != 1 %}s{% endif %}</strong>
+            </div>
+            <div>
+                <span>Documentos</span>
+                <strong>{{ document_count }}</strong>
+            </div>
+            <div>
+                <span>Tamaño total</span>
+                <strong>{{ total_bytes_label }}</strong>
+            </div>
         </section>
+
+        <section class="delivery-section" aria-labelledby="delivery-photos-title">
+            <div class="delivery-section-header">
+                <h2 id="delivery-photos-title">Fotografías</h2>
+                <span>{{ photo_count }}</span>
+            </div>
+            <div class="delivery-photo-grid">
+                {% for file in photo_files %}
+                <article class="delivery-file-row delivery-file-row--photo">
+                    <div class="delivery-file-thumb" aria-hidden="true">
+                        {% if file.thumbnail_url %}
+                        <img src="{{ file.thumbnail_url }}" alt="" loading="lazy" decoding="async">
+                        {% else %}
+                        <span aria-hidden="true">▧</span>
+                        {% endif %}
+                    </div>
+                    <div class="delivery-file-copy">
+                        <strong title="{{ file.filename }}">{{ file.filename }}</strong>
+                        <p>Fotografía{% if file.size_label %} · {{ file.size_label }}{% endif %}</p>
+                    </div>
+                    <a class="delivery-file-action" href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">Descargar</a>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% if document_files %}
+        <section class="delivery-section delivery-section--documents" aria-labelledby="delivery-documents-title">
+            <div class="delivery-section-header">
+                <h2 id="delivery-documents-title">Documentos</h2>
+                <span>{{ document_count }}</span>
+            </div>
+            <div class="delivery-document-list">
+                {% for file in document_files %}
+                <article class="delivery-file-row delivery-file-row--document">
+                    <div class="delivery-file-thumb delivery-file-thumb--document" aria-hidden="true">
+                        <span>DOCX</span>
+                    </div>
+                    <div class="delivery-file-copy">
+                        <strong title="{{ file.filename }}">{{ file.filename }}</strong>
+                        <p>Documento Word{% if file.size_label %} · {{ file.size_label }}{% endif %}</p>
+                    </div>
+                    <a class="delivery-file-action" href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">Descargar</a>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
     </main>
     <script src="{{ url_for('static', filename='js/delivery_backgrounds.js') }}" defer></script>
 </body>
