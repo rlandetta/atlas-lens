@@ -42,7 +42,7 @@ def create_app():
         LENS_MAX_PHOTO_BYTES,
         LENS_MEDIA_ROOT,
     )
-    from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DispatchShipmentStore, ShipmentService, SMTPLinkTransport
+    from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DeliveryPreviewService, DispatchShipmentStore, ShipmentService, SMTPLinkTransport
     from app.lens import LensCoverageStore
     from app.settings import SettingsService, SettingsStore
     from app.lens_read_service import LensReadService
@@ -62,6 +62,7 @@ def create_app():
     delivery_link_store = DeliveryLinkStore(DELIVERY_LINKS_STORE_PATH)
     delivery_link_service = DeliveryLinkService(delivery_link_store, PUBLIC_BASE_URL)
     delivery_package_service = DeliveryPackageService(delivery_root=DELIVERY_ROOT, media_root=LENS_MEDIA_ROOT)
+    delivery_preview_service = DeliveryPreviewService(delivery_root=DELIVERY_ROOT)
     settings_store = SettingsStore(SETTINGS_STORE_PATH)
     settings_service = SettingsService(settings_store)
     smtp_transport = SMTPLinkTransport(settings_service=settings_service)
@@ -80,6 +81,7 @@ def create_app():
         "delivery_link_store": delivery_link_store,
         "delivery_link_service": delivery_link_service,
         "delivery_package_service": delivery_package_service,
+        "delivery_preview_service": delivery_preview_service,
         "smtp_transport": smtp_transport,
         "shipment_service": ShipmentService(
             store=dispatch_store,

@@ -6,25 +6,42 @@
     <title>Descarga editorial | ATLAS</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
-<body class="delivery-public-page">
+<body class="delivery-public-page{% if backgrounds %} has-delivery-backgrounds{% endif %}" data-delivery-backgrounds='{{ backgrounds | tojson }}'>
+    <div class="delivery-background" aria-hidden="true">
+        <div class="delivery-background-layer is-active" data-delivery-background-layer></div>
+        <div class="delivery-background-layer" data-delivery-background-layer></div>
+        <div class="delivery-background-overlay"></div>
+    </div>
     <main class="delivery-public-card">
         <p class="coverage-id">ATLAS DISPATCH</p>
         <h1>{{ shipment.coverage_snapshot.coverage_name or shipment.name }}</h1>
         <p class="subtitle">{{ photo_count }} fotografía{% if photo_count != 1 %}s{% endif %}{% if docx_included %} · Documento Word incluido{% endif %}</p>
-        <p class="delivery-expiration">Activo hasta: {{ expires_at_display }}</p>
-        <a class="primary-button compact-action" href="{{ url_for('downloads.download_zip', token=token) }}">Descargar todo</a>
+        <dl class="delivery-summary-meta">
+            <div>
+                <dt>Activo hasta</dt>
+                <dd>{{ expires_at_display }}</dd>
+            </div>
+        </dl>
+        <a class="primary-button compact-action delivery-download-all" href="{{ url_for('downloads.download_zip', token=token) }}">Descargar todo</a>
         <section class="delivery-file-list" aria-label="Archivos disponibles">
             {% for file in files %}
             <article class="delivery-file-row">
-                <div class="delivery-file-thumb">{% if file.type == 'photo' %}Foto{% else %}DOCX{% endif %}</div>
+                <div class="delivery-file-thumb">
+                    {% if file.type == 'photo' and file.preview_url %}
+                    <img src="{{ file.preview_url }}" alt="" loading="lazy" decoding="async">
+                    {% else %}
+                    <span>{% if file.type == 'photo' %}Foto{% else %}DOCX{% endif %}</span>
+                    {% endif %}
+                </div>
                 <div>
                     <strong>{{ file.filename }}</strong>
-                    <p>{{ file.type }}</p>
+                    <p>{% if file.type == 'photo' %}Fotografía{% elif file.type == 'document' %}Documento Word{% else %}{{ file.type }}{% endif %}</p>
                 </div>
                 <a href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">Descargar</a>
             </article>
             {% endfor %}
         </section>
     </main>
+    <script src="{{ url_for('static', filename='js/delivery_backgrounds.js') }}" defer></script>
 </body>
 </html>

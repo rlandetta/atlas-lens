@@ -1,7 +1,9 @@
 import json
 import tempfile
 import unittest
+import zipfile
 from datetime import datetime, timedelta, timezone
+from html import unescape
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +11,7 @@ from app import create_app
 from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DispatchShipmentStore, ShipmentService
 from app.dispatch.delivery_links import DeliveryLinkStore as RawDeliveryLinkStore
 from app.dispatch.delivery_package import DeliveryPackageError
+from app.dispatch.delivery_previews import DeliveryPreviewService
 from app.dispatch.smtp_transport import SMTPTransportError
 from app.lens_read_service import LensReadService
 from app.settings import OutboundChannelDraft
@@ -174,6 +177,16 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertIsNotNone(link)
         return shipment, link
 
+    def write_preview_manifest(self, shipment_id, previews):
+        previews_dir = self.delivery_root / shipment_id / "previews"
+        previews_dir.mkdir(parents=True, exist_ok=True)
+        for preview in previews:
+            (previews_dir / preview["filename"]).write_bytes(b"preview-jpeg")
+        (previews_dir / "previews.json").write_text(
+            json.dumps({"previews": previews}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
     def create_smtp_channel(self):
         return self.app.extensions["settings"]["settings_service"].create_outbound_channel(
             OutboundChannelDraft(
@@ -227,6 +240,87 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
     def test_download_routes_reject_path_traversal_file_ids(self):
         _, link = self.create_ready_link_shipment()
         self.assertEqual(self.client.get(f"/d/{link['token']}/file/../../etc/passwd").status_code, 404)
+
+    def test_public_landing_works_without_previews_and_keeps_downloads(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        landing = self.client.get(f"/d/{link['token']}")
+        zip_response = self.client.get(f"/d/{link['token']}/download")
+        file_response = self.client.get(f"/d/{link['token']}/file/photo-1")
+
+        self.assertEqual(landing.status_code, 200)
+        body = landing.get_data(as_text=True)
+        self.assertIn("data-delivery-backgrounds='[]'", body)
+        self.assertIn("delivery_backgrounds.js", body)
+        self.assertIn("Descargar todo", body)
+        self.assertIn("ATLAS DISPATCH", body)
+        self.assertNotIn("<img", body)
+        self.assertEqual(zip_response.status_code, 200)
+        self.assertEqual(file_response.status_code, 200)
+        self.assertEqual(self.app.extensions["lens"]["coverage_store"].get("cov-1")["photos"][0]["storage_path"], "coverages/cov-1/photo-1_IMG001.jpg")
+        manifest = self.app.extensions["dispatch"]["delivery_package_service"].load_manifest(shipment["id"])
+        self.assertFalse(any(str(item.get("path", "")).startswith("previews/") for item in manifest["files"]))
+        with zipfile.ZipFile(self.delivery_root / shipment["id"] / "package.zip") as archive:
+            self.assertFalse(any(name.startswith("previews/") for name in archive.namelist()))
+
+    def test_public_landing_uses_registered_previews_for_backgrounds_and_lazy_thumbnails(self):
+        shipment, link = self.create_ready_link_shipment()
+        previews = [
+            {"id": "photo-1", "file_id": "photo-1", "filename": "photo-1.jpg", "path": "previews/photo-1.jpg", "size": 12},
+            {"id": "photo-2", "file_id": "photo-2", "filename": "photo-2.jpg", "path": "previews/photo-2.jpg", "size": 12},
+            {"id": "photo-3", "file_id": "photo-3", "filename": "photo-3.jpg", "path": "previews/photo-3.jpg", "size": 12},
+            {"id": "photo-4", "file_id": "photo-4", "filename": "photo-4.jpg", "path": "previews/photo-4.jpg", "size": 12},
+            {"id": "photo-5", "file_id": "photo-5", "filename": "photo-5.jpg", "path": "previews/photo-5.jpg", "size": 12},
+        ]
+        self.write_preview_manifest(shipment["id"], previews)
+
+        response = self.client.get(f"/d/{link['token']}")
+
+        self.assertEqual(response.status_code, 200)
+        body = unescape(response.get_data(as_text=True))
+        self.assertIn(f"/d/{link['token']}/preview/photo-1", body)
+        self.assertIn('loading="lazy"', body)
+        self.assertIn('decoding="async"', body)
+        self.assertNotIn(f"/d/{link['token']}/file/photo-1", body.split("<img", 1)[-1].split(">", 1)[0])
+        self.assertEqual(len(DeliveryPreviewService.select_backgrounds(previews, limit=4)), 4)
+
+    def test_preview_route_is_token_bound_safe_and_decorative(self):
+        shipment, link = self.create_ready_link_shipment()
+        self.write_preview_manifest(shipment["id"], [
+            {"id": "photo-1", "file_id": "photo-1", "filename": "photo-1.jpg", "path": "previews/photo-1.jpg", "size": 12},
+        ])
+
+        preview_response = self.client.get(f"/d/{link['token']}/preview/photo-1")
+        traversal_response = self.client.get(f"/d/{link['token']}/preview/../../package.zip")
+        missing_response = self.client.get(f"/d/{link['token']}/preview/missing")
+        zip_response = self.client.get(f"/d/{link['token']}/download")
+        file_response = self.client.get(f"/d/{link['token']}/file/photo-1")
+
+        self.assertEqual(preview_response.status_code, 200)
+        self.assertEqual(preview_response.mimetype, "image/jpeg")
+        self.assertIn("max-age=86400", preview_response.headers["Cache-Control"])
+        self.assertEqual(traversal_response.status_code, 404)
+        self.assertEqual(missing_response.status_code, 404)
+        self.assertEqual(zip_response.status_code, 200)
+        self.assertEqual(file_response.status_code, 200)
+
+    def test_expired_and_revoked_links_do_not_expose_previews(self):
+        shipment, link = self.create_ready_link_shipment()
+        self.write_preview_manifest(shipment["id"], [
+            {"id": "photo-1", "file_id": "photo-1", "filename": "photo-1.jpg", "path": "previews/photo-1.jpg", "size": 12},
+        ])
+        expired = self.app.extensions["dispatch"]["delivery_link_store"].update(
+            link["id"],
+            {"expires_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()},
+        )
+
+        self.assertEqual(self.client.get(f"/d/{expired['token']}").status_code, 404)
+        self.assertEqual(self.client.get(f"/d/{expired['token']}/preview/photo-1").status_code, 404)
+
+        new_link = self.app.extensions["dispatch"]["delivery_link_service"].regenerate_for_shipment(shipment["id"])
+        self.app.extensions["dispatch"]["delivery_link_service"].revoke_for_shipment(shipment["id"])
+        self.assertEqual(self.client.get(f"/d/{new_link['token']}").status_code, 404)
+        self.assertEqual(self.client.get(f"/d/{new_link['token']}/preview/photo-1").status_code, 404)
 
     def test_download_link_email_sends_only_link_and_marks_sent(self):
         channel = self.create_smtp_channel()

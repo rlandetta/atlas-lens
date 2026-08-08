@@ -9,6 +9,7 @@ from app.dispatch.models import (
 )
 from app.dispatch.delivery_links import DeliveryLinkService, DeliveryLinkStore
 from app.dispatch.delivery_package import DeliveryPackageService
+from app.dispatch.delivery_previews import DeliveryPreviewError, DeliveryPreviewService
 from app.dispatch.scheduler import DispatchScheduler
 from app.dispatch.service import DispatchHandoffService, ShipmentService
 from app.dispatch.smtp_transport import SMTPLinkTransport, SMTPTransportError
@@ -21,6 +22,8 @@ __all__ = [
     "DeliveryLinkService",
     "DeliveryLinkStore",
     "DeliveryPackageService",
+    "DeliveryPreviewError",
+    "DeliveryPreviewService",
     "DispatchError",
     "DispatchHandoffService",
     "DispatchScheduler",

@@ -564,6 +564,21 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn(".atlas-module-card__cta", stylesheet)
         self.assertIn("@media (max-width: 1024px)", stylesheet)
         self.assertIn("@media (max-width: 720px)", stylesheet)
+
+    def test_delivery_public_background_assets_are_lightweight_and_accessible(self):
+        root = Path(__file__).parents[1]
+        stylesheet = (root / "app" / "static" / "css" / "main.css").read_text()
+        script = (root / "app" / "static" / "js" / "delivery_backgrounds.js").read_text()
+
+        self.assertIn(".delivery-background-layer", stylesheet)
+        self.assertIn("filter: blur(18px) saturate(0.62) brightness(0.5);", stylesheet)
+        self.assertIn("@media (prefers-reduced-motion: reduce)", stylesheet)
+        self.assertIn("@keyframes deliveryKenBurns", stylesheet)
+        self.assertIn("data-delivery-backgrounds", script)
+        self.assertIn("setInterval", script)
+        self.assertIn("9000", script)
+        self.assertIn("prefers-reduced-motion: reduce", script)
+        self.assertLess((root / "app" / "static" / "js" / "delivery_backgrounds.js").stat().st_size, 5 * 1024)
         self.assertIn(".atlas-container", stylesheet)
         self.assertIn(".app-header-inner", stylesheet)
         self.assertIn(".atlas-panel--compact", stylesheet)
