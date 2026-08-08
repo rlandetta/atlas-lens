@@ -30,36 +30,30 @@
                 <label for="delivery_method">Método de entrega</label>
                 <select id="delivery_method" name="delivery_method" required>
                     <option value="download_link" {% if (form_data.delivery_method or "download_link") == "download_link" %}selected{% endif %}>Enlace de descarga · recomendado</option>
-                    <option value="sftp" {% if form_data.delivery_method == "sftp" %}selected{% endif %}>SFTP</option>
-                    <option value="smtp" {% if form_data.delivery_method == "smtp" %}selected{% endif %}>Correo (SMTP)</option>
-                    <option value="api" disabled>API · Próximamente</option>
+                    <option value="download_link_email" {% if form_data.delivery_method == "download_link_email" %}selected{% endif %}>Enlace de descarga + correo</option>
                 </select>
-                <small class="field-help">Enlace de descarga genera una página segura para descargar fotografías y documentos.</small>
-                {% if not outbound_channels %}
-                <small class="field-help">No hay canales de salida configurados. <a href="{{ url_for('settings.channels') }}">Configurar canales</a></small>
+                <small class="field-help">El correo envía únicamente el enlace generado. No se adjuntan fotografías ni documentos.</small>
+                {% if not smtp_channels %}
+                <small class="field-help">No hay canales SMTP activos. <a href="{{ url_for('settings.channels') }}">Configurar canales</a></small>
                 {% endif %}
             </div>
             <div class="form-field">
                 <label for="channel_id">Canal configurado</label>
                 {% set current_method = form_data.delivery_method or "download_link" %}
-                {% if current_method in ["sftp", "smtp"] and channel_groups[current_method] %}
-                <select id="channel_id" name="channel_id">
-                    {% for channel in channel_groups[current_method] %}
+                {% if smtp_channels %}
+                <select id="channel_id" name="channel_id" data-smtp-channel-select {% if current_method != "download_link_email" %}disabled{% endif %}>
+                    {% for channel in smtp_channels %}
                     <option value="{{ channel.id }}" {% if form_data.channel_id == channel.id %}selected{% endif %}>{{ channel.name }}</option>
                     {% endfor %}
                 </select>
-                <input type="hidden" name="channel" value="{{ current_method }}">
-                {% elif current_method in ["sftp", "smtp"] %}
-                <select id="channel" name="channel">
-                    {% for channel in channel_options %}
-                    <option value="{{ channel }}" {% if (form_data.channel or "Manual") == channel %}selected{% endif %}>{{ channel }}</option>
-                    {% endfor %}
-                </select>
-                <p class="field-help">No hay canales {{ "SFTP" if current_method == "sftp" else "SMTP" }} activos. <a href="{{ url_for('settings.channels') }}">Configurar canales</a></p>
+                <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
+                <p class="field-help" data-link-only-help {% if current_method == "download_link_email" %}hidden aria-hidden="true"{% endif %}>No requiere credenciales SMTP. El enlace podrá copiarse desde el detalle.</p>
+                <p class="field-help" data-smtp-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>Se enviará un correo con el enlace generado, sin adjuntos.</p>
                 {% else %}
-                <input type="hidden" name="channel" value="Enlace de descarga">
-                <input type="hidden" name="channel_id" value="">
-                <p class="field-help">No requiere credenciales. API estará disponible próximamente.</p>
+                <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
+                <input type="hidden" name="channel_id" value="" data-smtp-channel-select>
+                <p class="field-help" data-link-only-help {% if current_method == "download_link_email" %}hidden aria-hidden="true"{% endif %}>No requiere credenciales SMTP. El enlace podrá copiarse desde el detalle.</p>
+                <p class="field-help" data-smtp-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>No hay canales SMTP activos. <a href="{{ url_for('settings.channels') }}">Configurar canales</a></p>
                 {% endif %}
             </div>
             <div class="form-field">

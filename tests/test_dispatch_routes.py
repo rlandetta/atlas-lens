@@ -155,6 +155,19 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("No hay despachos todavía", body)
         self.assertNotIn("Cobertura activa", body)
 
+    def test_home_dashboard_and_lens_route_are_separate(self):
+        dashboard = self.client.get("/")
+        lens = self.client.get("/lens")
+
+        self.assertEqual(dashboard.status_code, 200)
+        dashboard_body = dashboard.get_data(as_text=True)
+        self.assertIn("Centro editorial", dashboard_body)
+        self.assertIn("Abrir LENS", dashboard_body)
+        self.assertIn("Abrir DISPATCH", dashboard_body)
+        self.assertIn("NEXUS", dashboard_body)
+        self.assertEqual(lens.status_code, 200)
+        self.assertIn("Coberturas", lens.get_data(as_text=True))
+
     def test_get_dispatch_index_with_history_table(self):
         self.create_shipment()
 
@@ -468,7 +481,13 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Selecciona únicamente fotografías con caption y archivo disponible para envío.", response.get_data(as_text=True))
 
     def test_post_dispatch_new_missing_recipients(self):
-        response = self.post_new(**{"recipient_name[]": [""], "recipient_email[]": [""]})
+        channel = self.create_outbound_channel()
+        response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
+            **{"recipient_name[]": [""], "recipient_email[]": [""]},
+        )
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("Agrega al menos un destinatario.", response.get_data(as_text=True))
@@ -1017,27 +1036,29 @@ class DispatchRoutesTest(unittest.TestCase):
         body = self.client.get("/dispatch/new").get_data(as_text=True)
 
         self.assertIn('value="download_link" selected', body)
-        self.assertIn("Correo (SMTP)", body)
+        self.assertIn("Enlace de descarga + correo", body)
+        self.assertNotIn(">SFTP</option>", body)
+        self.assertNotIn("API · Próximamente", body)
         self.assertNotIn("Inactivo", body)
-        self.assertNotIn("No hay canales de salida configurados", body)
+        self.assertNotIn("No hay canales SMTP activos", body)
 
-        response = self.post_new(delivery_method="smtp", channel="smtp", channel_id=default["id"])
+        response = self.post_new(delivery_method="download_link_email", channel="Correo (SMTP)", channel_id=default["id"])
         self.assertEqual(response.status_code, 302)
         shipment = self.shipment_service.list_shipments()[0]
         self.assertEqual(shipment["channel_id"], default["id"])
         self.assertEqual(shipment["channel_name_snapshot"], "Xinhua")
-        self.assertEqual(shipment["delivery_method"], "smtp")
+        self.assertEqual(shipment["delivery_method"], "download_link_email")
 
     def test_dispatch_new_shows_settings_link_when_no_channels_exist(self):
         body = self.client.get("/dispatch/new").get_data(as_text=True)
 
-        self.assertIn("No hay canales de salida configurados", body)
+        self.assertIn("No hay canales SMTP activos", body)
         self.assertIn('href="/settings/channels"', body)
         self.assertIn('name="channel"', body)
 
     def test_dispatch_snapshot_survives_deleted_settings_channel(self):
         self.create_outbound_channel(id="xinhua", name="Xinhua", credential_ref="ATLAS_SMTP_CHANNEL_XINHUA")
-        shipment = self.create_docx_shipment_from_route(delivery_method="smtp", channel="smtp", channel_id="xinhua")
+        shipment = self.create_docx_shipment_from_route(delivery_method="download_link_email", channel="Correo (SMTP)", channel_id="xinhua")
         self.app.extensions["settings"]["settings_service"].delete_outbound_channel("xinhua")
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)

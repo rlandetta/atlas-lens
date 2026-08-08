@@ -90,9 +90,12 @@
         {% endif %}
     </section>
 
-    {% if shipment.delivery_method == "download_link" %}
+    {% if shipment.delivery_method in ["download_link", "download_link_email"] %}
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-link-title">
         <h2 id="dispatch-link-title">Entrega</h2>
+        {% if shipment.delivery_method == "download_link_email" and shipment.status == "Error" and shipment.last_error %}
+        <p class="dispatch-delivery-warning">Enlace generado correctamente; el correo no pudo enviarse.</p>
+        {% endif %}
         {% if delivery_link %}
         <dl class="coverage-meta-grid dispatch-compact-meta">
             <div>
@@ -133,26 +136,6 @@
             <button type="submit" class="secondary-button compact-action">Generar enlace</button>
         </form>
         {% endif %}
-    </section>
-    {% elif shipment.delivery_method == "sftp" %}
-    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-sftp-title">
-        <h2 id="dispatch-sftp-title">Entrega</h2>
-        <dl class="coverage-meta-grid dispatch-compact-meta">
-            <div>
-                <dt>SFTP</dt>
-                <dd>{{ channel_display }}</dd>
-            </div>
-            {% if shipment.remote_path %}
-            <div>
-                <dt>Ruta remota</dt>
-                <dd>{{ shipment.remote_path }}</dd>
-            </div>
-            {% endif %}
-            <div>
-                <dt>Estado</dt>
-                <dd>{{ shipment.status }}</dd>
-            </div>
-        </dl>
     </section>
     {% endif %}
 

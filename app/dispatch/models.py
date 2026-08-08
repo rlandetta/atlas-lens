@@ -30,7 +30,7 @@ DISPATCH_TRANSITIONS = {
 }
 
 DEFAULT_DISPATCH_TIMEZONE = "America/Guayaquil"
-DELIVERY_METHODS = ("download_link", "sftp", "smtp", "api")
+DELIVERY_METHODS = ("download_link", "download_link_email", "sftp", "smtp", "api")
 
 
 class DispatchError(ValueError):
@@ -76,9 +76,9 @@ def normalize_shipment(shipment: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("timezone", DEFAULT_DISPATCH_TIMEZONE)
     normalized.setdefault("channel_id", "")
     normalized.setdefault("channel_name_snapshot", str(normalized.get("channel", "")))
-    normalized.setdefault("delivery_method", "smtp" if normalized.get("channel_id") else "download_link")
+    normalized.setdefault("delivery_method", "download_link_email" if normalized.get("channel_id") else "download_link")
     if normalized["delivery_method"] not in DELIVERY_METHODS:
-        normalized["delivery_method"] = "smtp"
+        normalized["delivery_method"] = "download_link_email"
     normalized.setdefault("delivery_link_id", "")
     normalized.setdefault("delivery_package", {})
     normalized.setdefault("remote_path", "")
@@ -171,7 +171,7 @@ def build_shipment(
         "photo_ids": [str(photo_id) for photo_id in draft.photo_ids],
         "photo_snapshots": normalize_photo_references(photo_snapshots),
         "coverage_snapshot": deepcopy(coverage_snapshot),
-        "recipients": normalize_recipients(draft.recipients),
+        "recipients": [] if delivery_method == "download_link" and not draft.recipients else normalize_recipients(draft.recipients),
         "delivery_note": draft.delivery_note.strip(),
         "channel": draft.channel.strip() or "manual",
         "channel_id": draft.channel_id.strip(),

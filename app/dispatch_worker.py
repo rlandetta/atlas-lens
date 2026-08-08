@@ -33,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode = parser.add_mutually_exclusive_group(required=False)
     mode.add_argument("--dry-run", action="store_true", help="Revisar sin modificar despachos.")
     mode.add_argument("--claim", action="store_true", help="Reclamar despachos vencidos sin enviarlos.")
+    parser.add_argument("--process-due", action="store_true", help="Procesar despachos vencidos generando enlaces y correos cuando corresponda.")
     parser.add_argument("--cleanup-deliveries", action="store_true", help="Limpiar paquetes sin links activos.")
     parser.add_argument(
         "--store-path",
@@ -152,6 +153,68 @@ def run_claim(store: DispatchShipmentStore, out: TextIO) -> int:
     return 0
 
 
+def run_process_due(*, dry_run: bool, out: TextIO) -> int:
+    from app import create_app
+    from app.dispatch import DispatchValidationError
+    from app.dispatch.delivery_package import DeliveryPackageError
+    from app.dispatch.smtp_transport import SMTPTransportError
+    from app.routes.dispatch import prepare_download_link_delivery, prepare_download_link_email_delivery
+
+    app = create_app()
+    with app.app_context():
+        services = app.extensions["dispatch"]
+        store = services["store"]
+        review = review_shipments(store)
+        scheduler = DispatchScheduler(store)
+        print("DISPATCH process-due: procesamiento de despachos vencidos", file=out)
+        if dry_run:
+            print("Modo dry-run: no se generarán paquetes, links ni correos.", file=out)
+        if not review.due:
+            print("No hay despachos vencidos para procesar.", file=out)
+        processed = 0
+        failed = 0
+        for shipment in review.due:
+            shipment_id = str(shipment.get("id", ""))
+            method = str(shipment.get("delivery_method", "download_link"))
+            if dry_run:
+                print(f"- DRY-RUN: {shipment_id} | método: {method}", file=out)
+                continue
+            claimed = scheduler.claim_for_execution(shipment_id)
+            if claimed is None:
+                print(f"- OMITIDO: {shipment_id} ya no está disponible.", file=out)
+                continue
+            try:
+                if method == "download_link":
+                    prepare_download_link_delivery(claimed)
+                elif method == "download_link_email":
+                    prepare_download_link_email_delivery(claimed)
+                else:
+                    raise DispatchValidationError("Método de entrega no habilitado para procesamiento automático.")
+            except (DispatchValidationError, DeliveryPackageError, SMTPTransportError) as error:
+                failed += 1
+                services["shipment_service"].record_delivery_ready(
+                    shipment_id,
+                    delivery_package=claimed.get("delivery_package", {}),
+                    note=str(error),
+                    status="Error",
+                    error=str(error),
+                )
+                print(f"- ERROR: {shipment_id} | {error}", file=out)
+                continue
+            processed += 1
+            print(f"- PROCESADO: {shipment_id} | método: {method}", file=out)
+        print(
+            "Resumen: "
+            f"revisados={review.reviewed} "
+            f"vencidos={len(review.due)} "
+            f"procesados={processed} "
+            f"errores={failed} "
+            f"dry_run={dry_run}",
+            file=out,
+        )
+        return 0
+
+
 def run_cleanup(delivery_root: Path, link_store: DeliveryLinkStore, *, dry_run: bool, out: TextIO) -> int:
     links = link_store.list_links()
     active_shipment_ids = {
@@ -181,6 +244,8 @@ def main(argv: list[str] | None = None, out: TextIO = sys.stdout, err: TextIO = 
     store = DispatchShipmentStore(Path(args.store_path))
 
     try:
+        if args.process_due:
+            return run_process_due(dry_run=bool(args.dry_run), out=out)
         if args.cleanup_deliveries:
             return run_cleanup(
                 Path(args.delivery_root),

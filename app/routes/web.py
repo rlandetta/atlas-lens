@@ -513,6 +513,26 @@ def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | Non
 
 @web_bp.get("/")
 def home() -> str:
+    coverage_count = len(coverages)
+    photo_count = sum(len(ensure_coverage_photos(coverage)) for coverage in coverages.values())
+    dispatch_service = current_app.extensions.get("dispatch", {}).get("shipment_service")
+    dispatch_count = len(dispatch_service.list_shipments()) if dispatch_service else 0
+    active_dispatch_count = len([
+        shipment
+        for shipment in (dispatch_service.list_shipments() if dispatch_service else [])
+        if shipment.get("status") in {"Borrador", "Programado", "Enviando", "Error"}
+    ])
+    return render_template(
+        "index.html",
+        coverage_count=coverage_count,
+        photo_count=photo_count,
+        dispatch_count=dispatch_count,
+        active_dispatch_count=active_dispatch_count,
+    )
+
+
+@web_bp.get("/lens")
+def lens_home() -> str:
     coverage_items = [
         {
             "coverage_id": coverage_id,
@@ -523,7 +543,7 @@ def home() -> str:
         }
         for coverage_id, coverage in coverages.items()
     ]
-    return render_template("index.html", coverages=coverage_items)
+    return render_template("lens_index.html", coverages=coverage_items)
 
 
 @web_bp.route("/coverages/new", methods=["GET", "POST"])

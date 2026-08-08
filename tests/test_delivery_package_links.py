@@ -9,7 +9,9 @@ from app import create_app
 from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DispatchShipmentStore, ShipmentService
 from app.dispatch.delivery_links import DeliveryLinkStore as RawDeliveryLinkStore
 from app.dispatch.delivery_package import DeliveryPackageError
+from app.dispatch.smtp_transport import SMTPTransportError
 from app.lens_read_service import LensReadService
+from app.settings import OutboundChannelDraft
 
 
 class DeliveryPackageServiceTest(unittest.TestCase):
@@ -172,6 +174,25 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertIsNotNone(link)
         return shipment, link
 
+    def create_smtp_channel(self):
+        return self.app.extensions["settings"]["settings_service"].create_outbound_channel(
+            OutboundChannelDraft(
+                id="xinhua-smtp",
+                name="Xinhua SMTP",
+                display_name="Xinhua News Agency",
+                channel_type="smtp",
+                sender_email="atlas@example.com",
+                reply_to="",
+                smtp_host="smtp.example.com",
+                smtp_port=465,
+                smtp_security="ssl",
+                smtp_username="atlas@example.com",
+                credential_ref="ATLAS_SMTP_TEST",
+                is_active=True,
+                is_default=True,
+            )
+        )
+
     def test_download_link_token_public_base_url_downloads_and_counter(self):
         shipment, link = self.create_ready_link_shipment()
         self.assertNotIn(shipment["id"], link["token"])
@@ -206,6 +227,69 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
     def test_download_routes_reject_path_traversal_file_ids(self):
         _, link = self.create_ready_link_shipment()
         self.assertEqual(self.client.get(f"/d/{link['token']}/file/../../etc/passwd").status_code, 404)
+
+    def test_download_link_email_sends_only_link_and_marks_sent(self):
+        channel = self.create_smtp_channel()
+        sent_payload = {}
+
+        class FakeSMTPTransport:
+            def send_link(self, *, channel, shipment, download_url):
+                sent_payload["channel"] = channel
+                sent_payload["shipment"] = shipment
+                sent_payload["download_url"] = download_url
+                return {"recipients": ["desk@example.com"], "subject": "Cobertura"}
+
+        self.app.extensions["dispatch"]["smtp_transport"] = FakeSMTPTransport()
+
+        response = self.client.post(
+            "/dispatch/new",
+            data=self.valid_form(
+                delivery_method="download_link_email",
+                channel="Correo (SMTP)",
+                channel_id=channel["id"],
+            ),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.app.extensions["dispatch"]["shipment_service"].list_shipments()[0]
+        link = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
+        self.assertIsNotNone(link)
+        self.assertEqual(shipment["status"], "Enviado")
+        self.assertTrue(shipment["sent_at"])
+        self.assertEqual(sent_payload["channel"]["id"], channel["id"])
+        self.assertEqual(sent_payload["shipment"]["id"], shipment["id"])
+        self.assertEqual(sent_payload["download_url"], link["url"])
+
+    def test_download_link_email_error_preserves_link_without_lens_mutation(self):
+        channel = self.create_smtp_channel()
+        original_coverage = json.loads(json.dumps(self.app.extensions["lens"]["coverage_store"].get("cov-1")))
+
+        class FailingSMTPTransport:
+            def send_link(self, *, channel, shipment, download_url):
+                raise SMTPTransportError("SMTP rechazado.")
+
+        self.app.extensions["dispatch"]["smtp_transport"] = FailingSMTPTransport()
+
+        response = self.client.post(
+            "/dispatch/new",
+            data=self.valid_form(
+                delivery_method="download_link_email",
+                channel="Correo (SMTP)",
+                channel_id=channel["id"],
+            ),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.app.extensions["dispatch"]["shipment_service"].list_shipments()[0]
+        link = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
+        self.assertIsNotNone(link)
+        self.assertEqual(shipment["status"], "Error")
+        self.assertEqual(shipment["last_error"], "SMTP rechazado.")
+        detail = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+        self.assertIn("Enlace generado correctamente; el correo no pudo enviarse.", detail)
+        self.assertEqual(self.app.extensions["lens"]["coverage_store"].get("cov-1"), original_coverage)
 
 
 class DeliveryLinkStoreTest(unittest.TestCase):

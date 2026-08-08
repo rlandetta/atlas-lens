@@ -166,6 +166,7 @@ class ShipmentService:
         remote_path: str = "",
         note: str = "Entrega preparada.",
         status: str = "Listo",
+        error: str = "",
     ) -> dict:
         shipment = self.store.get(shipment_id)
         if shipment is None:
@@ -179,7 +180,9 @@ class ShipmentService:
         if remote_path:
             next_shipment["remote_path"] = remote_path
         next_shipment["updated_at"] = timestamp
-        next_shipment["last_error"] = ""
+        if status in {"Enviado", "Entregado"}:
+            next_shipment["sent_at"] = timestamp
+        next_shipment["last_error"] = error
         next_shipment.setdefault("history", []).insert(0, {
             "status": status,
             "created_at": timestamp,

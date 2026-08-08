@@ -4,16 +4,25 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from app.dispatch import DispatchShipmentStore
 from app.dispatch_worker import main
+from app.lens import LensCoverageStore
+from app.settings import OutboundChannelDraft, SettingsService, SettingsStore
 
 
 class DispatchWorkerTest(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.store_path = Path(self.temp_dir.name) / "dispatch_shipments.json"
+        self.root = Path(self.temp_dir.name)
+        self.store_path = self.root / "dispatch_shipments.json"
+        self.settings_path = self.root / "settings.json"
+        self.links_path = self.root / "links.json"
+        self.lens_path = self.root / "lens.json"
+        self.media_root = self.root / "media"
+        self.delivery_root = self.root / "deliveries"
         self.guayaquil = ZoneInfo("America/Guayaquil")
 
     def tearDown(self):
@@ -68,6 +77,59 @@ class DispatchWorkerTest(unittest.TestCase):
             err=stderr,
         )
         return exit_code, stdout.getvalue(), stderr.getvalue()
+
+    def process_patches(self):
+        return [
+            patch("app.config.DISPATCH_STORE_PATH", str(self.store_path)),
+            patch("app.config.SETTINGS_STORE_PATH", str(self.settings_path)),
+            patch("app.config.DELIVERY_LINKS_STORE_PATH", str(self.links_path)),
+            patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.lens_path)),
+            patch("app.config.LENS_MEDIA_ROOT", str(self.media_root)),
+            patch("app.config.DELIVERY_ROOT", str(self.delivery_root)),
+            patch("app.config.PUBLIC_BASE_URL", "https://atlas.example"),
+        ]
+
+    def write_lens_and_settings(self):
+        photo_path = self.media_root / "coverages" / "cov-1" / "photo-1_IMG001.jpg"
+        photo_path.parent.mkdir(parents=True)
+        photo_path.write_bytes(b"jpeg-one")
+        coverage_store = LensCoverageStore(self.lens_path, self.media_root)
+        coverage_store.set("cov-1", {
+            "coverage_name": "Cobertura Quito",
+            "submit_date": "2026-08-07",
+            "event_date": "2026-08-07",
+            "city": "Quito",
+            "country": "Ecuador",
+            "agency": "Xinhua",
+            "photographer": "Ricardo Landeta",
+            "editor": "rl",
+            "photos": [{
+                "id": "photo-1",
+                "name": "IMG001.jpg",
+                "filename": "IMG001.jpg",
+                "storage_path": "coverages/cov-1/photo-1_IMG001.jpg",
+                "caption_narrative": "Persona participa en evento.",
+                "caption_status": "Aprobado",
+                "available_on_disk": True,
+            }],
+        })
+        SettingsService(SettingsStore(self.settings_path)).create_outbound_channel(
+            OutboundChannelDraft(
+                id="xinhua-smtp",
+                name="Xinhua SMTP",
+                display_name="Xinhua News Agency",
+                channel_type="smtp",
+                sender_email="atlas@example.com",
+                reply_to="",
+                smtp_host="smtp.example.com",
+                smtp_port=465,
+                smtp_security="ssl",
+                smtp_username="atlas@example.com",
+                credential_ref="ATLAS_SMTP_TEST",
+                is_active=True,
+                is_default=True,
+            )
+        )
 
     def test_dry_run_without_shipments(self):
         exit_code, stdout, stderr = self.run_worker("--dry-run")
@@ -224,6 +286,68 @@ class DispatchWorkerTest(unittest.TestCase):
         self.assertTrue(active.exists())
         self.assertIn("ELIMINADO", stdout)
         self.assertEqual(stderr, "")
+
+    def test_process_due_dry_run_does_not_mutate_or_send(self):
+        self.write_store([
+            self.shipment(
+                coverage_id="cov-1",
+                photo_ids=["photo-1"],
+                delivery_method="download_link_email",
+                channel_id="xinhua-smtp",
+                channel_name_snapshot="Xinhua SMTP",
+                include_caption_docx=False,
+            )
+        ])
+        self.write_lens_and_settings()
+        before = self.store_path.read_text(encoding="utf-8")
+        patches = self.process_patches()
+        for item in patches:
+            item.start()
+        try:
+            with patch("app.dispatch.smtp_transport.SMTPLinkTransport.send_link") as send_link:
+                exit_code, stdout, stderr = self.run_worker("--process-due", "--dry-run")
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Modo dry-run", stdout)
+        self.assertEqual(stderr, "")
+        self.assertFalse(send_link.called)
+        self.assertEqual(self.store_path.read_text(encoding="utf-8"), before)
+
+    def test_process_due_download_link_email_generates_link_and_sends(self):
+        self.write_store([
+            self.shipment(
+                coverage_id="cov-1",
+                photo_ids=["photo-1"],
+                delivery_method="download_link_email",
+                channel_id="xinhua-smtp",
+                channel_name_snapshot="Xinhua SMTP",
+                include_caption_docx=False,
+            )
+        ])
+        self.write_lens_and_settings()
+        patches = self.process_patches()
+        for item in patches:
+            item.start()
+        try:
+            with patch("app.dispatch.smtp_transport.SMTPLinkTransport.send_link") as send_link:
+                exit_code, stdout, stderr = self.run_worker("--process-due")
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("PROCESADO: ship-1", stdout)
+        self.assertEqual(stderr, "")
+        self.assertTrue(send_link.called)
+        shipment = DispatchShipmentStore(self.store_path).get("ship-1")
+        self.assertEqual(shipment["status"], "Enviado")
+        self.assertTrue(shipment["delivery_link_id"])
+        link_store = json.loads(self.links_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(link_store["links"]), 1)
+        self.assertTrue(send_link.call_args.kwargs["download_url"].startswith("https://atlas.example/d/"))
 
 
 if __name__ == "__main__":

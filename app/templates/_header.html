@@ -22,7 +22,7 @@
         </a>
         <nav class="atlas-global-nav" aria-label="Navegación global de ATLAS">
         {% for item in atlas_navigation %}
-            {% set is_active = request.blueprint == item.blueprint %}
+            {% set is_active = request.endpoint == item.endpoint %}
             {% if item.enabled and item.endpoint %}
             <a
                 href="{{ url_for(item.endpoint) }}"

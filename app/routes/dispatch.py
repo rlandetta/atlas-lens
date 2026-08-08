@@ -9,6 +9,7 @@ from flask import Blueprint, abort, current_app, redirect, render_template, requ
 
 from app.dispatch import DELIVERY_METHODS, DispatchValidationError
 from app.dispatch.delivery_package import DeliveryPackageError
+from app.dispatch.smtp_transport import SMTPTransportError
 from app.dispatch.sftp_transport import SFTPTransport, SFTPTransportError
 
 dispatch_bp = Blueprint("dispatch", __name__, url_prefix="/dispatch")
@@ -16,10 +17,12 @@ dispatch_bp = Blueprint("dispatch", __name__, url_prefix="/dispatch")
 CHANNEL_OPTIONS = ("Manual", "Correo", "FTP", "SFTP", "API")
 DELIVERY_METHOD_LABELS = {
     "download_link": "Enlace de descarga",
+    "download_link_email": "Enlace por correo",
     "sftp": "SFTP",
     "smtp": "Correo (SMTP)",
     "api": "API",
 }
+VISIBLE_DELIVERY_METHODS = ("download_link", "download_link_email")
 DELIVERY_EXPIRATION_OPTIONS = ("1", "3", "7", "14", "30", "none")
 DEFAULT_TIMEZONE = "America/Guayaquil"
 CREATE_MODES = ("draft", "immediate", "schedule")
@@ -112,6 +115,8 @@ def channel_display(shipment: dict[str, Any]) -> str:
 
 
 def delivery_method_display(value: str) -> str:
+    if str(value or "") in {"sftp", "smtp", "api"}:
+        return "Canal interno"
     return DELIVERY_METHOD_LABELS.get(str(value or ""), str(value or "No definido"))
 
 
@@ -621,7 +626,7 @@ def build_recipient_rows(names: list[str], emails: list[str]) -> list[dict[str, 
     return rows
 
 
-def parse_recipient_rows(rows: list[dict[str, str]]) -> tuple[list[dict[str, str]], list[str]]:
+def parse_recipient_rows(rows: list[dict[str, str]], *, required: bool = True) -> tuple[list[dict[str, str]], list[str]]:
     recipients = []
     row_errors = [""] * max(len(rows), 1)
     for index, row in enumerate(rows or [{"name": "", "email": ""}]):
@@ -642,7 +647,7 @@ def parse_recipient_rows(rows: list[dict[str, str]]) -> tuple[list[dict[str, str
             row_errors[index] = "El correo electrónico no tiene un formato válido."
             continue
         recipients.append({"name": name, "email": email})
-    if not recipients and not any(row_errors):
+    if required and not recipients and not any(row_errors):
         row_errors[0] = "Agrega al menos un destinatario."
     return recipients, row_errors
 
@@ -779,8 +784,14 @@ def validate_form_data(form_data: dict[str, Any], *, locked_coverage_id: str = "
         errors.append("Selecciona un método de entrega válido.")
     if delivery_method == "api":
         errors.append("API estará disponible próximamente.")
-    typed_channels = list_active_channels_by_type(delivery_method)
-    if delivery_method in {"sftp", "smtp"}:
+    channel_method = "smtp" if delivery_method == "download_link_email" else delivery_method
+    typed_channels = list_active_channels_by_type(channel_method)
+    if delivery_method == "download_link_email":
+        active_channel_ids = {channel["id"] for channel in typed_channels}
+        if form_data.get("channel_id") not in active_channel_ids:
+            errors.append("Selecciona un canal SMTP activo para enviar el enlace.")
+        form_data["channel"] = "Correo (SMTP)"
+    elif delivery_method in {"sftp", "smtp"}:
         active_channel_ids = {channel["id"] for channel in typed_channels}
         if form_data.get("channel_id") not in active_channel_ids:
             errors.append("Selecciona un canal de salida activo.")
@@ -791,7 +802,10 @@ def validate_form_data(form_data: dict[str, Any], *, locked_coverage_id: str = "
         errors.append("Selecciona un canal válido.")
     if str(form_data.get("link_expires_in", "7")) not in DELIVERY_EXPIRATION_OPTIONS:
         errors.append("Selecciona una expiración válida para el enlace.")
-    recipients, recipient_errors = parse_recipient_rows(form_data["recipient_rows"])
+    recipients, recipient_errors = parse_recipient_rows(
+        form_data["recipient_rows"],
+        required=delivery_method == "download_link_email",
+    )
     form_data["recipient_errors"] = recipient_errors
     if any(recipient_errors):
         errors.append("Corrige los destinatarios marcados.")
@@ -848,6 +862,51 @@ def prepare_download_link_delivery(shipment: dict[str, Any], *, expires_in: str 
     )
 
 
+def prepare_download_link_email_delivery(shipment: dict[str, Any], *, expires_in: str = "7") -> dict[str, Any]:
+    services = get_dispatch_services()
+    updated = prepare_download_link_delivery(shipment, expires_in=expires_in)
+    link = services["delivery_link_service"].get_active_for_shipment(str(updated.get("id", "")))
+    download_url = delivery_public_url(link)
+    channel = get_outbound_channel(str(updated.get("channel_id", "")))
+    if not channel or channel_type(channel) != "smtp":
+        return services["shipment_service"].record_delivery_ready(
+            str(updated.get("id", "")),
+            delivery_package=updated.get("delivery_package", {}),
+            delivery_link_id=str(updated.get("delivery_link_id", "")),
+            note="Enlace generado correctamente; el correo no pudo enviarse.",
+            status="Error",
+            error="Canal SMTP no disponible.",
+        )
+    transport = services.get("smtp_transport")
+    if transport is None:
+        return services["shipment_service"].record_delivery_ready(
+            str(updated.get("id", "")),
+            delivery_package=updated.get("delivery_package", {}),
+            delivery_link_id=str(updated.get("delivery_link_id", "")),
+            note="Enlace generado correctamente; el correo no pudo enviarse.",
+            status="Error",
+            error="Servicio SMTP no disponible.",
+        )
+    try:
+        transport.send_link(channel=channel, shipment=updated, download_url=download_url)
+    except SMTPTransportError as error:
+        return services["shipment_service"].record_delivery_ready(
+            str(updated.get("id", "")),
+            delivery_package=updated.get("delivery_package", {}),
+            delivery_link_id=str(updated.get("delivery_link_id", "")),
+            note="Enlace generado correctamente; el correo no pudo enviarse.",
+            status="Error",
+            error=str(error),
+        )
+    return services["shipment_service"].record_delivery_ready(
+        str(updated.get("id", "")),
+        delivery_package=updated.get("delivery_package", {}),
+        delivery_link_id=str(updated.get("delivery_link_id", "")),
+        note="Enlace generado y enviado por correo.",
+        status="Enviado",
+    )
+
+
 def prepare_sftp_delivery(shipment: dict[str, Any]) -> dict[str, Any]:
     services = get_dispatch_services()
     if not has_delivery_services():
@@ -873,6 +932,8 @@ def run_immediate_delivery(shipment: dict[str, Any], form_data: dict[str, Any]) 
     method = str(shipment.get("delivery_method", "download_link"))
     if method == "download_link":
         return prepare_download_link_delivery(shipment, expires_in=str(form_data.get("link_expires_in", "7")))
+    if method == "download_link_email":
+        return prepare_download_link_email_delivery(shipment, expires_in=str(form_data.get("link_expires_in", "7")))
     if method == "sftp":
         return prepare_sftp_delivery(shipment)
     return shipment
@@ -921,10 +982,14 @@ def build_form_context(
         method: [channel for channel in outbound_channels if channel_type(channel) == method]
         for method in DELIVERY_METHODS
     }
+    smtp_channels = channel_groups.get("smtp", [])
     selected_method = str(form_data.get("delivery_method", "download_link"))
-    if selected_method in {"sftp", "smtp"} and channel_groups[selected_method] and not form_data.get("channel_id"):
-        typed_default = default_channel if default_channel and channel_type(default_channel) == selected_method else None
-        form_data["channel_id"] = (typed_default or channel_groups[selected_method][0])["id"]
+    if selected_method not in DELIVERY_METHODS:
+        selected_method = "download_link"
+        form_data["delivery_method"] = selected_method
+    if selected_method == "download_link_email" and smtp_channels and not form_data.get("channel_id"):
+        typed_default = default_channel if default_channel and channel_type(default_channel) == "smtp" else None
+        form_data["channel_id"] = (typed_default or smtp_channels[0])["id"]
     photo_options = get_caption_photo_options(selected_coverage_id)
     eligible_photo_ids = {
         photo["id"]
@@ -937,9 +1002,13 @@ def build_form_context(
         selected_photo_ids = set(eligible_photo_ids)
     return {
         "channel_options": CHANNEL_OPTIONS,
-        "delivery_methods": DELIVERY_METHOD_LABELS,
+        "delivery_methods": {
+            method: DELIVERY_METHOD_LABELS[method]
+            for method in VISIBLE_DELIVERY_METHODS
+        },
         "delivery_expiration_options": DELIVERY_EXPIRATION_OPTIONS,
         "channel_groups": channel_groups,
+        "smtp_channels": smtp_channels,
         "outbound_channels": outbound_channels,
         "default_channel": default_channel,
         "coverage_options": coverage_options,
@@ -1024,15 +1093,16 @@ def new() -> str:
             "dispatch/new.html",
             **build_form_context(form_data, [str(error)], form_action=url_for("dispatch.new")),
         ), 400
-    if form_data["mode"] == "immediate" and form_data["delivery_method"] in {"download_link", "sftp"} and has_delivery_services():
+    if form_data["mode"] == "immediate" and form_data["delivery_method"] in {"download_link", "download_link_email", "sftp"} and has_delivery_services():
         try:
             shipment = run_immediate_delivery(shipment, form_data)
-        except (DispatchValidationError, DeliveryPackageError, SFTPTransportError) as error:
+        except (DispatchValidationError, DeliveryPackageError, SFTPTransportError, SMTPTransportError) as error:
             get_dispatch_services()["shipment_service"].record_delivery_ready(
                 shipment["id"],
                 delivery_package={},
                 note=str(error),
                 status="Error",
+                error=str(error),
             )
 
     return redirect(url_for("dispatch.detail", shipment_id=shipment["id"]))
@@ -1170,7 +1240,7 @@ def regenerate_delivery_link(shipment_id: str) -> str:
     shipment = shipment_service.get_shipment(shipment_id)
     if shipment is None:
         abort(404)
-    if str(shipment.get("delivery_method", "")) != "download_link":
+    if str(shipment.get("delivery_method", "")) not in {"download_link", "download_link_email"}:
         abort(403)
     try:
         updated = prepare_download_link_delivery(shipment, expires_in=request.form.get("link_expires_in", "7"))

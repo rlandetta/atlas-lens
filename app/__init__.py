@@ -4,13 +4,13 @@ from __future__ import annotations
 ATLAS_NAVIGATION = (
     {
         "label": "Dashboard",
-        "endpoint": None,
+        "endpoint": "web.home",
         "blueprint": "dashboard",
-        "enabled": False,
+        "enabled": True,
     },
     {
         "label": "LENS",
-        "endpoint": "web.home",
+        "endpoint": "web.lens_home",
         "blueprint": "web",
         "enabled": True,
     },
@@ -42,7 +42,7 @@ def create_app():
         LENS_MAX_PHOTO_BYTES,
         LENS_MEDIA_ROOT,
     )
-    from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DispatchShipmentStore, ShipmentService
+    from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DispatchShipmentStore, ShipmentService, SMTPLinkTransport
     from app.lens import LensCoverageStore
     from app.settings import SettingsService, SettingsStore
     from app.lens_read_service import LensReadService
@@ -64,6 +64,7 @@ def create_app():
     delivery_package_service = DeliveryPackageService(delivery_root=DELIVERY_ROOT, media_root=LENS_MEDIA_ROOT)
     settings_store = SettingsStore(SETTINGS_STORE_PATH)
     settings_service = SettingsService(settings_store)
+    smtp_transport = SMTPLinkTransport(settings_service=settings_service)
     app.extensions["lens"] = {
         "coverage_store": lens_coverage_store,
     }
@@ -79,6 +80,7 @@ def create_app():
         "delivery_link_store": delivery_link_store,
         "delivery_link_service": delivery_link_service,
         "delivery_package_service": delivery_package_service,
+        "smtp_transport": smtp_transport,
         "shipment_service": ShipmentService(
             store=dispatch_store,
             lens_reader=lens_reader,

@@ -3090,6 +3090,41 @@ h1 {
     font-weight: 700;
 }
 
+.atlas-home-page {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.atlas-home-hero {
+    align-items: end;
+}
+
+.atlas-module-card {
+    display: flex;
+    min-height: 260px;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 1.25rem;
+}
+
+.atlas-module-card h2 {
+    margin: 0.75rem 0 0.45rem;
+}
+
+.atlas-module-card p {
+    margin: 0;
+    color: var(--atlas-text-muted);
+}
+
+.atlas-module-card.is-disabled {
+    min-height: 180px;
+    opacity: 0.68;
+}
+
+.atlas-future-modules {
+    margin-top: 0.5rem;
+}
+
 @media (max-width: 640px) {
     .delivery-file-row {
         grid-template-columns: 52px 1fr;

@@ -1,99 +1,73 @@
 {% extends "base.html" %}
 
-{% block title %}Coberturas | ATLAS LENS{% endblock %}
-{% block main_class %}coverage-list-page{% endblock %}
+{% block title %}Dashboard | ATLAS{% endblock %}
+{% block main_class %}atlas-home-page{% endblock %}
 
 {% block content %}
-<section class="page-heading">
+<section class="page-heading atlas-home-hero">
     <div>
-        <h1>Coberturas</h1>
-        <p class="subtitle">Gestione sus coberturas fotográficas y editoriales.</p>
-    </div>
-    <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Nueva cobertura</a>
-</section>
-
-<section class="list-tools ui-card atlas-panel--compact" aria-label="Herramientas de listado">
-    <div class="search-field" aria-label="Búsqueda visual preparada">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="11" cy="11" r="6" stroke="currentColor" stroke-width="1.7"/>
-            <path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7"/>
-        </svg>
-        <input type="search" placeholder="Buscar coberturas próximamente" disabled>
-    </div>
-    <div class="visual-filters" aria-label="Filtros visuales preparados">
-        <span class="filter-chip is-active">Todas</span>
-        <span class="filter-chip">En preparación</span>
-        <span class="filter-chip">Esta semana</span>
+        <p class="coverage-id">ATLAS</p>
+        <h1>Centro editorial</h1>
+        <p class="subtitle">Acceso principal a los módulos activos de producción, distribución y configuración.</p>
     </div>
 </section>
 
-{% if coverages %}
-<section class="coverage-grid" aria-label="Listado de coberturas">
-    {% for item in coverages %}
-    <article class="coverage-card ui-card atlas-panel--normal">
-        <div class="coverage-card-top">
-            <span class="status-pill">{{ item.status }}</span>
-            <span class="photo-total">{{ item.photo_count }} fotografías</span>
+<section class="atlas-grid atlas-grid--3" aria-label="Módulos principales de ATLAS">
+    <article class="ui-card atlas-panel--normal atlas-module-card is-active">
+        <div>
+            <span class="status-pill">Activo</span>
+            <h2>LENS</h2>
+            <p>Gestión editorial de coberturas, fotografías, captions, exportaciones y marca de agua.</p>
         </div>
-        <h2>{{ item.title }}</h2>
-        <dl class="coverage-card-meta">
+        <dl class="coverage-meta-grid dispatch-compact-meta">
             <div>
-                <dt>Ciudad y país</dt>
-                <dd>{{ item.coverage.city }}, {{ item.coverage.country }}</dd>
+                <dt>Coberturas</dt>
+                <dd>{{ coverage_count }}</dd>
             </div>
             <div>
-                <dt>Agencia</dt>
-                <dd>{{ item.coverage.agency }}</dd>
-            </div>
-            <div>
-                <dt>Fotógrafo</dt>
-                <dd>{{ item.coverage.photographer }}</dd>
-            </div>
-            <div>
-                <dt>Fecha del evento</dt>
-                <dd>{{ item.coverage.event_date }}</dd>
-            </div>
-            <div>
-                <dt>Fecha de envío</dt>
-                <dd>{{ item.coverage.submit_date }}</dd>
+                <dt>Fotografías</dt>
+                <dd>{{ photo_count }}</dd>
             </div>
         </dl>
-        <div class="coverage-card-actions">
-            <a href="{{ url_for('web.coverage_detail', coverage_id=item.coverage_id) }}" class="primary-button card-action">Abrir cobertura</a>
-            <a href="{{ url_for('web.coverage_detail', coverage_id=item.coverage_id, edit=1) }}" class="secondary-button card-action">Editar</a>
-            <button
-                type="button"
-                class="danger-button card-action"
-                data-delete-coverage-button
-                data-delete-title="{{ item.title }}"
-                data-delete-action="{{ url_for('web.delete_coverage', coverage_id=item.coverage_id) }}"
-            >
-                Eliminar
-            </button>
+        <a href="{{ url_for('web.lens_home') }}" class="primary-button card-action">Abrir LENS</a>
+    </article>
+
+    <article class="ui-card atlas-panel--normal atlas-module-card is-active">
+        <div>
+            <span class="status-pill">Activo</span>
+            <h2>DISPATCH</h2>
+            <p>Gestor de despachos editoriales preparados desde LENS mediante enlaces de entrega.</p>
         </div>
+        <dl class="coverage-meta-grid dispatch-compact-meta">
+            <div>
+                <dt>Despachos</dt>
+                <dd>{{ dispatch_count }}</dd>
+            </div>
+            <div>
+                <dt>Activos</dt>
+                <dd>{{ active_dispatch_count }}</dd>
+            </div>
+        </dl>
+        <a href="{{ url_for('dispatch.index') }}" class="primary-button card-action">Abrir DISPATCH</a>
+    </article>
+
+    <article class="ui-card atlas-panel--normal atlas-module-card is-active">
+        <div>
+            <span class="status-pill">Activo</span>
+            <h2>SETTINGS</h2>
+            <p>Configuración de canales de salida y preferencias operativas de ATLAS.</p>
+        </div>
+        <a href="{{ url_for('settings.index') }}" class="primary-button card-action">Abrir SETTINGS</a>
+    </article>
+</section>
+
+<section class="atlas-grid atlas-grid--3 atlas-future-modules" aria-label="Módulos futuros de ATLAS">
+    {% for module in ["NEXUS", "PULSE", "ARCHIVE"] %}
+    <article class="ui-card atlas-panel--compact atlas-module-card is-disabled">
+        <span class="filter-chip">Próximamente</span>
+        <h2>{{ module }}</h2>
+        <p>Módulo reservado para una fase posterior de la plataforma.</p>
     </article>
     {% endfor %}
 </section>
-<dialog id="delete-coverage-dialog" class="delete-dialog" aria-labelledby="delete-coverage-title">
-    <form method="post" id="delete-coverage-form" class="delete-dialog-form">
-        <h2 id="delete-coverage-title">Eliminar cobertura</h2>
-        <p>Esta acción eliminará la cobertura y sus datos temporales. No se puede deshacer.</p>
-        <p class="delete-dialog-coverage-title" id="delete-coverage-name"></p>
-        <div class="dialog-actions">
-            <button type="button" id="cancel-delete-coverage-button" class="secondary-button">Cancelar</button>
-            <button type="submit" class="danger-button danger-confirm-button">Eliminar cobertura</button>
-        </div>
-    </form>
-</dialog>
-{% else %}
-<section class="empty-state ui-card atlas-panel--compact">
-    <h2>Aún no hay coberturas</h2>
-    <p>Cree una cobertura para comenzar a organizar fotografías, captions y entregas.</p>
-    <a href="{{ url_for('web.new_coverage') }}" class="primary-button">Crear primera cobertura</a>
-</section>
-{% endif %}
-{% endblock %}
-
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/coverage_delete.js') }}" defer></script>
 {% endblock %}

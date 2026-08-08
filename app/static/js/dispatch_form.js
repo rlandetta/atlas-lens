@@ -13,6 +13,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const addRecipientButton = document.querySelector("[data-recipient-add]");
     const photoInputs = document.querySelectorAll('input[name="photo_ids"]');
     const docxInput = document.getElementById("include_caption_docx");
+    const deliveryMethodSelect = document.getElementById("delivery_method");
+    const smtpChannelSelect = document.querySelector("[data-smtp-channel-select]");
+    const deliveryChannelName = document.querySelector("[data-delivery-channel-name]");
+    const linkOnlyHelp = document.querySelector("[data-link-only-help]");
+    const smtpHelp = document.querySelector("[data-smtp-help]");
 
     const getSelectedMode = () => {
         const selectedMode = document.querySelector('input[name="mode"]:checked');
@@ -92,8 +97,18 @@ document.addEventListener("DOMContentLoaded", () => {
     const applyDeliveryModeState = () => {
         const mode = getSelectedMode();
         const isSchedule = mode === "schedule";
+        const deliveryMethod = deliveryMethodSelect ? deliveryMethodSelect.value : "download_link";
+        const usesSmtp = deliveryMethod === "download_link_email";
         setElementVisibility(scheduledFields, isSchedule);
+        setElementVisibility(linkOnlyHelp, !usesSmtp);
+        setElementVisibility(smtpHelp, usesSmtp);
         setScheduleInputsEnabled(isSchedule);
+        if (smtpChannelSelect) {
+            smtpChannelSelect.disabled = !usesSmtp || smtpChannelSelect.tagName === "INPUT";
+        }
+        if (deliveryChannelName) {
+            deliveryChannelName.value = usesSmtp ? "Correo (SMTP)" : "Enlace de descarga";
+        }
 
         if (contentSummary) {
             contentSummary.textContent = buildContentText();
@@ -142,6 +157,9 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     modeInputs.forEach((input) => input.addEventListener("change", applyDeliveryModeState));
+    if (deliveryMethodSelect) {
+        deliveryMethodSelect.addEventListener("change", applyDeliveryModeState);
+    }
     [scheduledDate, scheduledTime, timezoneSelect, docxInput].forEach((input) => {
         if (input) {
             input.addEventListener("input", applyDeliveryModeState);
