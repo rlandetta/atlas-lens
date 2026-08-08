@@ -32,7 +32,7 @@ class DeliveryPreviewService:
         delivery_root: str | os.PathLike[str],
         thumbnail_long_edge: int = 240,
         background_long_edge: int = 1280,
-        thumbnail_quality: int = 45,
+        thumbnail_quality: int = 55,
         background_quality: int = 45,
     ):
         self.delivery_root = Path(delivery_root)
@@ -116,8 +116,8 @@ class DeliveryPreviewService:
 
     def preview_path(self, shipment_id: str, preview_id: str) -> tuple[Path, dict[str, Any]]:
         safe_id = DeliveryPackageService.safe_component(shipment_id)
-        safe_preview_id = DeliveryPackageService.safe_component(preview_id)
-        if not safe_id or not safe_preview_id or safe_preview_id != str(preview_id):
+        safe_preview_id = self.safe_preview_id(preview_id)
+        if not safe_id or not safe_preview_id:
             raise DeliveryPreviewError("Preview inválido.")
         previews = self.load_preview_manifest(safe_id)
         all_previews = previews.get("thumbnails", []) + previews.get("backgrounds", [])
@@ -142,7 +142,8 @@ class DeliveryPreviewService:
         if not isinstance(payload, dict):
             return {"thumbnails": [], "backgrounds": [], "errors": []}
         if "previews" in payload:
-            legacy = [item for item in payload.get("previews", []) if isinstance(item, dict)]
+            legacy = [self.normalize_legacy_preview(item) for item in payload.get("previews", []) if isinstance(item, dict)]
+            legacy = [item for item in legacy if item]
             return {"thumbnails": legacy, "backgrounds": self.select_backgrounds(legacy), "errors": []}
         return {
             "thumbnails": [item for item in payload.get("thumbnails", []) if isinstance(item, dict)],
@@ -178,8 +179,8 @@ class DeliveryPreviewService:
         safe_file_id = DeliveryPackageService.safe_component(file_id)
         if not safe_file_id:
             return None
-        preview_id = f"{kind}-{safe_file_id}"
-        destination = previews_dir / f"{preview_id}.jpg"
+        preview_id = self.build_preview_id(kind, safe_file_id)
+        destination = previews_dir / f"{kind}-{safe_file_id}.jpg"
         if destination.is_file():
             return DeliveryPreview(
                 id=preview_id,
@@ -269,6 +270,26 @@ class DeliveryPreviewService:
         if not path.startswith("previews/"):
             raise DeliveryPreviewError("Preview no disponible.")
         return Path(path)
+
+    @staticmethod
+    def build_preview_id(kind: str, safe_file_id: str) -> str:
+        return f"{kind}:{safe_file_id}"
+
+    @staticmethod
+    def safe_preview_id(value: str) -> str:
+        cleaned = "".join(character if character.isalnum() or character in {"-", "_", ":"} else "-" for character in value.strip())
+        cleaned = cleaned.strip(".-_")
+        return cleaned if cleaned == value and "/" not in cleaned and "\\" not in cleaned else ""
+
+    def normalize_legacy_preview(self, preview: dict[str, Any]) -> dict[str, Any] | None:
+        preview_id = str(preview.get("id", "")).strip()
+        file_id = str(preview.get("file_id", "")).strip()
+        path = str(preview.get("path", "")).strip()
+        if not preview_id or not file_id or not path.startswith("previews/"):
+            return None
+        normalized = dict(preview)
+        normalized.setdefault("kind", "legacy")
+        return normalized
 
     @staticmethod
     def pillow_available() -> bool:

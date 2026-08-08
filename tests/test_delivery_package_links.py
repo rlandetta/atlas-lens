@@ -11,7 +11,7 @@ from app import create_app
 from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DispatchShipmentStore, ShipmentService
 from app.dispatch.delivery_links import DeliveryLinkStore as RawDeliveryLinkStore
 from app.dispatch.delivery_package import DeliveryPackageError
-from app.dispatch.delivery_previews import DeliveryPreviewService
+from app.dispatch.delivery_previews import DeliveryPreview, DeliveryPreviewService
 from app.dispatch.smtp_transport import SMTPTransportError
 from app.lens_read_service import LensReadService
 from app.settings import OutboundChannelDraft
@@ -291,45 +291,69 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         with zipfile.ZipFile(self.delivery_root / shipment["id"] / "package.zip") as archive:
             self.assertFalse(any(name.startswith("previews/") for name in archive.namelist()))
 
-    def test_public_landing_uses_all_registered_thumbnails_and_separate_backgrounds(self):
-        photo_ids = self.expand_coverage_photos(6)
+    def test_public_landing_generates_8_thumbnails_and_4_backgrounds(self):
+        photo_ids = self.expand_coverage_photos(8)
         response = self.client.post("/dispatch/new", data=self.valid_form(photo_ids=photo_ids), follow_redirects=False)
         self.assertEqual(response.status_code, 302)
         shipment = self.app.extensions["dispatch"]["shipment_service"].list_shipments()[0]
         link = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
-        previews = {
-            "thumbnails": [
-                {"id": f"thumbnail-photo-{index}", "file_id": f"photo-{index}", "filename": f"thumbnail-photo-{index}.jpg", "path": f"previews/thumbnail-photo-{index}.jpg", "kind": "thumbnail", "size": 12}
-                for index in range(1, 7)
-            ],
-            "backgrounds": [
-                {"id": f"background-photo-{index}", "file_id": f"photo-{index}", "filename": f"background-photo-{index}.jpg", "path": f"previews/background-photo-{index}.jpg", "kind": "background", "size": 120}
-                for index in range(1, 7)
-            ],
-            "errors": [],
-        }
-        self.write_preview_manifest(shipment["id"], previews)
 
-        response = self.client.get(f"/d/{link['token']}")
+        def fake_create_preview(service, package_root, previews_dir, item, *, kind, max_long_edge, quality):
+            safe_file_id = service.build_preview_id(kind, item["id"]).split(":", 1)[1]
+            filename = f"{kind}-{safe_file_id}.jpg"
+            destination = previews_dir / filename
+            destination.write_bytes(b"preview-jpeg")
+            return DeliveryPreview(
+                id=service.build_preview_id(kind, safe_file_id),
+                file_id=item["id"],
+                filename=filename,
+                path=f"previews/{filename}",
+                kind=kind,
+                width=max_long_edge,
+                height=max_long_edge // 2,
+                size=destination.stat().st_size,
+            )
+
+        with patch.object(DeliveryPreviewService, "pillow_available", return_value=True), patch.object(DeliveryPreviewService, "create_preview", fake_create_preview):
+            response = self.client.get(f"/d/{link['token']}")
 
         self.assertEqual(response.status_code, 200)
         body = unescape(response.get_data(as_text=True))
-        self.assertEqual(body.count('loading="lazy"'), 6)
-        self.assertIn(f"/d/{link['token']}/preview/thumbnail-photo-1", body)
-        self.assertIn(f"/d/{link['token']}/preview/background-photo-1", body)
+        self.assertEqual(body.count('loading="lazy"'), 8)
+        self.assertIn(f"/d/{link['token']}/preview/thumbnail:photo-1", body)
+        self.assertIn(f"/d/{link['token']}/preview/background:photo-1", body)
         self.assertNotIn(f"/d/{link['token']}/file/photo-1", body.split("<img", 1)[-1].split(">", 1)[0])
-        self.assertEqual(body.count("/preview/background-photo-"), 4)
-        payload = self.app.extensions["dispatch"]["delivery_preview_service"].ensure_previews(shipment["id"], self.app.extensions["dispatch"]["delivery_package_service"].load_manifest(shipment["id"]))
-        self.assertEqual(len(payload["thumbnails"]), 6)
+        self.assertEqual(body.count("/preview/background:photo-"), 4)
+        payload = self.app.extensions["dispatch"]["delivery_preview_service"].load_previews(shipment["id"])
+        self.assertEqual(len(payload["thumbnails"]), 8)
         self.assertEqual(len(payload["backgrounds"]), 4)
+        for index in range(1, 9):
+            self.assertEqual(self.client.get(f"/d/{link['token']}/preview/thumbnail:photo-{index}").status_code, 200)
+        for preview in payload["backgrounds"]:
+            self.assertEqual(self.client.get(f"/d/{link['token']}/preview/{preview['id']}").status_code, 200)
+
+
+    def test_legacy_uuid_preview_manifest_still_serves_existing_preview(self):
+        shipment, link = self.create_ready_link_shipment()
+        legacy_id = "9a6aaf80-1c14-4575-ab9f-42e9c3325e4d"
+        self.write_preview_manifest(shipment["id"], [
+            {"id": legacy_id, "file_id": "photo-1", "filename": f"{legacy_id}.jpg", "path": f"previews/{legacy_id}.jpg", "size": 12},
+        ])
+
+        response = self.client.get(f"/d/{link['token']}")
+        preview_response = self.client.get(f"/d/{link['token']}/preview/{legacy_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"/d/{link['token']}/preview/{legacy_id}", unescape(response.get_data(as_text=True)))
+        self.assertEqual(preview_response.status_code, 200)
 
     def test_preview_route_is_token_bound_safe_and_decorative(self):
         shipment, link = self.create_ready_link_shipment()
         self.write_preview_manifest(shipment["id"], [
-            {"id": "thumbnail-photo-1", "file_id": "photo-1", "filename": "thumbnail-photo-1.jpg", "path": "previews/thumbnail-photo-1.jpg", "kind": "thumbnail", "size": 12},
+            {"id": "thumbnail:photo-1", "file_id": "photo-1", "filename": "thumbnail-photo-1.jpg", "path": "previews/thumbnail-photo-1.jpg", "kind": "thumbnail", "size": 12},
         ])
 
-        preview_response = self.client.get(f"/d/{link['token']}/preview/thumbnail-photo-1")
+        preview_response = self.client.get(f"/d/{link['token']}/preview/thumbnail:photo-1")
         traversal_response = self.client.get(f"/d/{link['token']}/preview/../../package.zip")
         missing_response = self.client.get(f"/d/{link['token']}/preview/missing")
         zip_response = self.client.get(f"/d/{link['token']}/download")
@@ -346,7 +370,7 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
     def test_expired_and_revoked_links_do_not_expose_previews(self):
         shipment, link = self.create_ready_link_shipment()
         self.write_preview_manifest(shipment["id"], [
-            {"id": "thumbnail-photo-1", "file_id": "photo-1", "filename": "thumbnail-photo-1.jpg", "path": "previews/thumbnail-photo-1.jpg", "kind": "thumbnail", "size": 12},
+            {"id": "thumbnail:photo-1", "file_id": "photo-1", "filename": "thumbnail-photo-1.jpg", "path": "previews/thumbnail-photo-1.jpg", "kind": "thumbnail", "size": 12},
         ])
         expired = self.app.extensions["dispatch"]["delivery_link_store"].update(
             link["id"],
@@ -354,12 +378,12 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         )
 
         self.assertEqual(self.client.get(f"/d/{expired['token']}").status_code, 404)
-        self.assertEqual(self.client.get(f"/d/{expired['token']}/preview/thumbnail-photo-1").status_code, 404)
+        self.assertEqual(self.client.get(f"/d/{expired['token']}/preview/thumbnail:photo-1").status_code, 404)
 
         new_link = self.app.extensions["dispatch"]["delivery_link_service"].regenerate_for_shipment(shipment["id"])
         self.app.extensions["dispatch"]["delivery_link_service"].revoke_for_shipment(shipment["id"])
         self.assertEqual(self.client.get(f"/d/{new_link['token']}").status_code, 404)
-        self.assertEqual(self.client.get(f"/d/{new_link['token']}/preview/thumbnail-photo-1").status_code, 404)
+        self.assertEqual(self.client.get(f"/d/{new_link['token']}/preview/thumbnail:photo-1").status_code, 404)
 
     def test_download_link_email_sends_only_link_and_marks_sent(self):
         channel = self.create_smtp_channel()
