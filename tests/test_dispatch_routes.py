@@ -1,3 +1,4 @@
+import base64
 import copy
 import tempfile
 import unittest
@@ -9,6 +10,7 @@ from app import create_app
 from app.dispatch import DispatchShipmentStore, ShipmentService
 from app.dispatch.scheduler import DispatchScheduler
 from app.lens_read_service import LensReadService
+from app.routes import web
 from app.settings import OutboundChannelDraft
 
 
@@ -21,12 +23,14 @@ class DispatchRoutesTest(unittest.TestCase):
         self.settings_store_path = self.root / "settings.json"
         self.lens_store_path = self.root / "lens_coverages.json"
         self.ingest_store_path = self.root / "ingest.json"
+        self.thumbnail_root = self.root / "thumbnails"
         self.patches = [
             patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
             patch("app.config.SETTINGS_STORE_PATH", str(self.settings_store_path)),
             patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.lens_store_path)),
             patch("app.config.LENS_MEDIA_ROOT", str(self.lens_media_root)),
             patch("app.config.INGEST_STORE_PATH", str(self.ingest_store_path)),
+            patch("app.config.THUMBNAIL_ROOT", str(self.thumbnail_root)),
         ]
         for item in self.patches:
             item.start()
@@ -34,7 +38,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.app.config.update(TESTING=True)
         approved_file = self.lens_media_root / "coverages" / "cov-1" / "photo-approved_IMG001.jpg"
         approved_file.parent.mkdir(parents=True)
-        approved_file.write_bytes(b"\xff\xd8\xff\xe0ATLASJPEG\xff\xd9")
+        approved_file.write_bytes(self.valid_image_bytes())
         self.coverages = {
             "cov-1": {
                 "coverage_name": "Cobertura Quito",
@@ -190,10 +194,22 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(lens.status_code, 200)
         self.assertIn("Coberturas", lens.get_data(as_text=True))
 
-    def register_ingest_photo(self, filename="IMG001.jpg", source="canon-r6", received_at=None):
+    def valid_image_bytes(self):
+        return base64.b64decode(
+            "/9j/4AAQSkZJRgABAQEAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAASACADAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAYH/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AnE1hLgAAAAAAAAAAP//Z"
+        )
+
+    def write_valid_jpeg(self, path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(self.valid_image_bytes())
+
+    def register_ingest_photo(self, filename="IMG001.jpg", source="canon-r6", received_at=None, valid_jpeg=False):
         photo_path = self.root / "events" / "2026" / "08" / "08" / "sabado" / "ricardo" / source / "JPG" / filename
         photo_path.parent.mkdir(parents=True, exist_ok=True)
-        photo_path.write_bytes(f"jpg-{filename}".encode())
+        if valid_jpeg:
+            self.write_valid_jpeg(photo_path)
+        else:
+            photo_path.write_bytes(f"jpg-{filename}".encode())
         return self.app.extensions["ingest"]["ingest_service"].register_received_photo({
             "filename": filename,
             "path": str(photo_path),
@@ -273,7 +289,6 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("2 fotografías", body)
         self.assertIn("IMG001.jpg", body)
         self.assertIn("IMG002.jpg", body)
-        self.assertIn("Miniatura pendiente", body)
         self.assertNotIn(str(self.root), body)
 
     def test_flow_route_limits_latest_photos_to_12(self):
@@ -357,6 +372,109 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Cobertura: OPERATIVOS", body)
         self.assertIn("Abrir en LENS", body)
         self.assertIn(f'href="/coverages/{coverage_id}"', body)
+
+    def register_lens_web_coverage(self):
+        coverage = copy.deepcopy(self.coverages["cov-1"])
+        web.coverages["cov-1"] = coverage
+        self.app.extensions["lens"]["coverage_store"].set("cov-1", coverage)
+
+    def test_thumbnail_endpoint_generates_from_storage_path(self):
+        self.register_lens_web_coverage()
+
+        response = self.client.get("/coverages/cov-1/photos/photo-approved/thumbnail")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/jpeg")
+        self.assertEqual(len(list(self.thumbnail_root.glob("*.jpg"))), 1)
+        response.close()
+
+    def test_thumbnail_endpoint_generates_from_flow_path(self):
+        photo = self.register_ingest_photo(filename="FLOW001.jpg", valid_jpeg=True)
+
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/jpeg")
+        self.assertEqual(len(list(self.thumbnail_root.glob("*.jpg"))), 1)
+        response.close()
+
+    def test_flow_and_lens_reuse_same_thumbnail_cache(self):
+        photo = self.register_ingest_photo(filename="FLOW002.jpg", valid_jpeg=True)
+        _, conversion = self.convert_first_flow_session()
+        coverage_id = conversion.headers["Location"].rsplit("/", 1)[-1]
+
+        flow_response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+        coverage_response = self.client.get(f"/coverages/{coverage_id}/photos/{photo['id']}/thumbnail")
+
+        self.assertEqual(flow_response.status_code, 200)
+        self.assertEqual(coverage_response.status_code, 200)
+        self.assertEqual(len(list(self.thumbnail_root.glob("*.jpg"))), 1)
+        flow_response.close()
+        coverage_response.close()
+
+    def test_thumbnail_generation_does_not_modify_original(self):
+        photo = self.register_ingest_photo(filename="FLOW003.jpg", valid_jpeg=True)
+        source_path = Path(photo["path"])
+        before = source_path.read_bytes()
+        before_stat = source_path.stat()
+
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(source_path.read_bytes(), before)
+        self.assertEqual(source_path.stat().st_size, before_stat.st_size)
+        response.close()
+
+    def test_flow_shows_real_size_when_file_exists(self):
+        photo = self.register_ingest_photo(filename="FLOW004.jpg", valid_jpeg=True)
+        expected_size = Path(photo["path"]).stat().st_size
+
+        body = self.client.get("/flow").get_data(as_text=True)
+
+        self.assertIn(f"{expected_size} B", body)
+        self.assertNotIn("0 B", body)
+
+    def test_missing_flow_file_uses_placeholder_without_error(self):
+        photo = self.register_ingest_photo(filename="FLOW005.jpg", valid_jpeg=True)
+        Path(photo["path"]).unlink()
+
+        body = self.client.get("/flow").get_data(as_text=True)
+        thumbnail = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+
+        self.assertIn("Miniatura pendiente", body)
+        self.assertEqual(thumbnail.status_code, 404)
+
+    def test_thumbnail_routes_reject_path_traversal(self):
+        flow_response = self.client.get("/flow/photos/..%2Fsecret/thumbnail")
+        coverage_response = self.client.get("/coverages/cov-1/photos/..%2Fsecret/thumbnail")
+
+        self.assertEqual(flow_response.status_code, 404)
+        self.assertEqual(coverage_response.status_code, 404)
+
+    def test_traditional_lens_photo_still_uses_thumbnail_url(self):
+        self.register_lens_web_coverage()
+
+        body = self.client.get("/coverages/cov-1").get_data(as_text=True)
+        thumbnail = self.client.get("/coverages/cov-1/photos/photo-approved/thumbnail")
+        media = self.client.get("/coverages/cov-1/photos/photo-approved/media")
+
+        self.assertIn("/coverages/cov-1/photos/photo-approved/thumbnail", body)
+        self.assertEqual(thumbnail.status_code, 200)
+        self.assertEqual(media.status_code, 200)
+        thumbnail.close()
+        media.close()
+
+    def test_flow_coverage_in_lens_has_valid_thumbnail_url(self):
+        photo = self.register_ingest_photo(filename="FLOW006.jpg", valid_jpeg=True)
+        _, conversion = self.convert_first_flow_session()
+        coverage_id = conversion.headers["Location"].rsplit("/", 1)[-1]
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+        thumbnail = self.client.get(f"/coverages/{coverage_id}/photos/{photo['id']}/thumbnail")
+
+        self.assertIn(f"/coverages/{coverage_id}/photos/{photo['id']}/thumbnail", body)
+        self.assertEqual(thumbnail.status_code, 200)
+        thumbnail.close()
 
     def test_get_dispatch_index_with_history_table(self):
         self.create_shipment()

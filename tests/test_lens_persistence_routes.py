@@ -9,7 +9,9 @@ from app.routes import web
 
 
 class LensPersistenceRoutesTest(unittest.TestCase):
-    jpeg_bytes = b"\xff\xd8\xff\xe0ATLASJPEG\xff\xd9"
+    jpeg_bytes = base64.b64decode(
+        "/9j/4AAQSkZJRgABAQEAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/2wBDAQMDAwQDBAgEBAgQCwkLEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBD/wAARCAASACADAREAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAn/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAYH/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AnE1hLgAAAAAAAAAAP//Z"
+    )
     png_bytes = b"\x89PNG\r\n\x1a\nATLASPNG"
 
     def setUp(self):
@@ -17,6 +19,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         self.coverage_store_path = self.root / "lens_coverages.json"
         self.media_root = self.root / "media"
+        self.thumbnail_root = self.root / "thumbnails"
         self.dispatch_store_path = self.root / "dispatch_shipments.json"
         self.settings_store_path = self.root / "settings.json"
         self.patches = [
@@ -24,6 +27,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
             patch("app.config.LENS_MEDIA_ROOT", str(self.media_root)),
             patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
             patch("app.config.SETTINGS_STORE_PATH", str(self.settings_store_path)),
+            patch("app.config.THUMBNAIL_ROOT", str(self.thumbnail_root)),
         ]
         for item in self.patches:
             item.start()
@@ -421,7 +425,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         media_response = client.get(f"/coverages/{coverage_id}/photos/photo-1/media")
 
         self.assertIn(f'href="/dispatch/new?coverage_id={coverage_id}"', body)
-        self.assertIn("/photos/photo-1/media", body)
+        self.assertIn("/photos/photo-1/thumbnail", body)
         self.assertEqual(media_response.status_code, 200)
         media_response.close()
 

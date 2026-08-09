@@ -14,6 +14,7 @@ from flask import Blueprint, abort, current_app, jsonify, redirect, render_templ
 from app.ai import AIError, AIService
 from app.ai.context_engine import get_coverage_context_data, normalize_context_payload
 from app.config import AI_ENABLED
+from app.media import resolve_photo_source
 from app.dispatch import DispatchHandoffService
 from app.export.models import ExportRequest, ExportResult
 from app.export.naming import ExportNamingService
@@ -429,14 +430,48 @@ def format_file_size_label(path_value: str) -> str:
     return f"{size / (1024 * 1024):.1f} MB"
 
 
+def thumbnail_service():
+    return current_app.extensions.get("media", {}).get("thumbnail_service")
+
+
+def ensure_media_thumbnail(source_path: Path | None) -> Path | None:
+    service = thumbnail_service()
+    if source_path is None or service is None:
+        return None
+    return service.ensure_thumbnail(source_path)
+
+
+def resolve_ingest_photo_source(photo: dict) -> Path | None:
+    return resolve_photo_source(photo, ingest_photos=list_ingest_photos())
+
+
+def resolve_coverage_photo_source(photo: dict) -> Path | None:
+    return resolve_photo_source(
+        photo,
+        coverage_store=coverage_store,
+        ingest_photos=list_ingest_photos(),
+    )
+
+
+def source_file_size(path_value: Path | None) -> int | None:
+    if path_value is None:
+        return None
+    try:
+        return path_value.stat().st_size
+    except OSError:
+        return None
+
+
 def build_flow_photo_item(photo: dict) -> dict:
     received_at = str(photo.get("received_at", ""))
+    source_path = resolve_ingest_photo_source(photo)
+    thumbnail = ensure_media_thumbnail(source_path)
     return {
         "filename": str(photo.get("filename") or Path(str(photo.get("path", ""))).name or "Fotografía"),
         "source": format_source_label(str(photo.get("source") or photo.get("camera") or "")),
         "received_at": format_datetime_label(received_at),
-        "size": format_file_size_label(str(photo.get("path", ""))),
-        "thumbnail_url": "",
+        "size": format_file_size_label(str(source_path)) if source_path is not None else "Tamaño no disponible",
+        "thumbnail_url": url_for("web.flow_photo_thumbnail", photo_id=str(photo.get("id", ""))) if thumbnail is not None else "",
     }
 
 
@@ -531,12 +566,7 @@ def registered_flow_photo(photo: dict) -> dict | None:
 
 
 def resolve_flow_photo_path(photo: dict) -> Path | None:
-    if registered_flow_photo(photo) is None:
-        return None
-    candidate = Path(str(photo.get("flow_path", "")))
-    if not candidate.is_absolute() or not candidate.is_file() or candidate.is_symlink():
-        return None
-    return candidate
+    return resolve_coverage_photo_source(photo)
 
 
 def sync_flow_coverage_photos(coverage_id: str, coverage: dict) -> bool:
@@ -658,21 +688,22 @@ def serialize_photos_for_detail(coverage_id: str, photos: list[dict]) -> list[di
     serialized = []
     for photo in photos:
         item = deepcopy(photo)
-        storage_path = str(photo.get("storage_path", "")).strip()
-        if (
-            coverage_store is not None
-            and (
-                coverage_store.is_stored_file_available(storage_path)
-                or resolve_flow_photo_path(photo) is not None
-            )
-        ):
-            item["media_url"] = url_for(
-                "web.coverage_photo_media",
+        source_path = resolve_coverage_photo_source(photo)
+        thumbnail = ensure_media_thumbnail(source_path)
+        size = source_file_size(source_path)
+        if size is not None:
+            item["size"] = size
+        if thumbnail is not None:
+            thumbnail_url = url_for(
+                "web.coverage_photo_thumbnail",
                 coverage_id=coverage_id,
                 photo_id=str(photo.get("id", "")),
             )
+            item["media_url"] = thumbnail_url
+            item["thumbnail_url"] = thumbnail_url
         else:
             item["media_url"] = ""
+            item["thumbnail_url"] = ""
         serialized.append(item)
     return serialized
 
@@ -1077,32 +1108,49 @@ def add_coverage_photo(coverage_id: str):
     return jsonify({"photo": photo, "total": len(photos)}), 201
 
 
-@web_bp.get("/coverages/<coverage_id>/photos/<photo_id>/media")
-def coverage_photo_media(coverage_id: str, photo_id: str):
+@web_bp.get("/flow/photos/<photo_id>/thumbnail")
+def flow_photo_thumbnail(photo_id: str):
+    photo = next((item for item in list_ingest_photos() if str(item.get("id", "")) == photo_id), None)
+    if photo is None:
+        abort(404)
+    thumbnail = ensure_media_thumbnail(resolve_ingest_photo_source(photo))
+    if thumbnail is None:
+        abort(404)
+    return send_file(thumbnail, mimetype="image/jpeg", conditional=True, max_age=86400)
+
+
+@web_bp.get("/coverages/<coverage_id>/photos/<photo_id>/thumbnail")
+def coverage_photo_thumbnail(coverage_id: str, photo_id: str):
     coverage = coverages.get(coverage_id)
-    if coverage is None or coverage_store is None:
+    if coverage is None:
         abort(404)
 
     photo = find_coverage_photo(coverage, photo_id)
     if photo is None:
         abort(404)
 
-    storage_path = str(photo.get("storage_path", "")).strip()
-    media_path = coverage_store.resolve_storage_path(storage_path)
-    flow_media_path = resolve_flow_photo_path(photo)
-    if (
-        (
-            media_path is None
-            or not media_path.is_file()
-            or media_path.is_symlink()
-            or not coverage_store.is_stored_file_available(storage_path)
-        )
-        and flow_media_path is None
-    ):
+    thumbnail = ensure_media_thumbnail(resolve_coverage_photo_source(photo))
+    if thumbnail is None:
+        abort(404)
+    return send_file(thumbnail, mimetype="image/jpeg", conditional=True, max_age=86400)
+
+
+@web_bp.get("/coverages/<coverage_id>/photos/<photo_id>/media")
+def coverage_photo_media(coverage_id: str, photo_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    photo = find_coverage_photo(coverage, photo_id)
+    if photo is None:
+        abort(404)
+
+    media_path = resolve_coverage_photo_source(photo)
+    if media_path is None:
         abort(404)
 
     mimetype = str(photo.get("type", "")).strip() or None
-    return send_file(flow_media_path or media_path, mimetype=mimetype)
+    return send_file(media_path, mimetype=mimetype)
 
 
 @web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/caption")

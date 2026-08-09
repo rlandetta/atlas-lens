@@ -49,10 +49,12 @@ def create_app():
         SETTINGS_STORE_PATH,
         LENS_MAX_PHOTO_BYTES,
         LENS_MEDIA_ROOT,
+        THUMBNAIL_ROOT,
     )
     from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DeliveryPreviewService, DispatchShipmentStore, ShipmentService, SMTPLinkTransport
     from app.ingest import IngestService, IngestStore
     from app.lens import LensCoverageStore
+    from app.media import ThumbnailService
     from app.settings import SettingsService, SettingsStore
     from app.lens_read_service import LensReadService
     from app.routes.dispatch import dispatch_bp
@@ -66,6 +68,7 @@ def create_app():
     ingest_store = IngestStore(INGEST_STORE_PATH)
     ingest_service = IngestService(ingest_store, session_timeout_minutes=INGEST_SESSION_TIMEOUT_MINUTES)
     lens_coverage_store = LensCoverageStore(LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT)
+    thumbnail_service = ThumbnailService(THUMBNAIL_ROOT)
     configure_coverage_store(lens_coverage_store)
     coverage_provider = WebCoverageProvider()
     lens_reader = LensReadService(coverage_provider)
@@ -83,6 +86,9 @@ def create_app():
     }
     app.extensions["lens"] = {
         "coverage_store": lens_coverage_store,
+    }
+    app.extensions["media"] = {
+        "thumbnail_service": thumbnail_service,
     }
     app.extensions["settings"] = {
         "store": settings_store,

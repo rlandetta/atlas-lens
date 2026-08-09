@@ -66,4 +66,8 @@ LENS_MEDIA_ROOT = os.getenv(
     "LENS_MEDIA_ROOT",
     os.path.join("instance", "lens_media"),
 )
+THUMBNAIL_ROOT = os.getenv(
+    "THUMBNAIL_ROOT",
+    os.path.join("instance", "thumbnails"),
+)
 LENS_MAX_PHOTO_BYTES = get_int_env("LENS_MAX_PHOTO_BYTES", 25 * 1024 * 1024)
