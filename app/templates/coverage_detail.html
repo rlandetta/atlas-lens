@@ -9,7 +9,6 @@
         <p class="coverage-id">ID temporal: {{ coverage_id }}</p>
         <div class="photo-toolbar-actions">
             <a id="create-dispatch-link" href="{{ url_for('dispatch.new', coverage_id=coverage_id) }}" class="primary-button compact-action" {% if not can_create_dispatch %}hidden{% endif %}>Crear despacho</a>
-            <button id="create-dispatch-disabled-button" type="button" class="secondary-button compact-action" disabled {% if can_create_dispatch %}hidden{% endif %}>Crear despacho</button>
             <button id="open-edit-dialog-button" type="button" class="secondary-button edit-information-button">Editar información</button>
         </div>
     </div>
