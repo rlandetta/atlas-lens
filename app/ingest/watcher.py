@@ -62,10 +62,37 @@ class IngestWatcher:
         return registered
 
     def run_forever(self, *, interval_seconds: int = FLOW_WATCH_INTERVAL_SECONDS) -> None:
-        self.logger.info("FLOW: watcher iniciado")
+        self.log_startup_summary(interval_seconds=interval_seconds)
         while True:
             self.scan_once()
             time.sleep(interval_seconds)
+
+    def log_startup_summary(self, *, interval_seconds: int) -> None:
+        summary, available_count, missing_directories = self.startup_summary(interval_seconds=interval_seconds)
+        for directory in self.directories:
+            if directory.is_dir():
+                self.logged_observed.add(str(directory))
+        for directory in missing_directories:
+            self.warned_missing.add(str(directory))
+        if missing_directories:
+            self.logger.warning(summary)
+        else:
+            self.logger.info(summary)
+
+    def startup_summary(self, *, interval_seconds: int) -> tuple[str, int, list[Path]]:
+        lines = ["ATLAS FLOW WATCHER", "------------------"]
+        available_count = 0
+        missing_directories = []
+        for directory in self.directories:
+            camera = directory.name
+            if directory.is_dir():
+                available_count += 1
+                lines.extend([f"✓ {camera}", f"  {directory}", ""])
+            else:
+                missing_directories.append(directory)
+                lines.extend([f"⚠ {camera}", "  carpeta no disponible", f"  {directory}", ""])
+        lines.extend([f"Watching: {available_count} camera(s)", f"Polling: {interval_seconds} s"])
+        return "\n".join(lines), available_count, missing_directories
 
     def registered_paths(self) -> set[str]:
         return {str(photo.get("path", "")) for photo in self.service.store.list_photos() if str(photo.get("path", ""))}

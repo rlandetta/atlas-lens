@@ -83,6 +83,28 @@ class IngestWatcherTest(unittest.TestCase):
         self.assertEqual(len(registered), 1)
         self.assertEqual(registered[0]["source"], "canon-r6")
 
+
+    def test_r6_existing_and_1dx_missing_still_registers_r6_photo(self):
+        missing_1dx = self.root / "canon-1dx-missing"
+        watcher = IngestWatcher(self.service, [self.canon_r6, missing_1dx])
+        self.write_file(self.canon_r6, "IMG001.jpg")
+
+        summary, available_count, missing_directories = watcher.startup_summary(interval_seconds=2)
+        registered = self.stabilize(watcher)
+
+        self.assertIn("ATLAS FLOW WATCHER", summary)
+        self.assertIn("✓ canon-r6", summary)
+        self.assertIn(str(self.canon_r6), summary)
+        self.assertIn("⚠ canon-1dx-missing", summary)
+        self.assertIn("carpeta no disponible", summary)
+        self.assertIn("Watching: 1 camera(s)", summary)
+        self.assertIn("Polling: 2 s", summary)
+        self.assertEqual(available_count, 1)
+        self.assertEqual(missing_directories, [missing_1dx])
+        self.assertEqual(len(registered), 1)
+        self.assertEqual(registered[0]["filename"], "IMG001.jpg")
+        self.assertEqual(registered[0]["source"], "canon-r6")
+
     def test_two_cameras_share_same_active_session(self):
         self.write_file(self.canon_r6, "IMG001.jpg")
         first = self.stabilize()[0]
