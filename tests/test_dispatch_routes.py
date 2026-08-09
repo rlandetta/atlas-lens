@@ -24,6 +24,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.lens_store_path = self.root / "lens_coverages.json"
         self.ingest_store_path = self.root / "ingest.json"
         self.thumbnail_root = self.root / "thumbnails"
+        self.events_root = self.root / "events"
         self.patches = [
             patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
             patch("app.config.SETTINGS_STORE_PATH", str(self.settings_store_path)),
@@ -31,6 +32,7 @@ class DispatchRoutesTest(unittest.TestCase):
             patch("app.config.LENS_MEDIA_ROOT", str(self.lens_media_root)),
             patch("app.config.INGEST_STORE_PATH", str(self.ingest_store_path)),
             patch("app.config.THUMBNAIL_ROOT", str(self.thumbnail_root)),
+            patch("app.config.FLOW_EVENTS_ROOT", str(self.events_root)),
         ]
         for item in self.patches:
             item.start()
@@ -204,7 +206,7 @@ class DispatchRoutesTest(unittest.TestCase):
         path.write_bytes(self.valid_image_bytes())
 
     def register_ingest_photo(self, filename="IMG001.jpg", source="canon-r6", received_at=None, valid_jpeg=False):
-        photo_path = self.root / "events" / "2026" / "08" / "08" / "sabado" / "ricardo" / source / "JPG" / filename
+        photo_path = self.events_root / "2026" / "08" / "08" / "sabado" / "ricardo" / source / "JPG" / filename
         photo_path.parent.mkdir(parents=True, exist_ok=True)
         if valid_jpeg:
             self.write_valid_jpeg(photo_path)
@@ -216,6 +218,19 @@ class DispatchRoutesTest(unittest.TestCase):
             "source": source,
             "received_at": (received_at or datetime.now(timezone.utc)).isoformat(),
         })
+
+    def register_legacy_incoming_photo(self, filename="LEGACY001.JPG", source="canon-r6", event="sabado", received_at=None, content=None):
+        received_at = received_at or datetime.now(timezone.utc)
+        events_path = self.events_root / f"{received_at.year:04}" / f"{received_at.month:02}" / f"{received_at.day:02}" / event / "ricardo" / source / "JPG" / filename
+        events_path.parent.mkdir(parents=True, exist_ok=True)
+        events_path.write_bytes(content or self.valid_image_bytes())
+        incoming_path = self.root / "incoming" / source / filename
+        return self.app.extensions["ingest"]["ingest_service"].register_received_photo({
+            "filename": filename,
+            "path": str(incoming_path),
+            "source": source,
+            "received_at": received_at.isoformat(),
+        }), events_path, incoming_path
 
     def flow_coverage_form(self, **overrides):
         data = {
@@ -475,6 +490,106 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn(f"/coverages/{coverage_id}/photos/{photo['id']}/thumbnail", body)
         self.assertEqual(thumbnail.status_code, 200)
         thumbnail.close()
+
+    def test_existing_flow_path_works_without_legacy_search(self):
+        photo = self.register_ingest_photo(filename="EVENTS001.JPG", valid_jpeg=True)
+        before_path = photo["path"]
+
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+        stored = self.app.extensions["ingest"]["store"].list_photos()[0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(stored["path"], before_path)
+        response.close()
+
+    def test_legacy_incoming_path_resolves_unique_events_file_and_updates_ingest(self):
+        photo, events_path, incoming_path = self.register_legacy_incoming_photo(filename="LEGACY001.JPG")
+
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+        stored = self.app.extensions["ingest"]["store"].list_photos()[0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(incoming_path.exists())
+        self.assertEqual(stored["path"], str(events_path.resolve()))
+        response.close()
+
+    def test_legacy_lens_flow_path_updates_lens_and_ingest(self):
+        photo, events_path, _ = self.register_legacy_incoming_photo(filename="LEGACY002.JPG")
+        _, conversion = self.convert_first_flow_session()
+        coverage_id = conversion.headers["Location"].rsplit("/", 1)[-1]
+        coverage = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertNotEqual(coverage["photos"][0]["flow_path"], str(events_path))
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+        stored_coverage = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        stored_ingest = self.app.extensions["ingest"]["store"].list_photos()[0]
+
+        self.assertIn(f"/coverages/{coverage_id}/photos/{photo['id']}/thumbnail", body)
+        self.assertEqual(stored_coverage["photos"][0]["flow_path"], str(events_path.resolve()))
+        self.assertEqual(stored_ingest["path"], str(events_path.resolve()))
+
+    def test_legacy_resolution_prefers_events_over_archive(self):
+        event_bytes = self.valid_image_bytes() + b"EVENTS"
+        archive_bytes = self.valid_image_bytes() + b"ARCHIVE"
+        photo, events_path, _ = self.register_legacy_incoming_photo(filename="LEGACY003.JPG", content=event_bytes)
+        archive_path = self.root / "archive" / "2026" / "08" / "08" / "sabado" / "ricardo" / "canon-r6" / "JPG" / "LEGACY003.JPG"
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        archive_path.write_bytes(archive_bytes)
+        _, conversion = self.convert_first_flow_session()
+        coverage_id = conversion.headers["Location"].rsplit("/", 1)[-1]
+
+        response = self.client.get(f"/coverages/{coverage_id}/photos/{photo['id']}/media")
+        stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_data(), event_bytes)
+        self.assertEqual(stored["photos"][0]["flow_path"], str(events_path.resolve()))
+        response.close()
+
+    def test_legacy_ambiguous_events_matches_do_not_update_path(self):
+        photo, events_path, incoming_path = self.register_legacy_incoming_photo(filename="LEGACY004.JPG", event="sabado")
+        duplicate = events_path.parents[4] / "domingo" / "ricardo" / "canon-r6" / "JPG" / "LEGACY004.JPG"
+        duplicate.parent.mkdir(parents=True, exist_ok=True)
+        duplicate.write_bytes(self.valid_image_bytes())
+
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+        stored = self.app.extensions["ingest"]["store"].list_photos()[0]
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(stored["path"], str(incoming_path))
+
+    def test_legacy_original_is_not_modified_when_resolved(self):
+        photo, events_path, _ = self.register_legacy_incoming_photo(filename="LEGACY005.JPG")
+        before = events_path.read_bytes()
+
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(events_path.read_bytes(), before)
+        response.close()
+
+    def test_legacy_thumbnail_and_real_size_work_after_resolve(self):
+        photo, events_path, _ = self.register_legacy_incoming_photo(filename="LEGACY006.JPG")
+        expected_size = events_path.stat().st_size
+
+        body = self.client.get("/flow").get_data(as_text=True)
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+
+        self.assertIn(f"{expected_size} B", body)
+        self.assertNotIn("0 B", body)
+        self.assertEqual(response.status_code, 200)
+        response.close()
+
+    def test_new_events_photo_still_works_without_repair(self):
+        photo = self.register_ingest_photo(filename="EVENTS002.JPG", valid_jpeg=True)
+        self.assertIn(str(self.events_root), photo["path"])
+
+        response = self.client.get(f"/flow/photos/{photo['id']}/thumbnail")
+        stored = self.app.extensions["ingest"]["store"].list_photos()[0]
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(stored["path"], photo["path"])
+        response.close()
 
     def test_get_dispatch_index_with_history_table(self):
         self.create_shipment()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from hashlib import sha256
 import base64
 import logging
@@ -61,6 +62,91 @@ def resolve_photo_source(
     if ingest_photos is not None and not _matching_ingest_photo(photo, ingest_photos):
         return None
     return candidate
+
+
+def _safe_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _flow_filename(photo: Mapping[str, Any]) -> str:
+    return str(
+        Path(str(photo.get("flow_path") or photo.get("path") or "")).name
+        or photo.get("filename")
+        or photo.get("name")
+        or ""
+    ).strip()
+
+
+def _flow_source(photo: Mapping[str, Any]) -> str:
+    return str(photo.get("source") or photo.get("camera") or "").strip()
+
+
+def _flow_received_date_parts(photo: Mapping[str, Any]) -> tuple[str, str, str] | None:
+    raw_value = str(photo.get("received_at") or photo.get("created_at") or "").strip()
+    if not raw_value:
+        return None
+    try:
+        value = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return (f"{value.year:04}", f"{value.month:02}", f"{value.day:02}")
+
+
+def _candidate_matches_metadata(candidate: Path, photo: Mapping[str, Any]) -> bool:
+    parts = set(candidate.parts)
+    source = _flow_source(photo)
+    if source and source not in parts:
+        return False
+    date_parts = _flow_received_date_parts(photo)
+    if date_parts and not all(part in candidate.parts for part in date_parts):
+        return False
+    return True
+
+
+def resolve_legacy_flow_photo_source(
+    photo: Mapping[str, Any],
+    *,
+    events_root: str | os.PathLike[str],
+) -> Path | None:
+    flow_path = str(photo.get("flow_path") or photo.get("path") or "").strip()
+    if not flow_path:
+        return None
+    original = Path(flow_path)
+    if original.is_absolute() and _existing_regular_file(original):
+        return original
+
+    filename = _flow_filename(photo)
+    if not filename:
+        return None
+    root = Path(events_root)
+    if not root.is_dir() or root.is_symlink():
+        return None
+
+    matches: list[Path] = []
+    try:
+        candidates = root.rglob(filename)
+        for candidate in candidates:
+            if not _existing_regular_file(candidate):
+                continue
+            if not _safe_relative_to(candidate, root):
+                continue
+            if not _candidate_matches_metadata(candidate, photo):
+                continue
+            matches.append(candidate.resolve())
+    except OSError as error:
+        LOGGER.warning("No se pudo buscar flow_path legado en events para %s: %s", filename, error)
+        return None
+
+    unique_matches = sorted({str(match): match for match in matches}.values(), key=lambda item: str(item))
+    if len(unique_matches) == 1:
+        return unique_matches[0]
+    if len(unique_matches) > 1:
+        LOGGER.warning("flow_path legado ambiguo para %s: %s coincidencias en events", filename, len(unique_matches))
+    return None
 
 
 class ThumbnailService:

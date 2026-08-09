@@ -42,6 +42,7 @@ def create_app():
         DELIVERY_LINKS_STORE_PATH,
         DELIVERY_ROOT,
         DISPATCH_STORE_PATH,
+        FLOW_EVENTS_ROOT,
         INGEST_SESSION_TIMEOUT_MINUTES,
         INGEST_STORE_PATH,
         LENS_COVERAGE_STORE_PATH,
@@ -65,6 +66,7 @@ def create_app():
 
     app = Flask(__name__)
     app.config["LENS_MAX_PHOTO_BYTES"] = LENS_MAX_PHOTO_BYTES
+    app.config["FLOW_EVENTS_ROOT"] = FLOW_EVENTS_ROOT
     ingest_store = IngestStore(INGEST_STORE_PATH)
     ingest_service = IngestService(ingest_store, session_timeout_minutes=INGEST_SESSION_TIMEOUT_MINUTES)
     lens_coverage_store = LensCoverageStore(LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT)

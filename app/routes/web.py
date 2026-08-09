@@ -13,8 +13,8 @@ from flask import Blueprint, abort, current_app, jsonify, redirect, render_templ
 
 from app.ai import AIError, AIService
 from app.ai.context_engine import get_coverage_context_data, normalize_context_payload
-from app.config import AI_ENABLED
-from app.media import resolve_photo_source
+from app.config import AI_ENABLED, FLOW_EVENTS_ROOT
+from app.media import resolve_legacy_flow_photo_source, resolve_photo_source
 from app.dispatch import DispatchHandoffService
 from app.export.models import ExportRequest, ExportResult
 from app.export.naming import ExportNamingService
@@ -434,6 +434,10 @@ def thumbnail_service():
     return current_app.extensions.get("media", {}).get("thumbnail_service")
 
 
+def flow_events_root() -> str:
+    return str(current_app.config.get("FLOW_EVENTS_ROOT") or FLOW_EVENTS_ROOT)
+
+
 def ensure_media_thumbnail(source_path: Path | None) -> Path | None:
     service = thumbnail_service()
     if source_path is None or service is None:
@@ -441,16 +445,84 @@ def ensure_media_thumbnail(source_path: Path | None) -> Path | None:
     return service.ensure_thumbnail(source_path)
 
 
+def update_ingest_photo_path(photo: dict, resolved_path: Path) -> None:
+    store = ingest_store()
+    if store is None:
+        return
+    old_path = str(photo.get("path") or photo.get("flow_path") or "")
+    photo_id = str(photo.get("id") or photo.get("flow_photo_id") or "")
+    session_id = str(photo.get("session_id") or photo.get("flow_session_id") or "")
+    next_path = str(resolved_path)
+
+    def mutation(payload):
+        changed = False
+        for ingest_photo in payload.get("photos", []):
+            if photo_id and str(ingest_photo.get("id", "")) != photo_id:
+                continue
+            if session_id and str(ingest_photo.get("session_id", "")) != session_id:
+                continue
+            if old_path and str(ingest_photo.get("path", "")) != old_path:
+                continue
+            ingest_photo["path"] = next_path
+            changed = True
+        return changed
+
+    if store.mutate(mutation):
+        photo["path"] = next_path
+
+
 def resolve_ingest_photo_source(photo: dict) -> Path | None:
-    return resolve_photo_source(photo, ingest_photos=list_ingest_photos())
+    source = resolve_photo_source(photo, ingest_photos=list_ingest_photos())
+    if source is not None:
+        return source
+    resolved = resolve_legacy_flow_photo_source(photo, events_root=flow_events_root())
+    if resolved is None:
+        return None
+    update_ingest_photo_path(photo, resolved)
+    return resolved
+
+
+def repair_coverage_flow_photo_path(photo: dict, resolved_path: Path) -> bool:
+    next_path = str(resolved_path)
+    old_photo = deepcopy(photo)
+    if str(photo.get("flow_path", "")) == next_path:
+        return False
+    update_ingest_photo_path(old_photo, resolved_path)
+    photo["flow_path"] = next_path
+    photo["available_on_disk"] = True
+    try:
+        photo["size"] = resolved_path.stat().st_size
+    except OSError:
+        pass
+    return True
 
 
 def resolve_coverage_photo_source(photo: dict) -> Path | None:
-    return resolve_photo_source(
+    source = resolve_photo_source(
         photo,
         coverage_store=coverage_store,
         ingest_photos=list_ingest_photos(),
     )
+    if source is not None:
+        return source
+    resolved = resolve_legacy_flow_photo_source(photo, events_root=flow_events_root())
+    if resolved is None:
+        return None
+    return resolved
+
+
+def resolve_and_repair_coverage_photo_source(coverage_id: str, photo: dict) -> tuple[Path | None, bool]:
+    source = resolve_photo_source(
+        photo,
+        coverage_store=coverage_store,
+        ingest_photos=list_ingest_photos(),
+    )
+    if source is not None:
+        return source, False
+    resolved = resolve_legacy_flow_photo_source(photo, events_root=flow_events_root())
+    if resolved is None:
+        return None, False
+    return resolved, repair_coverage_flow_photo_path(photo, resolved)
 
 
 def source_file_size(path_value: Path | None) -> int | None:
@@ -686,9 +758,11 @@ def build_dispatch_state(coverage: dict) -> dict:
 
 def serialize_photos_for_detail(coverage_id: str, photos: list[dict]) -> list[dict]:
     serialized = []
+    changed = False
     for photo in photos:
+        source_path, repaired = resolve_and_repair_coverage_photo_source(coverage_id, photo)
+        changed = changed or repaired
         item = deepcopy(photo)
-        source_path = resolve_coverage_photo_source(photo)
         thumbnail = ensure_media_thumbnail(source_path)
         size = source_file_size(source_path)
         if size is not None:
@@ -705,6 +779,8 @@ def serialize_photos_for_detail(coverage_id: str, photos: list[dict]) -> list[di
             item["media_url"] = ""
             item["thumbnail_url"] = ""
         serialized.append(item)
+    if changed:
+        persist_coverage(coverage_id)
     return serialized
 
 
@@ -1129,7 +1205,10 @@ def coverage_photo_thumbnail(coverage_id: str, photo_id: str):
     if photo is None:
         abort(404)
 
-    thumbnail = ensure_media_thumbnail(resolve_coverage_photo_source(photo))
+    source_path, repaired = resolve_and_repair_coverage_photo_source(coverage_id, photo)
+    if repaired:
+        persist_coverage(coverage_id)
+    thumbnail = ensure_media_thumbnail(source_path)
     if thumbnail is None:
         abort(404)
     return send_file(thumbnail, mimetype="image/jpeg", conditional=True, max_age=86400)
@@ -1145,7 +1224,9 @@ def coverage_photo_media(coverage_id: str, photo_id: str):
     if photo is None:
         abort(404)
 
-    media_path = resolve_coverage_photo_source(photo)
+    media_path, repaired = resolve_and_repair_coverage_photo_source(coverage_id, photo)
+    if repaired:
+        persist_coverage(coverage_id)
     if media_path is None:
         abort(404)
 

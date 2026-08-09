@@ -44,6 +44,10 @@ FLOW_WATCH_DIRECTORIES = get_list_env("FLOW_WATCH_DIRECTORIES", [
     "/data/FLOW/sftpgo/storage/events",
 ])
 FLOW_WATCH_INTERVAL_SECONDS = get_int_env("FLOW_WATCH_INTERVAL_SECONDS", 2)
+FLOW_EVENTS_ROOT = os.getenv(
+    "FLOW_EVENTS_ROOT",
+    "/data/FLOW/sftpgo/storage/events",
+)
 DELIVERY_ROOT = os.getenv(
     "DELIVERY_ROOT",
     os.path.join("instance", "deliveries"),
