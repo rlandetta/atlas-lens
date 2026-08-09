@@ -417,6 +417,166 @@ def format_elapsed_label(value: str) -> str:
     return f"hace {days} d"
 
 
+def format_file_size_label(path_value: str) -> str:
+    try:
+        size = Path(path_value).stat().st_size
+    except OSError:
+        return "Tamaño no disponible"
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
+
+
+def build_flow_photo_item(photo: dict) -> dict:
+    received_at = str(photo.get("received_at", ""))
+    return {
+        "filename": str(photo.get("filename") or Path(str(photo.get("path", ""))).name or "Fotografía"),
+        "source": format_source_label(str(photo.get("source") or photo.get("camera") or "")),
+        "received_at": format_datetime_label(received_at),
+        "size": format_file_size_label(str(photo.get("path", ""))),
+        "thumbnail_url": "",
+    }
+
+
+def ingest_store():
+    return current_app.extensions.get("ingest", {}).get("store")
+
+
+def list_ingest_sessions() -> list[dict]:
+    store = ingest_store()
+    return store.list_sessions() if store else []
+
+
+def list_ingest_photos() -> list[dict]:
+    store = ingest_store()
+    return store.list_photos() if store else []
+
+
+def find_ingest_session(session_id: str) -> dict | None:
+    return next((session for session in list_ingest_sessions() if str(session.get("id", "")) == session_id), None)
+
+
+def list_ingest_session_photos(session_id: str) -> list[dict]:
+    photos = [
+        photo
+        for photo in list_ingest_photos()
+        if str(photo.get("session_id", "")) == session_id
+    ]
+    return sorted(photos, key=lambda item: str(item.get("received_at", "")))
+
+
+def flow_date_value(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return ""
+
+
+def build_flow_coverage_form_data(session: dict) -> dict[str, str]:
+    return {
+        "coverage_name": "",
+        "agency": "",
+        "event_date": flow_date_value(str(session.get("started_at", ""))),
+        "submit_date": flow_date_value(str(session.get("last_received_at") or session.get("started_at") or "")),
+        "city": "",
+        "country": "",
+        "photographer": "",
+        "editor": "",
+    }
+
+
+def build_lens_photo_from_ingest(photo: dict, session_id: str) -> dict:
+    filename = str(photo.get("filename") or Path(str(photo.get("path", ""))).name or photo.get("id", "Fotografía"))
+    path = str(photo.get("path", ""))
+    path_object = Path(path)
+    try:
+        size = path_object.stat().st_size if path_object.is_file() else None
+    except OSError:
+        size = None
+    return {
+        "id": validate_photo_identity(str(photo.get("id", "")), "photo_id"),
+        "name": filename,
+        "filename": filename,
+        "storage_path": "",
+        "flow_path": path,
+        "flow_session_id": session_id,
+        "flow_photo_id": str(photo.get("id", "")),
+        "source": str(photo.get("source") or photo.get("camera") or ""),
+        "size": parse_optional_int(size),
+        "type": "image/jpeg",
+        "caption_narrative": "",
+        "caption_status": "Sin editar",
+        "created_at": str(photo.get("received_at") or utc_now_iso()),
+        "updated_at": str(photo.get("received_at") or utc_now_iso()),
+        "available_on_disk": path_object.is_file() and not path_object.is_symlink(),
+    }
+
+
+def registered_flow_photo(photo: dict) -> dict | None:
+    flow_photo_id = str(photo.get("flow_photo_id", ""))
+    flow_session_id = str(photo.get("flow_session_id", ""))
+    flow_path = str(photo.get("flow_path", ""))
+    for ingest_photo in list_ingest_photos():
+        if (
+            str(ingest_photo.get("id", "")) == flow_photo_id
+            and str(ingest_photo.get("session_id", "")) == flow_session_id
+            and str(ingest_photo.get("path", "")) == flow_path
+        ):
+            return ingest_photo
+    return None
+
+
+def resolve_flow_photo_path(photo: dict) -> Path | None:
+    if registered_flow_photo(photo) is None:
+        return None
+    candidate = Path(str(photo.get("flow_path", "")))
+    if not candidate.is_absolute() or not candidate.is_file() or candidate.is_symlink():
+        return None
+    return candidate
+
+
+def sync_flow_coverage_photos(coverage_id: str, coverage: dict) -> bool:
+    session_id = str(coverage.get("flow_session_id", ""))
+    if not session_id:
+        return False
+    photos = ensure_coverage_photos(coverage)
+    existing_flow_photo_ids = {str(photo.get("flow_photo_id", "")) for photo in photos if str(photo.get("flow_photo_id", ""))}
+    changed = False
+    for ingest_photo in list_ingest_session_photos(session_id):
+        if str(ingest_photo.get("id", "")) in existing_flow_photo_ids:
+            continue
+        photos.append(build_lens_photo_from_ingest(ingest_photo, session_id))
+        existing_flow_photo_ids.add(str(ingest_photo.get("id", "")))
+        changed = True
+    if changed:
+        persist_coverage(coverage_id)
+    return changed
+
+
+def sync_flow_linked_coverages() -> None:
+    for coverage_id, coverage in list(coverages.items()):
+        sync_flow_coverage_photos(coverage_id, coverage)
+
+
+def mark_ingest_session_coverage(session_id: str, coverage_id: str) -> dict | None:
+    store = ingest_store()
+    if store is None:
+        return None
+
+    def mutation(payload):
+        for session in payload["sessions"]:
+            if str(session.get("id", "")) == session_id:
+                session["coverage_id"] = coverage_id
+                return session
+        return None
+
+    return store.mutate(mutation)
+
+
 def build_flow_summary() -> dict:
     ingest = current_app.extensions.get("ingest", {})
     service = ingest.get("ingest_service")
@@ -432,9 +592,11 @@ def build_flow_summary() -> dict:
             "elapsed_label": "Sin recepción previa",
             "recent_sessions_count": 0,
             "recent_sessions": [],
+            "active_photos": [],
         }
 
     service.get_active_session()
+    sync_flow_linked_coverages()
     sessions = store.list_sessions()
     photos = store.list_photos()
     active_sessions = sorted(
@@ -444,6 +606,7 @@ def build_flow_summary() -> dict:
     )
     active_session = active_sessions[0] if active_sessions else None
     active_photos = [photo for photo in photos if active_session and photo.get("session_id") == active_session.get("id")]
+    active_photos.sort(key=lambda item: str(item.get("received_at", "")), reverse=True)
     last_received_at = ""
     if active_session:
         last_received_at = str(active_session.get("last_received_at") or active_session.get("started_at") or "")
@@ -452,11 +615,16 @@ def build_flow_summary() -> dict:
     sources = active_session.get("sources", []) if active_session else []
     recent_sessions = [
         {
+            "id": str(session.get("id", "")),
             "status": str(session.get("status", "")).capitalize() or "Sin estado",
             "photo_count": int(session.get("photo_count") or 0),
             "sources": [format_source_label(source) for source in session.get("sources", [])],
             "started_at": format_datetime_label(str(session.get("started_at", ""))),
             "last_received_at": format_datetime_label(str(session.get("last_received_at", ""))),
+            "coverage_id": str(session.get("coverage_id", "")),
+            "coverage_name": str(coverages.get(str(session.get("coverage_id", "")), {}).get("coverage_name", "")),
+            "create_url": url_for("web.flow_new_coverage", session_id=str(session.get("id", ""))),
+            "lens_url": url_for("web.coverage_detail", coverage_id=str(session.get("coverage_id", ""))) if str(session.get("coverage_id", "")) in coverages else "",
         }
         for session in sorted(
             sessions,
@@ -474,6 +642,7 @@ def build_flow_summary() -> dict:
         "elapsed_label": format_elapsed_label(last_received_at),
         "recent_sessions_count": len(sessions),
         "recent_sessions": recent_sessions,
+        "active_photos": [build_flow_photo_item(photo) for photo in active_photos[:12]],
     }
 
 
@@ -490,7 +659,13 @@ def serialize_photos_for_detail(coverage_id: str, photos: list[dict]) -> list[di
     for photo in photos:
         item = deepcopy(photo)
         storage_path = str(photo.get("storage_path", "")).strip()
-        if coverage_store is not None and coverage_store.is_stored_file_available(storage_path):
+        if (
+            coverage_store is not None
+            and (
+                coverage_store.is_stored_file_available(storage_path)
+                or resolve_flow_photo_path(photo) is not None
+            )
+        ):
             item["media_url"] = url_for(
                 "web.coverage_photo_media",
                 coverage_id=coverage_id,
@@ -610,6 +785,7 @@ def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | Non
 
 @web_bp.get("/")
 def home() -> str:
+    sync_flow_linked_coverages()
     coverage_count = len(coverages)
     photo_count = sum(len(ensure_coverage_photos(coverage)) for coverage in coverages.values())
     dispatch_service = current_app.extensions.get("dispatch", {}).get("shipment_service")
@@ -631,6 +807,7 @@ def home() -> str:
 
 @web_bp.get("/lens")
 def lens_home() -> str:
+    sync_flow_linked_coverages()
     coverage_items = [
         {
             "coverage_id": coverage_id,
@@ -647,6 +824,63 @@ def lens_home() -> str:
 @web_bp.get("/flow")
 def flow_home() -> str:
     return render_template("flow/index.html", flow_summary=build_flow_summary())
+
+
+@web_bp.route("/flow/sessions/<session_id>/coverage/new", methods=["GET", "POST"])
+def flow_new_coverage(session_id: str) -> str:
+    session = find_ingest_session(session_id)
+    if session is None:
+        abort(404)
+
+    existing_coverage_id = str(session.get("coverage_id", ""))
+    if existing_coverage_id and existing_coverage_id in coverages:
+        sync_flow_coverage_photos(existing_coverage_id, coverages[existing_coverage_id])
+        return redirect(url_for("web.coverage_detail", coverage_id=existing_coverage_id))
+
+    session_photos = list_ingest_session_photos(session_id)
+    if request.method == "GET":
+        return render_template(
+            "flow/new_coverage.html",
+            session=session,
+            photo_count=len(session_photos),
+            sources=[format_source_label(source) for source in session.get("sources", [])],
+            form_data=build_flow_coverage_form_data(session),
+            error_message=None,
+            country_groups=COUNTRY_GROUPS,
+            suggestions=get_all_suggestions(),
+        )
+
+    form_data = collect_coverage_form_data()
+    error_message = validate_coverage_data(form_data)
+    if error_message:
+        return render_template(
+            "flow/new_coverage.html",
+            session=session,
+            photo_count=len(session_photos),
+            sources=[format_source_label(source) for source in session.get("sources", [])],
+            form_data=form_data,
+            error_message=error_message,
+            country_groups=COUNTRY_GROUPS,
+            suggestions=get_all_suggestions(),
+        ), 400
+
+    coverage_id = build_coverage_id(form_data["coverage_name"])
+    form_data["flow_session_id"] = session_id
+    form_data["photos"] = [
+        build_lens_photo_from_ingest(photo, session_id)
+        for photo in session_photos
+    ]
+    attach_editor_metadata(form_data)
+    attach_default_ai_context(form_data)
+    remember_coverage_values(form_data)
+    coverages[coverage_id] = form_data
+    try:
+        persist_coverage(coverage_id)
+        mark_ingest_session_coverage(session_id, coverage_id)
+    except Exception:
+        coverages.pop(coverage_id, None)
+        raise
+    return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 
 @web_bp.route("/coverages/new", methods=["GET", "POST"])
@@ -687,6 +921,7 @@ def coverage_detail(coverage_id: str) -> str:
     coverage = coverages.get(coverage_id)
     if coverage is None:
         abort(404)
+    sync_flow_coverage_photos(coverage_id, coverage)
 
     open_edit_dialog = request.args.get("edit") == "1"
     return render_template(
@@ -854,16 +1089,20 @@ def coverage_photo_media(coverage_id: str, photo_id: str):
 
     storage_path = str(photo.get("storage_path", "")).strip()
     media_path = coverage_store.resolve_storage_path(storage_path)
+    flow_media_path = resolve_flow_photo_path(photo)
     if (
-        media_path is None
-        or not media_path.is_file()
-        or media_path.is_symlink()
-        or not coverage_store.is_stored_file_available(storage_path)
+        (
+            media_path is None
+            or not media_path.is_file()
+            or media_path.is_symlink()
+            or not coverage_store.is_stored_file_available(storage_path)
+        )
+        and flow_media_path is None
     ):
         abort(404)
 
     mimetype = str(photo.get("type", "")).strip() or None
-    return send_file(media_path, mimetype=mimetype)
+    return send_file(flow_media_path or media_path, mimetype=mimetype)
 
 
 @web_bp.post("/coverages/<coverage_id>/photos/<photo_id>/caption")

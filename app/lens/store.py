@@ -148,16 +148,31 @@ class LensCoverageStore:
         storage_path = self.normalize_storage_path(str(
             photo.get("storage_path") or photo.get("relative_path") or photo.get("file_path") or ""
         ))
+        flow_path = str(photo.get("flow_path", "")).strip()
         available_on_disk = bool(
-            storage_path
-            and photo.get("available_on_disk", True) is not False
-            and self.is_stored_file_available(storage_path)
+            photo.get("available_on_disk", True) is not False
+            and (
+                (
+                    storage_path
+                    and self.is_stored_file_available(storage_path)
+                )
+                or (
+                    flow_path
+                    and Path(flow_path).is_absolute()
+                    and Path(flow_path).is_file()
+                    and not Path(flow_path).is_symlink()
+                )
+            )
         )
         return {
             "id": str(photo.get("id", "")),
             "name": filename,
             "filename": filename,
             "storage_path": storage_path,
+            "flow_path": flow_path if Path(flow_path).is_absolute() else "",
+            "flow_session_id": str(photo.get("flow_session_id", "")),
+            "flow_photo_id": str(photo.get("flow_photo_id", "")),
+            "source": str(photo.get("source") or photo.get("camera") or ""),
             "size": self.optional_int(photo.get("size")),
             "type": str(photo.get("type", "image/jpeg") or "image/jpeg"),
             "width": self.optional_int(photo.get("width")),

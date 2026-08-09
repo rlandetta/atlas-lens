@@ -1082,20 +1082,155 @@ h1 {
 
 .flow-page {
     display: grid;
-    gap: 1rem;
+    gap: 0.86rem;
+}
+
+.flow-hero {
+    display: grid;
+    gap: 0.18rem;
+    padding-block: 0.9rem;
+}
+
+.flow-hero h1 {
+    margin: 0;
+}
+
+.flow-hero .subtitle {
+    margin: 0;
+}
+
+.flow-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.72rem;
+    margin-bottom: 0.72rem;
+}
+
+.flow-section-header h2 {
+    margin: 0;
+}
+
+.flow-section-header > span:not(.dispatch-status-badge) {
+    color: var(--muted);
+    font-size: 0.8rem;
+    font-weight: 750;
+}
+
+.flow-active-card {
+    display: grid;
+    gap: 0;
+}
+
+.flow-action-row,
+.flow-session-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.72rem;
+    margin-top: 0.72rem;
+}
+
+.flow-action-row span {
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    font-weight: 750;
+}
+
+.flow-active-meta {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.flow-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.78rem;
+}
+
+.flow-photo-card {
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.11);
+    border-radius: 12px;
+    background: rgba(15, 23, 32, 0.42);
+}
+
+.flow-photo-thumb {
+    display: grid;
+    place-items: center;
+    aspect-ratio: 4 / 3;
+    background:
+        linear-gradient(135deg, rgba(79, 191, 143, 0.16), rgba(15, 23, 32, 0.92)),
+        radial-gradient(circle at 70% 30%, rgba(184, 139, 90, 0.18), transparent 38%);
+    color: rgba(233, 238, 245, 0.78);
+    font-size: 0.78rem;
+    font-weight: 750;
+    text-align: center;
+}
+
+.flow-photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.flow-photo-copy {
+    display: grid;
+    gap: 0.54rem;
+    padding: 0.72rem;
+}
+
+.flow-photo-copy h3 {
+    overflow: hidden;
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.92rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.flow-photo-copy dl {
+    display: grid;
+    gap: 0.36rem;
+    margin: 0;
+}
+
+.flow-photo-copy div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.flow-photo-copy dt {
+    color: var(--muted);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.flow-photo-copy dd {
+    overflow: hidden;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.78rem;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .flow-session-list {
     display: grid;
-    gap: 0.72rem;
+    gap: 0.56rem;
 }
 
 .flow-session-row {
     display: grid;
+    grid-template-columns: minmax(0, 0.78fr) minmax(0, 1fr) auto;
+    align-items: center;
     gap: 0.72rem;
     border: 1px solid rgba(148, 163, 184, 0.11);
     border-radius: 12px;
-    padding: 0.82rem;
+    padding: 0.68rem 0.76rem;
     background: rgba(15, 23, 32, 0.42);
 }
 
@@ -1128,6 +1263,11 @@ h1 {
     margin: 0.16rem 0 0;
     color: var(--text-secondary);
     font-size: 0.84rem;
+}
+
+.flow-coverage-form {
+    display: grid;
+    gap: 0.9rem;
 }
 
 @media (max-width: 860px) {
@@ -3459,7 +3599,7 @@ h1 {
 .atlas-module-grid,
 .atlas-upcoming-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: clamp(0.72rem, 1.2vw, 1rem);
 }
 
@@ -3687,6 +3827,11 @@ h1 {
     .atlas-upcoming-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+
+    .flow-active-meta,
+    .flow-photo-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 720px) {
@@ -3712,6 +3857,21 @@ h1 {
         min-height: 0;
     }
 
+    .flow-active-meta,
+    .flow-photo-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .flow-session-row {
+        grid-template-columns: 1fr;
+    }
+
+    .flow-action-row,
+    .flow-session-actions {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
     .atlas-dashboard-footer {
         align-items: flex-start;
         flex-direction: column;
@@ -3723,6 +3883,12 @@ h1 {
 }
 
 @media (max-width: 640px) {
+    .flow-active-meta,
+    .flow-photo-grid,
+    .flow-session-row dl {
+        grid-template-columns: 1fr;
+    }
+
     .delivery-background-layer.is-loaded.is-active {
         animation: none;
     }

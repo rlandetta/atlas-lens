@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Crear cobertura desde FLOW | ATLAS{% endblock %}
+{% block main_class %}form-page flow-page{% endblock %}
+
+{% block content %}
+<section class="form-card ui-card atlas-panel--compact flow-coverage-form" aria-labelledby="flow-create-coverage-title">
+    <p class="coverage-id">ATLAS FLOW</p>
+    <h1 id="flow-create-coverage-title">Crear cobertura</h1>
+    <p class="subtitle">Complete la información editorial para abrir esta sesión de ingreso en LENS.</p>
+
+    <dl class="coverage-meta-grid dispatch-compact-meta flow-active-meta">
+        <div>
+            <dt>Fotografías</dt>
+            <dd>{{ photo_count }}</dd>
+        </div>
+        <div>
+            <dt>Cámaras</dt>
+            <dd>{% if sources %}{{ sources | join(', ') }}{% else %}Sin cámaras registradas{% endif %}</dd>
+        </div>
+        <div>
+            <dt>Inicio</dt>
+            <dd>{{ session.started_at }}</dd>
+        </div>
+        <div>
+            <dt>Última recepción</dt>
+            <dd>{{ session.last_received_at }}</dd>
+        </div>
+    </dl>
+
+    {% if error_message %}
+    <p class="form-error">{{ error_message }}</p>
+    {% endif %}
+
+    <form method="post" class="coverage-form">
+        <div class="coverage-form-grid">
+            <div class="form-field">
+                <label for="coverage_name">Nombre de la cobertura</label>
+                <input id="coverage_name" name="coverage_name" type="text" value="{{ form_data.coverage_name or '' }}" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="agency">Agencia</label>
+                <input id="agency" name="agency" type="text" value="{{ form_data.agency or '' }}" list="agency-suggestions" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="event_date">Fecha del evento</label>
+                <input id="event_date" name="event_date" type="date" value="{{ form_data.event_date or '' }}" required>
+            </div>
+
+            <div class="form-field">
+                <label for="submit_date">Fecha de envío</label>
+                <input id="submit_date" name="submit_date" type="date" value="{{ form_data.submit_date or '' }}" required>
+            </div>
+
+            <div class="form-field">
+                <label for="city">Ciudad</label>
+                <input id="city" name="city" type="text" value="{{ form_data.city or '' }}" list="city-suggestions" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="country">País</label>
+                <select id="country" name="country" required>
+                    <option value="" {% if not form_data.country %}selected{% endif %} disabled>Selecciona un país</option>
+                    {% for group_label, group_countries in country_groups %}
+                    <optgroup label="{{ group_label }}">
+                        {% for country_name in group_countries %}
+                        <option value="{{ country_name }}" {% if form_data.country == country_name %}selected{% endif %}>{{ country_name }}</option>
+                        {% endfor %}
+                    </optgroup>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-field">
+                <label for="photographer">Fotógrafo</label>
+                <input id="photographer" name="photographer" type="text" value="{{ form_data.photographer or '' }}" list="photographer-suggestions" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="editor">Editor</label>
+                <input id="editor" name="editor" type="text" value="{{ form_data.editor or '' }}" list="editor-suggestions" required spellcheck="false">
+            </div>
+        </div>
+
+        <datalist id="agency-suggestions">
+            {% for value in suggestions.agency %}<option value="{{ value }}"></option>{% endfor %}
+        </datalist>
+        <datalist id="photographer-suggestions">
+            {% for value in suggestions.photographer %}<option value="{{ value }}"></option>{% endfor %}
+        </datalist>
+        <datalist id="editor-suggestions">
+            {% for value in suggestions.editor %}<option value="{{ value }}"></option>{% endfor %}
+        </datalist>
+        <datalist id="city-suggestions">
+            {% for value in suggestions.city %}<option value="{{ value }}"></option>{% endfor %}
+        </datalist>
+
+        <button type="submit" class="primary-button compact-action">Crear cobertura</button>
+    </form>
+
+    <a href="{{ url_for('web.flow_home') }}" class="back-link">Volver a FLOW</a>
+</section>
+{% endblock %}

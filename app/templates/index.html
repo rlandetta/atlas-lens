@@ -23,6 +23,41 @@
         <p class="atlas-dashboard-section-label">MÓDULOS ACTIVOS</p>
     </div>
     <div class="atlas-module-grid" aria-label="Módulos activos de ATLAS">
+        <article class="atlas-module-card atlas-module-card--flow" aria-labelledby="atlas-module-flow">
+            <div class="atlas-module-card__top">
+                <span class="atlas-module-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M4 7.8c2.8-2.4 5.4-2.4 8 0s5.2 2.4 8 0M4 12c2.8-2.4 5.4-2.4 8 0s5.2 2.4 8 0M4 16.2c2.8-2.4 5.4-2.4 8 0s5.2 2.4 8 0" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </span>
+                <div>
+                    <h2 id="atlas-module-flow">FLOW</h2>
+                    <p>Ingreso fotográfico y sesiones activas desde cámaras conectadas.</p>
+                </div>
+            </div>
+            <dl class="atlas-module-card__metrics" aria-label="Métricas de FLOW">
+                <div>
+                    <dt>{{ flow_summary.status }}</dt>
+                    <dd>{{ flow_summary.active_sessions_count }}</dd>
+                </div>
+                <div>
+                    <dt>Fotografías</dt>
+                    <dd>{{ flow_summary.active_photo_count }}</dd>
+                </div>
+            </dl>
+            <p class="atlas-module-card__note">
+                {% if flow_summary.status == "Recibiendo" %}
+                Sesión activa · {% if flow_summary.active_sources %}{{ flow_summary.active_sources | join(', ') }}{% else %}Sin cámara registrada{% endif %}<br>
+                Última foto: {{ flow_summary.elapsed_label }}
+                {% else %}
+                0 sesiones activas<br>
+                Última recepción: {{ flow_summary.elapsed_label }}<br>
+                Sesiones recientes: {{ flow_summary.recent_sessions_count }}
+                {% endif %}
+            </p>
+            <a class="atlas-module-card__cta" href="{{ url_for('web.flow_home') }}">Abrir FLOW <span aria-hidden="true">→</span></a>
+        </article>
+
         <article class="atlas-module-card atlas-module-card--lens" aria-labelledby="atlas-module-lens">
             <div class="atlas-module-card__top">
                 <span class="atlas-module-card__icon" aria-hidden="true">
@@ -76,56 +111,6 @@
             <a class="atlas-module-card__cta" href="{{ url_for('dispatch.index') }}">Abrir DISPATCH <span aria-hidden="true">→</span></a>
         </article>
 
-        <article class="atlas-module-card atlas-module-card--flow" aria-labelledby="atlas-module-flow">
-            <div class="atlas-module-card__top">
-                <span class="atlas-module-card__icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M4 7.8c2.8-2.4 5.4-2.4 8 0s5.2 2.4 8 0M4 12c2.8-2.4 5.4-2.4 8 0s5.2 2.4 8 0M4 16.2c2.8-2.4 5.4-2.4 8 0s5.2 2.4 8 0" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                </span>
-                <div>
-                    <h2 id="atlas-module-flow">FLOW</h2>
-                    <p>Ingreso fotográfico y sesiones activas desde cámaras conectadas.</p>
-                </div>
-            </div>
-            <dl class="atlas-module-card__metrics" aria-label="Métricas de FLOW">
-                <div>
-                    <dt>{{ flow_summary.status }}</dt>
-                    <dd>{{ flow_summary.active_sessions_count }}</dd>
-                </div>
-                <div>
-                    <dt>Fotografías</dt>
-                    <dd>{{ flow_summary.active_photo_count }}</dd>
-                </div>
-            </dl>
-            <p class="atlas-module-card__note">
-                {% if flow_summary.status == "Recibiendo" %}
-                Sesión activa · {% if flow_summary.active_sources %}{{ flow_summary.active_sources | join(', ') }}{% else %}Sin cámara registrada{% endif %}<br>
-                Última foto: {{ flow_summary.elapsed_label }}
-                {% else %}
-                0 sesiones activas<br>
-                Última recepción: {{ flow_summary.elapsed_label }}<br>
-                Sesiones recientes: {{ flow_summary.recent_sessions_count }}
-                {% endif %}
-            </p>
-            <a class="atlas-module-card__cta" href="{{ url_for('web.flow_home') }}">Abrir FLOW <span aria-hidden="true">→</span></a>
-        </article>
-
-        <article class="atlas-module-card atlas-module-card--settings" aria-labelledby="atlas-module-settings">
-            <div class="atlas-module-card__top">
-                <span class="atlas-module-card__icon" aria-hidden="true">
-                    <svg viewBox="0 0 24 24" fill="none">
-                        <path d="M9.8 4.5 10.4 3h3.2l.6 1.5 1.6.7 1.5-.6 2.2 2.2-.6 1.5.7 1.6 1.4.6v3.1l-1.4.6-.7 1.6.6 1.5-2.2 2.2-1.5-.6-1.6.7-.6 1.4h-3.2l-.6-1.4-1.6-.7-1.5.6-2.2-2.2.6-1.5-.7-1.6L3 13.6v-3.1l1.4-.6.7-1.6-.6-1.5 2.2-2.2 1.5.6 1.6-.7Z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
-                        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5"/>
-                    </svg>
-                </span>
-                <div>
-                    <h2 id="atlas-module-settings">SETTINGS</h2>
-                    <p>Configuración de canales de salida y preferencias operativas de ATLAS.</p>
-                </div>
-            </div>
-            <a class="atlas-module-card__cta" href="{{ url_for('settings.index') }}">Abrir SETTINGS <span aria-hidden="true">→</span></a>
-        </article>
     </div>
 </section>
 

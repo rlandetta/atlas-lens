@@ -1,7 +1,7 @@
 import copy
 import tempfile
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -171,11 +171,17 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Abrir LENS", dashboard_body)
         self.assertIn("Abrir DISPATCH", dashboard_body)
         self.assertIn("Abrir FLOW", dashboard_body)
-        self.assertIn("Abrir SETTINGS", dashboard_body)
+        self.assertNotIn("Abrir SETTINGS", dashboard_body)
+        self.assertNotIn("atlas-module-card--settings", dashboard_body)
         self.assertIn('href="/lens"', dashboard_body)
         self.assertIn('href="/dispatch/"', dashboard_body)
         self.assertIn('href="/flow"', dashboard_body)
         self.assertIn('href="/settings/"', dashboard_body)
+        self.assertLess(dashboard_body.index('href="/flow"'), dashboard_body.index('href="/lens"'))
+        self.assertLess(dashboard_body.index('href="/lens"'), dashboard_body.index('href="/dispatch/"'))
+        self.assertLess(dashboard_body.index('href="/dispatch/"'), dashboard_body.index('href="/settings/"'))
+        self.assertLess(dashboard_body.index('atlas-module-card--flow'), dashboard_body.index('atlas-module-card--lens'))
+        self.assertLess(dashboard_body.index('atlas-module-card--lens'), dashboard_body.index('atlas-module-card--dispatch'))
         self.assertIn("PRÓXIMOS MÓDULOS", dashboard_body)
         self.assertIn("NEXUS", dashboard_body)
         self.assertIn("PULSE", dashboard_body)
@@ -184,16 +190,40 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(lens.status_code, 200)
         self.assertIn("Coberturas", lens.get_data(as_text=True))
 
-    def register_ingest_photo(self, filename="IMG001.jpg", source="canon-r6"):
+    def register_ingest_photo(self, filename="IMG001.jpg", source="canon-r6", received_at=None):
         photo_path = self.root / "events" / "2026" / "08" / "08" / "sabado" / "ricardo" / source / "JPG" / filename
         photo_path.parent.mkdir(parents=True, exist_ok=True)
-        photo_path.write_bytes(b"jpg")
+        photo_path.write_bytes(f"jpg-{filename}".encode())
         return self.app.extensions["ingest"]["ingest_service"].register_received_photo({
             "filename": filename,
             "path": str(photo_path),
             "source": source,
-            "received_at": datetime.now(timezone.utc).isoformat(),
+            "received_at": (received_at or datetime.now(timezone.utc)).isoformat(),
         })
+
+    def flow_coverage_form(self, **overrides):
+        data = {
+            "coverage_name": "OPERATIVOS",
+            "agency": "Xinhua",
+            "event_date": "2026-08-08",
+            "submit_date": "2026-08-08",
+            "city": "Quito",
+            "country": "Ecuador",
+            "photographer": "Ricardo Landeta",
+            "editor": "rl",
+        }
+        data.update(overrides)
+        return data
+
+    def convert_first_flow_session(self, **form_overrides):
+        session = self.app.extensions["ingest"]["store"].list_sessions()[0]
+        response = self.client.post(
+            f"/flow/sessions/{session['id']}/coverage/new",
+            data=self.flow_coverage_form(**form_overrides),
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        return session, response
 
     def test_dashboard_flow_with_active_session(self):
         self.register_ingest_photo()
@@ -223,7 +253,10 @@ class DispatchRoutesTest(unittest.TestCase):
         response = self.client.get("/flow")
 
         self.assertEqual(response.status_code, 200)
-        self.assertIn("Sesiones de ingreso fotográfico", response.get_data(as_text=True))
+        body = response.get_data(as_text=True)
+        self.assertIn("Sesiones de ingreso fotográfico", body)
+        self.assertIn("ÚLTIMAS FOTOGRAFÍAS", body)
+        self.assertIn("Todavía no hay fotografías en la sesión activa.", body)
 
     def test_flow_route_shows_real_session_and_photo_count(self):
         self.register_ingest_photo(filename="IMG001.jpg", source="canon-r6")
@@ -238,6 +271,92 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Canon R6", body)
         self.assertIn("Sony A9", body)
         self.assertIn("2 fotografías", body)
+        self.assertIn("IMG001.jpg", body)
+        self.assertIn("IMG002.jpg", body)
+        self.assertIn("Miniatura pendiente", body)
+        self.assertNotIn(str(self.root), body)
+
+    def test_flow_route_limits_latest_photos_to_12(self):
+        base_time = datetime.now(timezone.utc)
+        for index in range(13):
+            self.register_ingest_photo(
+                filename=f"IMG{index + 1:03}.jpg",
+                source="canon-r6",
+                received_at=base_time.replace(microsecond=0) if index == 0 else base_time.replace(microsecond=0),
+            )
+
+        response = self.client.get("/flow")
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body.count("flow-photo-card"), 12)
+        self.assertIn("12 de 13", body)
+
+    def test_flow_session_can_create_lens_coverage_without_copying_originals(self):
+        first = self.register_ingest_photo(filename="IMG001.jpg", source="canon-r6")
+        second = self.register_ingest_photo(filename="IMG002.jpg", source="canon-1dx")
+        first_path = Path(first["path"])
+        before_hash = first_path.read_bytes()
+
+        session, response = self.convert_first_flow_session()
+
+        coverage_id = response.headers["Location"].rsplit("/", 1)[-1]
+        coverage = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        refreshed_session = self.app.extensions["ingest"]["store"].list_sessions()[0]
+
+        self.assertIn("/coverages/", response.headers["Location"])
+        self.assertEqual(coverage["flow_session_id"], session["id"])
+        self.assertEqual(len(coverage["photos"]), 2)
+        self.assertEqual({photo["flow_path"] for photo in coverage["photos"]}, {first["path"], second["path"]})
+        self.assertEqual({photo["source"] for photo in coverage["photos"]}, {"canon-r6", "canon-1dx"})
+        self.assertEqual(refreshed_session["coverage_id"], coverage_id)
+        self.assertTrue(first_path.exists())
+        self.assertEqual(first_path.read_bytes(), before_hash)
+
+    def test_flow_session_second_conversion_redirects_without_duplicate_coverage(self):
+        self.register_ingest_photo(filename="IMG001.jpg")
+        session, first_response = self.convert_first_flow_session()
+        first_coverage_id = first_response.headers["Location"].rsplit("/", 1)[-1]
+
+        second_response = self.client.post(
+            f"/flow/sessions/{session['id']}/coverage/new",
+            data=self.flow_coverage_form(coverage_name="OTRA"),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(second_response.status_code, 302)
+        self.assertTrue(second_response.headers["Location"].endswith(f"/coverages/{first_coverage_id}"))
+        self.assertEqual(len(self.app.extensions["lens"]["coverage_store"].list_coverages()), 1)
+
+    def test_active_flow_session_can_convert_and_later_photos_sync_to_same_coverage(self):
+        first_time = datetime.now(timezone.utc)
+        self.register_ingest_photo(filename="IMG001.jpg", source="canon-r6", received_at=first_time)
+        session, response = self.convert_first_flow_session()
+        coverage_id = response.headers["Location"].rsplit("/", 1)[-1]
+
+        later = first_time + timedelta(minutes=5)
+        new_photo = self.register_ingest_photo(filename="IMG002.jpg", source="sony-a9", received_at=later)
+        detail = self.client.get(f"/coverages/{coverage_id}")
+        coverage = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(self.app.extensions["ingest"]["store"].list_sessions()[0]["coverage_id"], coverage_id)
+        self.assertEqual(len(coverage["photos"]), 2)
+        self.assertIn(new_photo["path"], {photo["flow_path"] for photo in coverage["photos"]})
+        self.assertEqual(coverage["flow_session_id"], session["id"])
+
+    def test_flow_offers_open_in_lens_after_conversion(self):
+        self.register_ingest_photo(filename="IMG001.jpg")
+        _, response = self.convert_first_flow_session()
+        coverage_id = response.headers["Location"].rsplit("/", 1)[-1]
+
+        flow_response = self.client.get("/flow")
+        body = flow_response.get_data(as_text=True)
+
+        self.assertEqual(flow_response.status_code, 200)
+        self.assertIn("Cobertura: OPERATIVOS", body)
+        self.assertIn("Abrir en LENS", body)
+        self.assertIn(f'href="/coverages/{coverage_id}"', body)
 
     def test_get_dispatch_index_with_history_table(self):
         self.create_shipment()

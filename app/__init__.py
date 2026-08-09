@@ -3,9 +3,15 @@ from __future__ import annotations
 
 ATLAS_NAVIGATION = (
     {
-        "label": "Dashboard",
+        "label": "DASHBOARD",
         "endpoint": "web.home",
         "blueprint": "dashboard",
+        "enabled": True,
+    },
+    {
+        "label": "FLOW",
+        "endpoint": "web.flow_home",
+        "blueprint": "web",
         "enabled": True,
     },
     {
@@ -18,12 +24,6 @@ ATLAS_NAVIGATION = (
         "label": "DISPATCH",
         "endpoint": "dispatch.index",
         "blueprint": "dispatch",
-        "enabled": True,
-    },
-    {
-        "label": "FLOW",
-        "endpoint": "web.flow_home",
-        "blueprint": "web",
         "enabled": True,
     },
     {

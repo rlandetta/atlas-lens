@@ -4,66 +4,132 @@
 {% block main_class %}flow-page{% endblock %}
 
 {% block content %}
-<section class="ui-card atlas-panel--normal" aria-labelledby="flow-title">
+<section class="ui-card atlas-panel--compact flow-hero" aria-labelledby="flow-title">
     <p class="coverage-id">ATLAS FLOW</p>
     <h1 id="flow-title">FLOW</h1>
     <p class="subtitle">Sesiones de ingreso fotográfico</p>
 </section>
 
-<section class="atlas-grid atlas-grid--2" aria-label="Resumen de sesiones FLOW">
-    <article class="ui-card atlas-panel--compact" aria-labelledby="flow-active-session-title">
+<section class="ui-card atlas-panel--compact flow-active-card" aria-labelledby="flow-active-session-title">
+    <div class="flow-section-header">
         <h2 id="flow-active-session-title">SESIÓN ACTIVA</h2>
-        <dl class="coverage-meta-grid dispatch-compact-meta">
-            <div>
-                <dt>Estado</dt>
-                <dd>{{ flow_summary.status }}</dd>
-            </div>
-            <div>
-                <dt>Inicio</dt>
-                <dd>{% if flow_summary.recent_sessions and flow_summary.status == 'Recibiendo' %}{{ flow_summary.recent_sessions[0].started_at }}{% else %}Sin sesión activa{% endif %}</dd>
-            </div>
-            <div>
-                <dt>Última recepción</dt>
-                <dd>{{ flow_summary.last_received_label }}</dd>
-            </div>
-            <div>
-                <dt>Fotografías</dt>
-                <dd>{{ flow_summary.active_photo_count }}</dd>
-            </div>
-            <div>
-                <dt>Cámaras detectadas</dt>
-                <dd>{% if flow_summary.active_sources %}{{ flow_summary.active_sources | join(', ') }}{% else %}Sin cámaras activas{% endif %}</dd>
-            </div>
-        </dl>
-    </article>
+        <span class="dispatch-status-badge">{{ flow_summary.status }}</span>
+    </div>
+    <dl class="coverage-meta-grid dispatch-compact-meta flow-active-meta">
+        <div>
+            <dt>Estado</dt>
+            <dd>{{ flow_summary.status }}</dd>
+        </div>
+        <div>
+            <dt>Inicio</dt>
+            <dd>{% if flow_summary.recent_sessions and flow_summary.status == 'Recibiendo' %}{{ flow_summary.recent_sessions[0].started_at }}{% else %}Sin sesión activa{% endif %}</dd>
+        </div>
+        <div>
+            <dt>Última recepción</dt>
+            <dd>{{ flow_summary.last_received_label }}</dd>
+        </div>
+        <div>
+            <dt>Fotografías</dt>
+            <dd>{{ flow_summary.active_photo_count }}</dd>
+        </div>
+        <div>
+            <dt>Cámaras detectadas</dt>
+            <dd>{% if flow_summary.active_sources %}{{ flow_summary.active_sources | join(', ') }}{% else %}Sin cámaras activas{% endif %}</dd>
+        </div>
+    </dl>
+    {% if flow_summary.recent_sessions and flow_summary.status == 'Recibiendo' %}
+    {% set active_session = flow_summary.recent_sessions[0] %}
+    <div class="flow-action-row">
+        {% if active_session.lens_url %}
+        <span>Cobertura: {{ active_session.coverage_name }}</span>
+        <a class="secondary-button compact-action" href="{{ active_session.lens_url }}">Abrir en LENS</a>
+        {% else %}
+        <a class="primary-button compact-action" href="{{ active_session.create_url }}">Crear cobertura</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
 
-    <article class="ui-card atlas-panel--compact" aria-labelledby="flow-recent-sessions-title">
-        <h2 id="flow-recent-sessions-title">SESIONES RECIENTES</h2>
-        {% if flow_summary.recent_sessions %}
-        <div class="flow-session-list">
-            {% for session in flow_summary.recent_sessions %}
-            <article class="flow-session-row">
-                <div>
-                    <span class="dispatch-status-badge">{{ session.status }}</span>
-                    <strong>{{ session.photo_count }} fotografías</strong>
-                    <p>{% if session.sources %}{{ session.sources | join(', ') }}{% else %}Sin cámara registrada{% endif %}</p>
-                </div>
+<section class="ui-card atlas-panel--compact flow-photo-section" aria-labelledby="flow-latest-photos-title">
+    <div class="flow-section-header">
+        <h2 id="flow-latest-photos-title">ÚLTIMAS FOTOGRAFÍAS</h2>
+        <span>{{ flow_summary.active_photos | length }} de {{ flow_summary.active_photo_count }}</span>
+    </div>
+    {% if flow_summary.active_photos %}
+    <div class="flow-photo-grid">
+        {% for photo in flow_summary.active_photos %}
+        <article class="flow-photo-card">
+            <div class="flow-photo-thumb" aria-hidden="true">
+                {% if photo.thumbnail_url %}
+                <img src="{{ photo.thumbnail_url }}" alt="" loading="lazy" decoding="async">
+                {% else %}
+                <span>Miniatura pendiente</span>
+                {% endif %}
+            </div>
+            <div class="flow-photo-copy">
+                <h3>{{ photo.filename }}</h3>
                 <dl>
                     <div>
-                        <dt>Inicio</dt>
-                        <dd>{{ session.started_at }}</dd>
+                        <dt>Cámara</dt>
+                        <dd>{{ photo.source }}</dd>
                     </div>
                     <div>
-                        <dt>Última recepción</dt>
-                        <dd>{{ session.last_received_at }}</dd>
+                        <dt>Recibida</dt>
+                        <dd>{{ photo.received_at }}</dd>
+                    </div>
+                    <div>
+                        <dt>Tamaño</dt>
+                        <dd>{{ photo.size }}</dd>
                     </div>
                 </dl>
-            </article>
-            {% endfor %}
-        </div>
-        {% else %}
-        <p class="dispatch-muted">Todavía no hay sesiones de ingreso registradas.</p>
-        {% endif %}
-    </article>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="dispatch-muted">Todavía no hay fotografías en la sesión activa.</p>
+    {% endif %}
+</section>
+
+<section class="ui-card atlas-panel--compact" aria-labelledby="flow-recent-sessions-title">
+    <div class="flow-section-header">
+        <h2 id="flow-recent-sessions-title">SESIONES RECIENTES</h2>
+        <span>{{ flow_summary.recent_sessions_count }}</span>
+    </div>
+    {% if flow_summary.recent_sessions %}
+    <div class="flow-session-list">
+        {% for session in flow_summary.recent_sessions %}
+        <article class="flow-session-row">
+            <div>
+                <span class="dispatch-status-badge">{{ session.status }}</span>
+                <strong>{{ session.photo_count }} fotografías</strong>
+                <p>{% if session.sources %}{{ session.sources | join(', ') }}{% else %}Sin cámara registrada{% endif %}</p>
+                {% if session.lens_url %}
+                <p>Cobertura: {{ session.coverage_name }}</p>
+                {% endif %}
+            </div>
+            <dl>
+                <div>
+                    <dt>Inicio</dt>
+                    <dd>{{ session.started_at }}</dd>
+                </div>
+                <div>
+                    <dt>Última recepción</dt>
+                    <dd>{{ session.last_received_at }}</dd>
+                </div>
+            </dl>
+            <div class="flow-session-actions">
+                {% if session.lens_url %}
+                <a class="secondary-button compact-action" href="{{ session.lens_url }}">Abrir en LENS</a>
+                {% else %}
+                <a class="primary-button compact-action" href="{{ session.create_url }}">Crear cobertura</a>
+                {% endif %}
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="dispatch-muted">Todavía no hay sesiones de ingreso registradas.</p>
+    {% endif %}
 </section>
 {% endblock %}
