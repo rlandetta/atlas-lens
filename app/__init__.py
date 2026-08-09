@@ -36,6 +36,8 @@ def create_app():
         DELIVERY_LINKS_STORE_PATH,
         DELIVERY_ROOT,
         DISPATCH_STORE_PATH,
+        INGEST_SESSION_TIMEOUT_MINUTES,
+        INGEST_STORE_PATH,
         LENS_COVERAGE_STORE_PATH,
         PUBLIC_BASE_URL,
         SETTINGS_STORE_PATH,
@@ -43,6 +45,7 @@ def create_app():
         LENS_MEDIA_ROOT,
     )
     from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DeliveryPreviewService, DispatchShipmentStore, ShipmentService, SMTPLinkTransport
+    from app.ingest import IngestService, IngestStore
     from app.lens import LensCoverageStore
     from app.settings import SettingsService, SettingsStore
     from app.lens_read_service import LensReadService
@@ -54,6 +57,8 @@ def create_app():
 
     app = Flask(__name__)
     app.config["LENS_MAX_PHOTO_BYTES"] = LENS_MAX_PHOTO_BYTES
+    ingest_store = IngestStore(INGEST_STORE_PATH)
+    ingest_service = IngestService(ingest_store, session_timeout_minutes=INGEST_SESSION_TIMEOUT_MINUTES)
     lens_coverage_store = LensCoverageStore(LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT)
     configure_coverage_store(lens_coverage_store)
     coverage_provider = WebCoverageProvider()
@@ -66,6 +71,10 @@ def create_app():
     settings_store = SettingsStore(SETTINGS_STORE_PATH)
     settings_service = SettingsService(settings_store)
     smtp_transport = SMTPLinkTransport(settings_service=settings_service)
+    app.extensions["ingest"] = {
+        "store": ingest_store,
+        "ingest_service": ingest_service,
+    }
     app.extensions["lens"] = {
         "coverage_store": lens_coverage_store,
     }
