@@ -22,8 +22,14 @@ class IngestWatcher:
         self.pending_sizes: dict[str, int] = {}
         self.warned_missing: set[str] = set()
         self.logged_observed: set[str] = set()
+        self.baseline_initialized = False
+        self.baseline_paths: set[str] = set()
 
     def scan_once(self) -> list[dict]:
+        if not self.baseline_initialized:
+            self.initialize_baseline()
+            return []
+
         registered = []
         known_paths = self.registered_paths()
         for directory in self.directories:
@@ -31,20 +37,19 @@ class IngestWatcher:
                 self.warn_missing_directory(directory)
                 continue
             self.log_observing(directory)
-            for candidate in sorted(directory.iterdir()):
-                if not self.is_supported_image(candidate):
-                    continue
+            for candidate in self.iter_supported_images(directory):
                 path_key = str(candidate.resolve())
-                if path_key in known_paths:
+                if path_key in known_paths or path_key in self.baseline_paths:
                     self.pending_sizes.pop(path_key, None)
                     continue
                 if not self.is_stable(candidate, path_key):
                     continue
+                source = self.source_from_path(directory, candidate)
                 try:
                     photo = self.service.register_received_photo({
                         "filename": candidate.name,
                         "path": path_key,
-                        "source": directory.name,
+                        "source": source,
                         "received_at": datetime.now(timezone.utc).isoformat(),
                     })
                 except Exception as error:
@@ -56,7 +61,7 @@ class IngestWatcher:
                 self.logger.info(
                     "FLOW: fotografía recibida %s source=%s session=%s",
                     candidate.name,
-                    directory.name,
+                    source,
                     photo.get("session_id", ""),
                 )
         return registered
@@ -84,18 +89,41 @@ class IngestWatcher:
         available_count = 0
         missing_directories = []
         for directory in self.directories:
-            camera = directory.name
             if directory.is_dir():
                 available_count += 1
-                lines.extend([f"✓ {camera}", f"  {directory}", ""])
+                lines.extend([f"✓ {directory.name}", f"  {directory}", ""])
             else:
                 missing_directories.append(directory)
-                lines.extend([f"⚠ {camera}", "  carpeta no disponible", f"  {directory}", ""])
-        lines.extend([f"Watching: {available_count} camera(s)", f"Polling: {interval_seconds} s"])
+                lines.extend([f"⚠ {directory.name}", "  carpeta no disponible", f"  {directory}", ""])
+        lines.extend([
+            "Modo: recursivo",
+            f"Polling: {interval_seconds} s",
+            f"Session timeout: {self.session_timeout_minutes()} min",
+        ])
         return "\n".join(lines), available_count, missing_directories
+
+    def initialize_baseline(self) -> None:
+        known_paths = self.registered_paths()
+        for directory in self.directories:
+            if not directory.is_dir():
+                self.warn_missing_directory(directory)
+                continue
+            self.log_observing(directory)
+            for candidate in self.iter_supported_images(directory):
+                path_key = str(candidate.resolve())
+                if path_key not in known_paths:
+                    self.baseline_paths.add(path_key)
+        self.baseline_initialized = True
 
     def registered_paths(self) -> set[str]:
         return {str(photo.get("path", "")) for photo in self.service.store.list_photos() if str(photo.get("path", ""))}
+
+    def iter_supported_images(self, directory: Path) -> list[Path]:
+        try:
+            return sorted(path for path in directory.rglob("*") if self.is_supported_image(path))
+        except OSError as error:
+            self.logger.warning("FLOW: error controlado %s", error)
+            return []
 
     def is_stable(self, path: Path, path_key: str) -> bool:
         try:
@@ -118,6 +146,20 @@ class IngestWatcher:
         if key not in self.logged_observed:
             self.logger.info("FLOW: observando %s", directory)
             self.logged_observed.add(key)
+
+    def source_from_path(self, root: Path, path: Path) -> str:
+        try:
+            parts = path.relative_to(root).parts
+        except ValueError:
+            parts = path.parts
+        if len(parts) >= 3 and parts[-2].upper() == "JPG":
+            return parts[-3]
+        if len(parts) >= 2:
+            return parts[-2]
+        return root.name
+
+    def session_timeout_minutes(self) -> int:
+        return int(self.service.session_timeout.total_seconds() // 60)
 
     @staticmethod
     def is_supported_image(path: Path) -> bool:

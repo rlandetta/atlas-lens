@@ -41,8 +41,7 @@ INGEST_STORE_PATH = os.getenv(
 INGEST_SESSION_TIMEOUT_MINUTES = get_int_env("INGEST_SESSION_TIMEOUT_MINUTES", 60)
 
 FLOW_WATCH_DIRECTORIES = get_list_env("FLOW_WATCH_DIRECTORIES", [
-    "/data/FLOW/sftpgo/storage/incoming/canon-r6",
-    "/data/FLOW/sftpgo/storage/incoming/canon-1dx",
+    "/data/FLOW/sftpgo/storage/events",
 ])
 FLOW_WATCH_INTERVAL_SECONDS = get_int_env("FLOW_WATCH_INTERVAL_SECONDS", 2)
 DELIVERY_ROOT = os.getenv(
