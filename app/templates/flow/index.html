@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}FLOW | ATLAS{% endblock %}
+{% block main_class %}flow-page{% endblock %}
+
+{% block content %}
+<section class="ui-card atlas-panel--normal" aria-labelledby="flow-title">
+    <p class="coverage-id">ATLAS FLOW</p>
+    <h1 id="flow-title">FLOW</h1>
+    <p class="subtitle">Sesiones de ingreso fotográfico</p>
+</section>
+
+<section class="atlas-grid atlas-grid--2" aria-label="Resumen de sesiones FLOW">
+    <article class="ui-card atlas-panel--compact" aria-labelledby="flow-active-session-title">
+        <h2 id="flow-active-session-title">SESIÓN ACTIVA</h2>
+        <dl class="coverage-meta-grid dispatch-compact-meta">
+            <div>
+                <dt>Estado</dt>
+                <dd>{{ flow_summary.status }}</dd>
+            </div>
+            <div>
+                <dt>Inicio</dt>
+                <dd>{% if flow_summary.recent_sessions and flow_summary.status == 'Recibiendo' %}{{ flow_summary.recent_sessions[0].started_at }}{% else %}Sin sesión activa{% endif %}</dd>
+            </div>
+            <div>
+                <dt>Última recepción</dt>
+                <dd>{{ flow_summary.last_received_label }}</dd>
+            </div>
+            <div>
+                <dt>Fotografías</dt>
+                <dd>{{ flow_summary.active_photo_count }}</dd>
+            </div>
+            <div>
+                <dt>Cámaras detectadas</dt>
+                <dd>{% if flow_summary.active_sources %}{{ flow_summary.active_sources | join(', ') }}{% else %}Sin cámaras activas{% endif %}</dd>
+            </div>
+        </dl>
+    </article>
+
+    <article class="ui-card atlas-panel--compact" aria-labelledby="flow-recent-sessions-title">
+        <h2 id="flow-recent-sessions-title">SESIONES RECIENTES</h2>
+        {% if flow_summary.recent_sessions %}
+        <div class="flow-session-list">
+            {% for session in flow_summary.recent_sessions %}
+            <article class="flow-session-row">
+                <div>
+                    <span class="dispatch-status-badge">{{ session.status }}</span>
+                    <strong>{{ session.photo_count }} fotografías</strong>
+                    <p>{% if session.sources %}{{ session.sources | join(', ') }}{% else %}Sin cámara registrada{% endif %}</p>
+                </div>
+                <dl>
+                    <div>
+                        <dt>Inicio</dt>
+                        <dd>{{ session.started_at }}</dd>
+                    </div>
+                    <div>
+                        <dt>Última recepción</dt>
+                        <dd>{{ session.last_received_at }}</dd>
+                    </div>
+                </dl>
+            </article>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="dispatch-muted">Todavía no hay sesiones de ingreso registradas.</p>
+        {% endif %}
+    </article>
+</section>
+{% endblock %}

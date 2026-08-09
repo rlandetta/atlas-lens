@@ -1080,6 +1080,56 @@ h1 {
     font-style: normal;
 }
 
+.flow-page {
+    display: grid;
+    gap: 1rem;
+}
+
+.flow-session-list {
+    display: grid;
+    gap: 0.72rem;
+}
+
+.flow-session-row {
+    display: grid;
+    gap: 0.72rem;
+    border: 1px solid rgba(148, 163, 184, 0.11);
+    border-radius: 12px;
+    padding: 0.82rem;
+    background: rgba(15, 23, 32, 0.42);
+}
+
+.flow-session-row strong {
+    display: block;
+    margin-top: 0.42rem;
+    color: var(--text-main);
+}
+
+.flow-session-row p {
+    margin: 0.18rem 0 0;
+    color: var(--text-secondary);
+}
+
+.flow-session-row dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.62rem;
+    margin: 0;
+}
+
+.flow-session-row dt {
+    color: var(--muted);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.flow-session-row dd {
+    margin: 0.16rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+}
+
 @media (max-width: 860px) {
     :root {
         --page-fluid-width: calc(100vw - 1.5rem);
@@ -3409,7 +3459,7 @@ h1 {
 .atlas-module-grid,
 .atlas-upcoming-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: clamp(0.72rem, 1.2vw, 1rem);
 }
 
@@ -3442,6 +3492,10 @@ h1 {
 
 .atlas-module-card--dispatch {
     --module-accent: #62b8c7;
+}
+
+.atlas-module-card--flow {
+    --module-accent: #4fbf8f;
 }
 
 .atlas-module-card--settings {
@@ -3488,6 +3542,10 @@ h1 {
     color: #a5afbd;
     font-size: 0.92rem;
     line-height: 1.48;
+}
+
+.atlas-module-card__note {
+    min-height: 2.7rem;
 }
 
 .atlas-module-card__metrics {
@@ -3542,6 +3600,7 @@ h1 {
 }
 
 .atlas-upcoming-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.72rem;
 }
 

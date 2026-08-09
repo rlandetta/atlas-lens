@@ -20,11 +20,13 @@ class DispatchRoutesTest(unittest.TestCase):
         self.dispatch_store_path = self.root / "dispatch_shipments.json"
         self.settings_store_path = self.root / "settings.json"
         self.lens_store_path = self.root / "lens_coverages.json"
+        self.ingest_store_path = self.root / "ingest.json"
         self.patches = [
             patch("app.config.DISPATCH_STORE_PATH", str(self.dispatch_store_path)),
             patch("app.config.SETTINGS_STORE_PATH", str(self.settings_store_path)),
             patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.lens_store_path)),
             patch("app.config.LENS_MEDIA_ROOT", str(self.lens_media_root)),
+            patch("app.config.INGEST_STORE_PATH", str(self.ingest_store_path)),
         ]
         for item in self.patches:
             item.start()
@@ -165,11 +167,14 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Centro editorial", dashboard_body)
         self.assertIn("MÓDULOS ACTIVOS", dashboard_body)
         self.assertIn("SETTINGS", dashboard_body)
+        self.assertIn("FLOW", dashboard_body)
         self.assertIn("Abrir LENS", dashboard_body)
         self.assertIn("Abrir DISPATCH", dashboard_body)
+        self.assertIn("Abrir FLOW", dashboard_body)
         self.assertIn("Abrir SETTINGS", dashboard_body)
         self.assertIn('href="/lens"', dashboard_body)
         self.assertIn('href="/dispatch/"', dashboard_body)
+        self.assertIn('href="/flow"', dashboard_body)
         self.assertIn('href="/settings/"', dashboard_body)
         self.assertIn("PRÓXIMOS MÓDULOS", dashboard_body)
         self.assertIn("NEXUS", dashboard_body)
@@ -178,6 +183,61 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Próximamente", dashboard_body)
         self.assertEqual(lens.status_code, 200)
         self.assertIn("Coberturas", lens.get_data(as_text=True))
+
+    def register_ingest_photo(self, filename="IMG001.jpg", source="canon-r6"):
+        photo_path = self.root / "events" / "2026" / "08" / "08" / "sabado" / "ricardo" / source / "JPG" / filename
+        photo_path.parent.mkdir(parents=True, exist_ok=True)
+        photo_path.write_bytes(b"jpg")
+        return self.app.extensions["ingest"]["ingest_service"].register_received_photo({
+            "filename": filename,
+            "path": str(photo_path),
+            "source": source,
+            "received_at": datetime.now(timezone.utc).isoformat(),
+        })
+
+    def test_dashboard_flow_with_active_session(self):
+        self.register_ingest_photo()
+
+        response = self.client.get("/")
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("FLOW", body)
+        self.assertIn("Recibiendo", body)
+        self.assertIn("Sesión activa", body)
+        self.assertIn("Canon R6", body)
+        self.assertIn("Última foto:", body)
+        self.assertIn("Abrir FLOW", body)
+
+    def test_dashboard_flow_without_active_session(self):
+        response = self.client.get("/")
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("FLOW", body)
+        self.assertIn("En espera", body)
+        self.assertIn("0 sesiones activas", body)
+        self.assertIn("Última recepción: Sin recepción previa", body)
+
+    def test_flow_route_returns_200(self):
+        response = self.client.get("/flow")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Sesiones de ingreso fotográfico", response.get_data(as_text=True))
+
+    def test_flow_route_shows_real_session_and_photo_count(self):
+        self.register_ingest_photo(filename="IMG001.jpg", source="canon-r6")
+        self.register_ingest_photo(filename="IMG002.jpg", source="sony-a9")
+
+        response = self.client.get("/flow")
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("SESIÓN ACTIVA", body)
+        self.assertIn("2", body)
+        self.assertIn("Canon R6", body)
+        self.assertIn("Sony A9", body)
+        self.assertIn("2 fotografías", body)
 
     def test_get_dispatch_index_with_history_table(self):
         self.create_shipment()

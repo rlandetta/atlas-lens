@@ -21,6 +21,12 @@ ATLAS_NAVIGATION = (
         "enabled": True,
     },
     {
+        "label": "FLOW",
+        "endpoint": "web.flow_home",
+        "blueprint": "web",
+        "enabled": True,
+    },
+    {
         "label": "SETTINGS",
         "endpoint": "settings.index",
         "blueprint": "settings",

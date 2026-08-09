@@ -380,6 +380,103 @@ def get_dispatch_eligible_photo_count(coverage: dict) -> int:
     )
 
 
+def format_source_label(source: str) -> str:
+    clean_source = " ".join(str(source or "").replace("_", "-").split()).strip()
+    if not clean_source:
+        return "Sin cámara"
+    return " ".join(part.upper() if any(character.isdigit() for character in part) else part.capitalize() for part in clean_source.split("-"))
+
+
+def format_datetime_label(value: str) -> str:
+    if not value:
+        return "Sin registro"
+    try:
+        timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return "Sin registro"
+    return timestamp.astimezone(timezone.utc).strftime("%d/%m/%Y %H:%M UTC")
+
+
+def format_elapsed_label(value: str) -> str:
+    if not value:
+        return "Sin recepción previa"
+    try:
+        timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return "Sin recepción previa"
+    seconds = max(0, int((datetime.now(timezone.utc) - timestamp).total_seconds()))
+    if seconds < 60:
+        return f"hace {seconds} s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"hace {minutes} min"
+    hours = minutes // 60
+    if hours < 24:
+        return f"hace {hours} h"
+    days = hours // 24
+    return f"hace {days} d"
+
+
+def build_flow_summary() -> dict:
+    ingest = current_app.extensions.get("ingest", {})
+    service = ingest.get("ingest_service")
+    store = ingest.get("store")
+    if service is None or store is None:
+        return {
+            "status": "En espera",
+            "active_sessions_count": 0,
+            "active_photo_count": 0,
+            "active_sources": [],
+            "last_received_at": "",
+            "last_received_label": "Sin registro",
+            "elapsed_label": "Sin recepción previa",
+            "recent_sessions_count": 0,
+            "recent_sessions": [],
+        }
+
+    service.get_active_session()
+    sessions = store.list_sessions()
+    photos = store.list_photos()
+    active_sessions = sorted(
+        [session for session in sessions if session.get("status") == "active"],
+        key=lambda item: str(item.get("last_received_at") or item.get("started_at") or ""),
+        reverse=True,
+    )
+    active_session = active_sessions[0] if active_sessions else None
+    active_photos = [photo for photo in photos if active_session and photo.get("session_id") == active_session.get("id")]
+    last_received_at = ""
+    if active_session:
+        last_received_at = str(active_session.get("last_received_at") or active_session.get("started_at") or "")
+    elif sessions:
+        last_received_at = max(str(session.get("last_received_at") or session.get("started_at") or "") for session in sessions)
+    sources = active_session.get("sources", []) if active_session else []
+    recent_sessions = [
+        {
+            "status": str(session.get("status", "")).capitalize() or "Sin estado",
+            "photo_count": int(session.get("photo_count") or 0),
+            "sources": [format_source_label(source) for source in session.get("sources", [])],
+            "started_at": format_datetime_label(str(session.get("started_at", ""))),
+            "last_received_at": format_datetime_label(str(session.get("last_received_at", ""))),
+        }
+        for session in sorted(
+            sessions,
+            key=lambda item: str(item.get("last_received_at") or item.get("started_at") or ""),
+            reverse=True,
+        )[:6]
+    ]
+    return {
+        "status": "Recibiendo" if active_session else "En espera",
+        "active_sessions_count": len(active_sessions),
+        "active_photo_count": len(active_photos) if active_session else 0,
+        "active_sources": [format_source_label(source) for source in sources],
+        "last_received_at": last_received_at,
+        "last_received_label": format_datetime_label(last_received_at),
+        "elapsed_label": format_elapsed_label(last_received_at),
+        "recent_sessions_count": len(sessions),
+        "recent_sessions": recent_sessions,
+    }
+
+
 def build_dispatch_state(coverage: dict) -> dict:
     eligible_photo_count = get_dispatch_eligible_photo_count(coverage)
     return {
@@ -528,6 +625,7 @@ def home() -> str:
         photo_count=photo_count,
         dispatch_count=dispatch_count,
         active_dispatch_count=active_dispatch_count,
+        flow_summary=build_flow_summary(),
     )
 
 
@@ -544,6 +642,11 @@ def lens_home() -> str:
         for coverage_id, coverage in coverages.items()
     ]
     return render_template("lens_index.html", coverages=coverage_items)
+
+
+@web_bp.get("/flow")
+def flow_home() -> str:
+    return render_template("flow/index.html", flow_summary=build_flow_summary())
 
 
 @web_bp.route("/coverages/new", methods=["GET", "POST"])
