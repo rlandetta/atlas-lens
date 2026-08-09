@@ -36,6 +36,8 @@ ATLAS_NAVIGATION = (
 
 
 def create_app():
+    from pathlib import Path
+
     from flask import Flask
 
     from app.config import (
@@ -70,7 +72,10 @@ def create_app():
     ingest_store = IngestStore(INGEST_STORE_PATH)
     ingest_service = IngestService(ingest_store, session_timeout_minutes=INGEST_SESSION_TIMEOUT_MINUTES)
     lens_coverage_store = LensCoverageStore(LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT)
-    thumbnail_service = ThumbnailService(THUMBNAIL_ROOT)
+    thumbnail_root = Path(THUMBNAIL_ROOT)
+    if not thumbnail_root.is_absolute() and thumbnail_root.parts[:1] == ("instance",):
+        thumbnail_root = Path(app.instance_path, *thumbnail_root.parts[1:])
+    thumbnail_service = ThumbnailService(thumbnail_root, base_path=Path(app.root_path).parent)
     configure_coverage_store(lens_coverage_store)
     coverage_provider = WebCoverageProvider()
     lens_reader = LensReadService(coverage_provider)

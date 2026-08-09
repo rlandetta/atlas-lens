@@ -204,7 +204,8 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         body = response.get_data(as_text=True)
 
         self.assertIn('id="create-dispatch-link"', body)
-        self.assertIn('id="create-dispatch-disabled-button"', body)
+        self.assertEqual(body.count("Crear despacho"), 1)
+        self.assertNotIn('id="create-dispatch-disabled-button"', body)
         self.assertIn("Agregue un caption a por lo menos una fotografía para crear el despacho.", body)
         self.assertIn('id="create-dispatch-link" href=', body)
         self.assertIn("hidden>Crear despacho</a>", body)

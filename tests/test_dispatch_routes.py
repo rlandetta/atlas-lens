@@ -10,6 +10,7 @@ from app import create_app
 from app.dispatch import DispatchShipmentStore, ShipmentService
 from app.dispatch.scheduler import DispatchScheduler
 from app.lens_read_service import LensReadService
+from app.media import ThumbnailService
 from app.routes import web
 from app.settings import OutboundChannelDraft
 
@@ -392,6 +393,18 @@ class DispatchRoutesTest(unittest.TestCase):
         coverage = copy.deepcopy(self.coverages["cov-1"])
         web.coverages["cov-1"] = coverage
         self.app.extensions["lens"]["coverage_store"].set("cov-1", coverage)
+
+    def test_thumbnail_service_returns_absolute_existing_path(self):
+        source_path = self.root / "source.jpg"
+        self.write_valid_jpeg(source_path)
+        service = ThumbnailService("instance/thumbnails", base_path=self.root)
+
+        thumbnail_path = service.ensure_thumbnail(source_path)
+
+        self.assertIsNotNone(thumbnail_path)
+        self.assertTrue(thumbnail_path.is_absolute())
+        self.assertTrue(thumbnail_path.exists())
+        self.assertTrue(str(thumbnail_path).startswith(str((self.root / "instance" / "thumbnails").resolve())))
 
     def test_thumbnail_endpoint_generates_from_storage_path(self):
         self.register_lens_web_coverage()

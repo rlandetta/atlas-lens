@@ -150,8 +150,11 @@ def resolve_legacy_flow_photo_source(
 
 
 class ThumbnailService:
-    def __init__(self, root: str | os.PathLike[str]):
-        self.root = Path(root)
+    def __init__(self, root: str | os.PathLike[str], *, base_path: str | os.PathLike[str] | None = None):
+        root_path = Path(root).expanduser()
+        if not root_path.is_absolute():
+            root_path = Path(base_path or os.getcwd()) / root_path
+        self.root = root_path.resolve()
 
     def thumbnail_path_for(self, source_path: Path) -> Path | None:
         try:
