@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import base64
 import io
 import zlib
 from dataclasses import dataclass
 
+from app.export.builders.image_sources import load_image_source
 from app.export.models import ExportPhoto
 
 PAGE_WIDTH = 612
@@ -39,14 +39,6 @@ def pdf_escape(value: str) -> bytes:
 
 def coverage_name(coverage_metadata: dict) -> str:
     return str(coverage_metadata.get("coverage_name") or coverage_metadata.get("name") or "Reporte editorial")
-
-
-def decode_data_url(data_url: str) -> tuple[bytes, str]:
-    if not data_url or "," not in data_url:
-        return b"", ""
-    header, encoded = data_url.split(",", 1)
-    content_type = header.split(";")[0].replace("data:", "")
-    return base64.b64decode(encoded), content_type
 
 
 def jpeg_size(data: bytes) -> tuple[int, int] | None:
@@ -159,7 +151,10 @@ def png_image(data: bytes, name: str) -> PdfImage | None:
 
 
 def build_pdf_image(photo: ExportPhoto, name: str) -> PdfImage | None:
-    data, content_type = decode_data_url(photo.data_url)
+    try:
+        data, content_type = load_image_source(photo)
+    except OSError:
+        return None
     if not data:
         return None
     if content_type in {"image/jpeg", "image/jpg"}:

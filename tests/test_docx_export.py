@@ -10,6 +10,7 @@ from app.export.engine import ExportEngine
 from app.export.models import ExportPhoto, ExportRequest
 from app.export.naming import ExportNames
 from app.export.builders.docx_builder import build_docx
+from app.export.builders.pdf_builder import build_pdf
 from app.export.builders.zip_builder import build_zip_archive
 from app.export.template_renderer import render_caption
 
@@ -18,6 +19,11 @@ PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 )
 JPG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xd9"
+PDF_JPG_BYTES = (
+    b"\xff\xd8"
+    b"\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x03\x01\x11\x00\x02\x11\x00\x03\x11\x00"
+    b"\xff\xd9"
+)
 
 
 def docx_members(content: bytes) -> tuple[list[str], str]:
@@ -58,7 +64,49 @@ def build_photos_zip(photos: list[ExportPhoto]) -> bytes:
     return content
 
 
+def assert_pdf_has_image(test_case: unittest.TestCase, content: bytes):
+    test_case.assertTrue(content.startswith(b"%PDF-1.4"))
+    test_case.assertIn(b"/Subtype /Image", content)
+
+
 class DocxExportTest(unittest.TestCase):
+    def test_pdf_embeds_media_from_data_url(self):
+        encoded = base64.b64encode(PDF_JPG_BYTES).decode("ascii")
+        content = build_pdf(
+            [build_photo(data_url=f"data:image/jpeg;base64,{encoded}")],
+            {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+        )
+
+        assert_pdf_has_image(self, content)
+
+    def test_pdf_embeds_media_from_storage_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            media_root = Path(temp_dir)
+            storage_path = "coverages/cov-1/IMG002.jpg"
+            target = media_root / storage_path
+            target.parent.mkdir(parents=True)
+            target.write_bytes(PDF_JPG_BYTES)
+
+            with patch("app.config.LENS_MEDIA_ROOT", str(media_root)):
+                content = build_pdf(
+                    [build_photo(id="photo-2", filename="IMG002.jpg", storage_path=storage_path)],
+                    {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+                )
+
+        assert_pdf_has_image(self, content)
+
+    def test_pdf_embeds_media_from_flow_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            flow_path = Path(temp_dir) / "IMG003.jpg"
+            flow_path.write_bytes(PDF_JPG_BYTES)
+
+            content = build_pdf(
+                [build_photo(id="photo-3", filename="IMG003.jpg", flow_path=str(flow_path))],
+                {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+            )
+
+        assert_pdf_has_image(self, content)
+
     def test_zip_writes_non_empty_photo_from_data_url(self):
         encoded = base64.b64encode(JPG_BYTES).decode("ascii")
         content = build_photos_zip([
