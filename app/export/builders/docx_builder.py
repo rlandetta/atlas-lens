@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import io
 from dataclasses import dataclass
 from html import escape
+from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
+from app import config
 from app.export.models import ExportPhoto
 
 EMU_PER_INCH = 914400
 TEXT_COLOR = "333333"
-MAX_IMAGE_WIDTH_EMU = int(2.85 * EMU_PER_INCH)
-MAX_IMAGE_HEIGHT_EMU = int(1.9 * EMU_PER_INCH)
+MAX_IMAGE_WIDTH_EMU = int(1.62 * EMU_PER_INCH)
+MAX_IMAGE_HEIGHT_EMU = int(1.08 * EMU_PER_INCH)
 
 
 @dataclass(frozen=True)
@@ -44,7 +47,68 @@ def decode_data_url(data_url: str) -> tuple[bytes, str]:
         return b"", "image/jpeg"
     header, encoded = data_url.split(",", 1)
     content_type = header.split(";")[0].replace("data:", "") or "image/jpeg"
-    return base64.b64decode(encoded), content_type
+    try:
+        return base64.b64decode(encoded, validate=True), content_type
+    except (binascii.Error, ValueError):
+        return b"", content_type
+
+
+def normalize_relative_path(value: str) -> str:
+    path = str(value or "").strip().replace("\\", "/")
+    if not path or Path(path).is_absolute() or path.startswith("../") or "/../" in path:
+        return ""
+    return path
+
+
+def resolve_storage_path(storage_path: str) -> Path | None:
+    relative_path = normalize_relative_path(storage_path)
+    if not relative_path:
+        return None
+    media_root = Path(config.LENS_MEDIA_ROOT).resolve()
+    candidate = (media_root / relative_path).resolve()
+    try:
+        if not candidate.is_relative_to(media_root):
+            return None
+    except ValueError:
+        return None
+    if not candidate.is_file() or candidate.is_symlink():
+        return None
+    return candidate
+
+
+def resolve_flow_path(flow_path: str) -> Path | None:
+    path = Path(str(flow_path or "").strip())
+    if not path.is_absolute():
+        return None
+    candidate = path.resolve()
+    if not candidate.is_file() or candidate.is_symlink():
+        return None
+    return candidate
+
+
+def content_type_from_path(path: Path, fallback: str) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if suffix == ".png":
+        return "image/png"
+    if suffix == ".webp":
+        return "image/webp"
+    return fallback or "image/jpeg"
+
+
+def load_image_source(photo: ExportPhoto) -> tuple[bytes, str]:
+    image_bytes, content_type = decode_data_url(photo.data_url)
+    if image_bytes:
+        return image_bytes, content_type
+
+    if not photo.available_on_disk:
+        return b"", content_type
+
+    source = resolve_storage_path(photo.storage_path) or resolve_flow_path(photo.flow_path)
+    if source is None:
+        return b"", content_type
+    return source.read_bytes(), content_type_from_path(source, str(photo.metadata.get("type", content_type)))
 
 
 def detect_image_size(image_bytes: bytes, content_type: str) -> tuple[int, int]:
@@ -90,15 +154,19 @@ def image_extension(content_type: str, fallback_name: str) -> str:
         return "jpg"
     if lowered.endswith(".png"):
         return "png"
+    if lowered.endswith(".webp"):
+        return "webp"
     if content_type == "image/png":
         return "png"
+    if content_type == "image/webp":
+        return "webp"
     return "jpg"
 
 
 def build_embedded_images(photos: list[ExportPhoto]) -> list[EmbeddedImage]:
     images = []
     for index, photo in enumerate(photos, start=1):
-        image_bytes, content_type = decode_data_url(photo.data_url)
+        image_bytes, content_type = load_image_source(photo)
         if not image_bytes:
             continue
         width, height = detect_image_size(image_bytes, content_type)
@@ -107,7 +175,10 @@ def build_embedded_images(photos: list[ExportPhoto]) -> list[EmbeddedImage]:
         images.append(EmbeddedImage(
             relationship_id=f"rIdImg{index}",
             filename=f"image{index}.{extension}",
-            content_type="image/png" if extension == "png" else "image/jpeg",
+            content_type={
+                "png": "image/png",
+                "webp": "image/webp",
+            }.get(extension, "image/jpeg"),
             width_emu=width_emu,
             height_emu=height_emu,
             alt_text=photo.filename,
@@ -163,42 +234,69 @@ def cover_table(coverage_metadata: dict) -> str:
     )
 
 
-def image_paragraph(image: EmbeddedImage, doc_pr_id: int) -> str:
+def image_drawing(image: EmbeddedImage, doc_pr_id: int) -> str:
     return f'''
-<w:p>
-  <w:pPr><w:jc w:val="left"/><w:keepNext/><w:keepLines/><w:spacing w:after="180"/></w:pPr>
-  <w:r>
-    <w:drawing>
-      <wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
-        <wp:extent cx="{image.width_emu}" cy="{image.height_emu}"/>
-        <wp:docPr id="{doc_pr_id}" name="{xml_text(image.alt_text)}"/>
-        <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
-          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
-            <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
-              <pic:nvPicPr><pic:cNvPr id="0" name="{xml_text(image.alt_text)}"/><pic:cNvPicPr/></pic:nvPicPr>
-              <pic:blipFill><a:blip r:embed="{image.relationship_id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
-              <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{image.width_emu}" cy="{image.height_emu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
-            </pic:pic>
-          </a:graphicData>
-        </a:graphic>
-      </wp:inline>
-    </w:drawing>
-  </w:r>
-</w:p>'''
+<w:drawing>
+  <wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">
+    <wp:extent cx="{image.width_emu}" cy="{image.height_emu}"/>
+    <wp:docPr id="{doc_pr_id}" name="{xml_text(image.alt_text)}"/>
+    <a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+      <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+        <pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+          <pic:nvPicPr><pic:cNvPr id="0" name="{xml_text(image.alt_text)}"/><pic:cNvPicPr/></pic:nvPicPr>
+          <pic:blipFill><a:blip r:embed="{image.relationship_id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>
+          <pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{image.width_emu}" cy="{image.height_emu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>
+        </pic:pic>
+      </a:graphicData>
+    </a:graphic>
+  </wp:inline>
+</w:drawing>'''
+
+
+def image_paragraph(image: EmbeddedImage, doc_pr_id: int) -> str:
+    return (
+        '<w:p><w:pPr><w:jc w:val="left"/><w:keepNext/><w:keepLines/>'
+        '<w:spacing w:after="0"/></w:pPr><w:r>'
+        f'{image_drawing(image, doc_pr_id)}</w:r></w:p>'
+    )
+
+
+def empty_thumbnail_paragraph() -> str:
+    return paragraph("Sin miniatura", size=18, color="606975", spacing_after=0)
+
+
+def cell(content: str, width: int, *, shade: str | None = None) -> str:
+    shading = f'<w:shd w:fill="{shade}"/>' if shade else ""
+    return (
+        '<w:tc><w:tcPr>'
+        f'<w:tcW w:w="{width}" w:type="dxa"/>'
+        '<w:tcMar><w:top w:w="120" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>'
+        '<w:bottom w:w="120" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>'
+        f'{shading}</w:tcPr>{content}</w:tc>'
+    )
 
 
 def photo_block(index: int, photo: ExportPhoto, image: EmbeddedImage | None) -> str:
-    parts = [
-        paragraph(f"{index}.", bold=True, size=24, spacing_after=120, keep_next=True),
-    ]
-    if image:
-        parts.append(image_paragraph(image, index))
-    parts.extend((
-        paragraph(photo.filename, bold=True, size=24, spacing_after=100, keep_next=True),
-        paragraph(photo.caption or "[Sin caption]", size=22, spacing_after=180),
-        paragraph("", line="bottom", spacing_after=260),
+    thumbnail = image_paragraph(image, index) if image else empty_thumbnail_paragraph()
+    photo_copy = "".join((
+        paragraph(f"{index}. {photo.filename}", bold=True, size=22, spacing_after=70, keep_next=True),
+        paragraph(photo.caption or "[Sin caption]", size=20, spacing_after=0),
     ))
-    return '<w:sdt><w:sdtContent>' + "".join(parts) + '</w:sdtContent></w:sdt>'
+    table = (
+        '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>'
+        '<w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="D7DDE5"/>'
+        '<w:left w:val="single" w:sz="4" w:space="0" w:color="D7DDE5"/>'
+        '<w:bottom w:val="single" w:sz="4" w:space="0" w:color="D7DDE5"/>'
+        '<w:right w:val="single" w:sz="4" w:space="0" w:color="D7DDE5"/>'
+        '<w:insideH w:val="nil"/><w:insideV w:val="nil"/></w:tblBorders>'
+        '<w:tblCellMar><w:top w:w="80" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>'
+        '<w:bottom w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar>'
+        '</w:tblPr><w:tr>'
+        f'{cell(thumbnail, 2350, shade="F4F6F8")}'
+        f'{cell(photo_copy, 7000)}'
+        '</w:tr></w:tbl>'
+    )
+    return '<w:sdt><w:sdtContent>' + table + paragraph("", spacing_after=150) + '</w:sdtContent></w:sdt>'
 
 
 def document_relationships(images: list[EmbeddedImage]) -> str:
@@ -215,6 +313,7 @@ def content_types(images: list[EmbeddedImage]) -> str:
         "jpg": "image/jpeg",
         "jpeg": "image/jpeg",
         "png": "image/png",
+        "webp": "image/webp",
     }
     default_xml = "".join(f'<Default Extension="{extension}" ContentType="{content_type}"/>' for extension, content_type in defaults.items())
     overrides = (
@@ -235,7 +334,7 @@ def package_relationships() -> str:
 def section_properties() -> str:
     return '''<w:sectPr>
   <w:pgSz w:w="12240" w:h="15840"/>
-  <w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080" w:header="720" w:footer="720" w:gutter="0"/>
+  <w:pgMar w:top="900" w:right="990" w:bottom="900" w:left="990" w:header="720" w:footer="720" w:gutter="0"/>
 </w:sectPr>'''
 
 
@@ -243,16 +342,15 @@ def build_document_xml(photos: list[ExportPhoto], coverage_metadata: dict, image
     title = build_report_title(coverage_metadata)
     images_by_photo = {image.alt_text: image for image in images}
     body = [
-        paragraph(title, bold=True, size=36, align="left", spacing_after=240),
+        paragraph(title, bold=True, size=34, align="left", spacing_after=160),
         cover_table(coverage_metadata),
-        paragraph("", spacing_after=0),
-        paragraph("", spacing_after=0),
+        paragraph("", spacing_after=90),
     ]
     for index, photo in enumerate(photos, start=1):
         body.append(photo_block(index, photo, images_by_photo.get(photo.filename)))
     body.extend((
-        paragraph("", spacing_after=520),
-        paragraph("«········ FIN DEL ENVÍO ········»", bold=True, size=28, align="center", spacing_after=0),
+        paragraph("", spacing_after=320),
+        paragraph("«········ FIN DEL ENVÍO ········»", bold=True, size=26, align="center", spacing_after=0),
         section_properties(),
     ))
     return (

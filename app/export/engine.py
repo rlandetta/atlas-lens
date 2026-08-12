@@ -150,4 +150,7 @@ class ExportEngine:
                 "caption_status": photo.get("caption_status", "Sin editar"),
             },
             data_url=str(photo.get("data_url", "")),
+            storage_path=str(photo.get("storage_path", "")),
+            flow_path=str(photo.get("flow_path", "")),
+            available_on_disk=photo.get("available_on_disk", True) is not False,
         )

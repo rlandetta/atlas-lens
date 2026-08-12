@@ -38,6 +38,9 @@ class ExportPhoto:
     editor: str
     metadata: dict[str, Any]
     data_url: str = ""
+    storage_path: str = ""
+    flow_path: str = ""
+    available_on_disk: bool = False
 
 
 @dataclass(frozen=True)

@@ -110,6 +110,9 @@ def render_xinhua_caption(coverage: dict, photo: dict) -> str:
     else:
         body = f"{narrative} {location} el {format_long_date(send_date)}".strip()
 
+    body = body.rstrip()
+    if body.endswith(","):
+        body = body[:-1]
     return f"{header} {body}. {credit}{editor_credit}"
 
 
