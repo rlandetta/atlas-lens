@@ -8,13 +8,16 @@ from unittest.mock import patch
 
 from app.export.engine import ExportEngine
 from app.export.models import ExportPhoto, ExportRequest
+from app.export.naming import ExportNames
 from app.export.builders.docx_builder import build_docx
+from app.export.builders.zip_builder import build_zip_archive
 from app.export.template_renderer import render_caption
 
 
 PNG_BYTES = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
 )
+JPG_BYTES = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xff\xd9"
 
 
 def docx_members(content: bytes) -> tuple[list[str], str]:
@@ -22,7 +25,106 @@ def docx_members(content: bytes) -> tuple[list[str], str]:
         return archive.namelist(), archive.read("word/document.xml").decode("utf-8")
 
 
+def build_photo(**overrides) -> ExportPhoto:
+    values = {
+        "id": "photo-1",
+        "filename": "IMG001.jpg",
+        "caption": "Caption de prueba.",
+        "status": "Aprobado",
+        "photographer": "",
+        "editor": "",
+        "metadata": {"type": "image/jpeg"},
+        "available_on_disk": True,
+    }
+    values.update(overrides)
+    return ExportPhoto(**values)
+
+
+def build_photos_zip(photos: list[ExportPhoto]) -> bytes:
+    content, _ = build_zip_archive(
+        request=ExportRequest(
+            coverage_id="cov-1",
+            formats=(),
+            include_photos=True,
+            include_captions=False,
+            include_metadata=False,
+            include_manifest=False,
+        ),
+        names=ExportNames(base_name="test-export", zip_filename="test-export.zip"),
+        coverage_metadata={"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+        manifest={},
+        photos=photos,
+    )
+    return content
+
+
 class DocxExportTest(unittest.TestCase):
+    def test_zip_writes_non_empty_photo_from_data_url(self):
+        encoded = base64.b64encode(JPG_BYTES).decode("ascii")
+        content = build_photos_zip([
+            build_photo(data_url=f"data:image/jpeg;base64,{encoded}")
+        ])
+
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            self.assertGreater(len(archive.read("Fotografias/IMG001.jpg")), 0)
+
+    def test_zip_writes_non_empty_photo_from_storage_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            media_root = Path(temp_dir)
+            storage_path = "coverages/cov-1/IMG002.jpg"
+            target = media_root / storage_path
+            target.parent.mkdir(parents=True)
+            target.write_bytes(JPG_BYTES)
+
+            with patch("app.config.LENS_MEDIA_ROOT", str(media_root)):
+                content = build_photos_zip([
+                    build_photo(id="photo-2", filename="IMG002.jpg", storage_path=storage_path)
+                ])
+
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            self.assertGreater(len(archive.read("Fotografias/IMG002.jpg")), 0)
+
+    def test_zip_writes_non_empty_photo_from_flow_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            flow_path = Path(temp_dir) / "IMG003.jpg"
+            flow_path.write_bytes(JPG_BYTES)
+
+            content = build_photos_zip([
+                build_photo(id="photo-3", filename="IMG003.jpg", flow_path=str(flow_path))
+            ])
+
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            self.assertGreater(len(archive.read("Fotografias/IMG003.jpg")), 0)
+
+    def test_zip_includes_exactly_six_jpgs_with_original_filenames_and_non_empty_bytes(self):
+        photos = []
+        for index in range(1, 7):
+            filename = f"IMG00{index}.jpg"
+            encoded = base64.b64encode(JPG_BYTES + bytes([index])).decode("ascii")
+            photos.append(build_photo(
+                id=f"photo-{index}",
+                filename=filename,
+                data_url=f"data:image/jpeg;base64,{encoded}",
+            ))
+
+        content = build_photos_zip(photos)
+
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            jpg_names = [
+                name for name in archive.namelist()
+                if name.startswith("Fotografias/") and name.lower().endswith(".jpg")
+            ]
+            self.assertEqual(jpg_names, [f"Fotografias/{photo.filename}" for photo in photos])
+            self.assertEqual(len(jpg_names), 6)
+            for name in jpg_names:
+                self.assertGreater(len(archive.read(name)), 0)
+
+    def test_zip_raises_explicit_error_for_unresolved_photo(self):
+        with self.assertRaisesRegex(ValueError, "missing.jpg.*photo-missing"):
+            build_photos_zip([
+                build_photo(id="photo-missing", filename="missing.jpg")
+            ])
+
     def test_docx_embeds_media_from_storage_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             media_root = Path(temp_dir)

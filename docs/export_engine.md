@@ -50,6 +50,7 @@ El ZIP incluye únicamente los elementos seleccionados. No se crean carpetas vac
 ```
 
 Las fotografías conservan exactamente el nombre original importado.
+El ZIP escribe los archivos originales desde `data_url`, `storage_path` o `flow_path`; si una fotografía no puede resolverse, la exportación falla explícitamente con su nombre e ID en lugar de crear un archivo vacío.
 
 ## Nomenclatura
 

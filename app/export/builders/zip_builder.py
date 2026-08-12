@@ -1,19 +1,25 @@
 from __future__ import annotations
 
-import base64
 import json
+import logging
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from app.export.builders import build_docx, build_html, build_pdf
+from app.export.builders.image_sources import (
+    ImageSourceError,
+    decode_data_url as decode_image_data_url,
+    load_required_image_source,
+    photo_label,
+)
 from app.export.models import ExportPhoto, ExportRequest
 from app.export.naming import ExportNames
 
+logger = logging.getLogger(__name__)
+
 
 def decode_data_url(data_url: str) -> bytes:
-    if not data_url or "," not in data_url:
-        return b""
-    _, encoded = data_url.split(",", 1)
-    return base64.b64decode(encoded)
+    image_bytes, _ = decode_image_data_url(data_url)
+    return image_bytes
 
 
 class ZipBuilder:
@@ -33,8 +39,13 @@ class ZipBuilder:
 
     def write_photo(self, photo: ExportPhoto):
         path = f"Fotografias/{photo.filename}"
+        try:
+            image_bytes, _ = load_required_image_source(photo)
+        except ImageSourceError:
+            logger.warning("ZIP export skipped unresolved original photo: %s", photo_label(photo))
+            raise
         with self.archive.open(path, "w") as destination:
-            destination.write(decode_data_url(photo.data_url))
+            destination.write(image_bytes)
         self.files_created.append(path)
 
     def write_package(
