@@ -1131,6 +1131,11 @@ h1 {
     margin-top: 0.72rem;
 }
 
+.inline-action-form {
+    display: inline-flex;
+    margin: 0;
+}
+
 .flow-action-row span {
     color: var(--text-secondary);
     font-size: 0.86rem;

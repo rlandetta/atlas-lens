@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import base64
 import binascii
+import logging
 import os
 import random
 import re
@@ -22,6 +23,7 @@ from app.export.service import ExportService, ExportValidationError, ExportWarni
 from app.suggestion_store import get_all_suggestions, remember_coverage_values
 
 web_bp = Blueprint("web", __name__)
+LOGGER = logging.getLogger(__name__)
 
 ALLOWED_PHOTO_TYPES = {
     "image/jpeg": {".jpg", ".jpeg"},
@@ -356,13 +358,11 @@ def find_coverage_photo(coverage: dict, photo_id: str) -> dict | None:
 
 
 def is_photo_dispatch_eligible_entry(photo: dict) -> bool:
-    storage_path = str(photo.get("storage_path", "")).strip()
-    if coverage_store is not None and not coverage_store.is_stored_file_available(storage_path):
+    if resolve_coverage_photo_source(photo) is None:
         return False
     return (
         bool(str(photo.get("caption_narrative", "")).strip())
         and photo.get("available_on_disk", True) is not False
-        and bool(storage_path)
     )
 
 
@@ -583,23 +583,33 @@ def flow_date_value(value: str) -> str:
         return ""
 
 
+def build_flow_coverage_name(session: dict) -> str:
+    date_value = flow_date_value(str(session.get("last_received_at") or session.get("started_at") or ""))
+    suffix = date_value or str(session.get("id", "sesión")).replace("session-", "")[:8]
+    return f"FLOW {suffix}"
+
+
 def build_flow_coverage_form_data(session: dict) -> dict[str, str]:
     return {
-        "coverage_name": "",
-        "agency": "",
+        "coverage_name": build_flow_coverage_name(session),
+        "agency": "Por definir",
         "event_date": flow_date_value(str(session.get("started_at", ""))),
         "submit_date": flow_date_value(str(session.get("last_received_at") or session.get("started_at") or "")),
-        "city": "",
-        "country": "",
-        "photographer": "",
-        "editor": "",
+        "city": "Por definir",
+        "country": "Por definir",
+        "photographer": "Por definir",
+        "editor": "flow",
     }
 
 
-def build_lens_photo_from_ingest(photo: dict, session_id: str) -> dict:
+def build_lens_photo_from_ingest(photo: dict, session_id: str, coverage: dict | None = None) -> dict:
     filename = str(photo.get("filename") or Path(str(photo.get("path", ""))).name or photo.get("id", "Fotografía"))
     path = str(photo.get("path", ""))
     path_object = Path(path)
+    received_at = str(photo.get("received_at") or utc_now_iso())
+    captured_at = str(photo.get("captured_at") or "")
+    camera = str(photo.get("camera") or photo.get("source") or "")
+    coverage_data = coverage or {}
     try:
         size = path_object.stat().st_size if path_object.is_file() else None
     except OSError:
@@ -612,13 +622,19 @@ def build_lens_photo_from_ingest(photo: dict, session_id: str) -> dict:
         "flow_path": path,
         "flow_session_id": session_id,
         "flow_photo_id": str(photo.get("id", "")),
-        "source": str(photo.get("source") or photo.get("camera") or ""),
+        "source": camera,
+        "camera": camera,
         "size": parse_optional_int(size),
         "type": "image/jpeg",
+        "coverage_name": str(coverage_data.get("coverage_name", "")),
+        "photographer": str(coverage_data.get("photographer", "")),
+        "event_date": str(coverage_data.get("event_date", "")),
+        "received_at": received_at,
+        "captured_at": captured_at,
         "caption_narrative": "",
         "caption_status": "Sin editar",
-        "created_at": str(photo.get("received_at") or utc_now_iso()),
-        "updated_at": str(photo.get("received_at") or utc_now_iso()),
+        "created_at": received_at,
+        "updated_at": received_at,
         "available_on_disk": path_object.is_file() and not path_object.is_symlink(),
     }
 
@@ -651,7 +667,7 @@ def sync_flow_coverage_photos(coverage_id: str, coverage: dict) -> bool:
     for ingest_photo in list_ingest_session_photos(session_id):
         if str(ingest_photo.get("id", "")) in existing_flow_photo_ids:
             continue
-        photos.append(build_lens_photo_from_ingest(ingest_photo, session_id))
+        photos.append(build_lens_photo_from_ingest(ingest_photo, session_id, coverage))
         existing_flow_photo_ids.add(str(ingest_photo.get("id", "")))
         changed = True
     if changed:
@@ -677,6 +693,35 @@ def mark_ingest_session_coverage(session_id: str, coverage_id: str) -> dict | No
         return None
 
     return store.mutate(mutation)
+
+
+def create_lens_coverage_from_flow_session(session: dict, form_data: dict[str, str]) -> str:
+    session_id = str(session.get("id", ""))
+    session_photos = list_ingest_session_photos(session_id)
+    coverage_id = build_coverage_id(form_data["coverage_name"])
+    coverage = dict(form_data)
+    coverage["flow_session_id"] = session_id
+    coverage["photos"] = [
+        build_lens_photo_from_ingest(photo, session_id, coverage)
+        for photo in session_photos
+    ]
+    attach_editor_metadata(coverage)
+    attach_default_ai_context(coverage)
+    remember_coverage_values(coverage)
+    coverages[coverage_id] = coverage
+    try:
+        persist_coverage(coverage_id)
+        mark_ingest_session_coverage(session_id, coverage_id)
+    except Exception:
+        coverages.pop(coverage_id, None)
+        raise
+    LOGGER.info(
+        "FLOW session %s opened in LENS coverage %s with %s photos",
+        session_id,
+        coverage_id,
+        len(coverage["photos"]),
+    )
+    return coverage_id
 
 
 def build_flow_summary() -> dict:
@@ -726,6 +771,7 @@ def build_flow_summary() -> dict:
             "coverage_id": str(session.get("coverage_id", "")),
             "coverage_name": str(coverages.get(str(session.get("coverage_id", "")), {}).get("coverage_name", "")),
             "create_url": url_for("web.flow_new_coverage", session_id=str(session.get("id", ""))),
+            "open_lens_url": url_for("web.flow_open_lens", session_id=str(session.get("id", ""))),
             "lens_url": url_for("web.coverage_detail", coverage_id=str(session.get("coverage_id", ""))) if str(session.get("coverage_id", "")) in coverages else "",
         }
         for session in sorted(
@@ -971,22 +1017,23 @@ def flow_new_coverage(session_id: str) -> str:
             suggestions=get_all_suggestions(),
         ), 400
 
-    coverage_id = build_coverage_id(form_data["coverage_name"])
-    form_data["flow_session_id"] = session_id
-    form_data["photos"] = [
-        build_lens_photo_from_ingest(photo, session_id)
-        for photo in session_photos
-    ]
-    attach_editor_metadata(form_data)
-    attach_default_ai_context(form_data)
-    remember_coverage_values(form_data)
-    coverages[coverage_id] = form_data
-    try:
-        persist_coverage(coverage_id)
-        mark_ingest_session_coverage(session_id, coverage_id)
-    except Exception:
-        coverages.pop(coverage_id, None)
-        raise
+    coverage_id = create_lens_coverage_from_flow_session(session, form_data)
+    return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
+
+
+@web_bp.post("/flow/sessions/<session_id>/lens/open")
+def flow_open_lens(session_id: str) -> str:
+    session = find_ingest_session(session_id)
+    if session is None:
+        abort(404)
+
+    existing_coverage_id = str(session.get("coverage_id", ""))
+    if existing_coverage_id and existing_coverage_id in coverages:
+        sync_flow_coverage_photos(existing_coverage_id, coverages[existing_coverage_id])
+        return redirect(url_for("web.coverage_detail", coverage_id=existing_coverage_id))
+
+    form_data = build_flow_coverage_form_data(session)
+    coverage_id = create_lens_coverage_from_flow_session(session, form_data)
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 

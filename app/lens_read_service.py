@@ -3,6 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Callable, Mapping, Any
 
+from app.export.builders.image_sources import resolve_original_path
+
 
 CoverageSource = Mapping[str, dict[str, Any]] | Callable[[], Mapping[str, dict[str, Any]]]
 
@@ -63,7 +65,10 @@ class LensReadService:
 
     @staticmethod
     def is_photo_approved(photo: dict[str, Any]) -> bool:
+        if not bool(str(photo.get("caption_narrative", "")).strip()):
+            return False
+        if str(photo.get("flow_path", "")).strip() or str(photo.get("storage_path", "")).strip():
+            return resolve_original_path(photo) is not None
         return (
-            bool(str(photo.get("caption_narrative", "")).strip())
-            and photo.get("available_on_disk", True) is not False
+            photo.get("available_on_disk", True) is not False
         )

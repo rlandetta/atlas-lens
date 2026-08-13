@@ -97,6 +97,68 @@ class DeliveryPackageServiceTest(unittest.TestCase):
                 coverage=coverage,
             )
 
+    def test_package_copies_flow_path_photo(self):
+        flow_path = self.root / "events" / "IMG_FLOW.jpg"
+        flow_path.parent.mkdir(parents=True)
+        flow_path.write_bytes(b"flow-jpeg")
+        coverage = json.loads(json.dumps(self.coverage))
+        coverage["photos"] = [
+            {
+                "id": "photo-flow",
+                "name": "IMG_FLOW.jpg",
+                "filename": "IMG_FLOW.jpg",
+                "storage_path": "",
+                "flow_path": str(flow_path),
+                "caption_narrative": "Persona participa en cobertura FLOW.",
+                "caption_status": "Aprobado",
+                "available_on_disk": True,
+            }
+        ]
+        shipment = {
+            **self.shipment,
+            "photo_ids": ["photo-flow"],
+        }
+
+        package = DeliveryPackageService(delivery_root=self.delivery_root, media_root=self.media_root).prepare_package(
+            shipment=shipment,
+            coverage=coverage,
+        )
+
+        copied = next(item for item in package.files if item.filename == "IMG_FLOW.jpg")
+        self.assertEqual((package.root / copied.path).read_bytes(), b"flow-jpeg")
+        self.assertEqual(flow_path.read_bytes(), b"flow-jpeg")
+
+    def test_package_copies_archived_flow_photo_from_common_resolver(self):
+        events_path = self.root / "storage" / "events" / "2026" / "08" / "12" / "sabado" / "ricardo" / "canon-r6" / "JPG" / "_21A1622.JPG"
+        archive_path = self.root / "storage" / "archive" / "2026" / "08" / "12" / "canon-r6" / "_21A1622.JPG"
+        archive_path.parent.mkdir(parents=True)
+        archive_path.write_bytes(b"archived-flow-jpeg")
+        coverage = json.loads(json.dumps(self.coverage))
+        coverage["photos"] = [
+            {
+                "id": "photo-flow",
+                "name": "_21A1622.JPG",
+                "filename": "_21A1622.JPG",
+                "storage_path": "",
+                "flow_path": str(events_path),
+                "caption_narrative": "Persona participa en cobertura FLOW.",
+                "caption_status": "Aprobado",
+                "available_on_disk": True,
+            }
+        ]
+        shipment = {
+            **self.shipment,
+            "photo_ids": ["photo-flow"],
+        }
+
+        package = DeliveryPackageService(delivery_root=self.delivery_root, media_root=self.media_root).prepare_package(
+            shipment=shipment,
+            coverage=coverage,
+        )
+
+        copied = next(item for item in package.files if item.filename == "_21A1622.JPG")
+        self.assertEqual((package.root / copied.path).read_bytes(), b"archived-flow-jpeg")
+
 
 class DeliveryLinksAndRoutesTest(unittest.TestCase):
     def setUp(self):

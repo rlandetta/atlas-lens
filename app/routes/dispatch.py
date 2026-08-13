@@ -11,6 +11,7 @@ from app.dispatch import DELIVERY_METHODS, DispatchValidationError
 from app.dispatch.delivery_package import DeliveryPackageError
 from app.dispatch.smtp_transport import SMTPTransportError
 from app.dispatch.sftp_transport import SFTPTransport, SFTPTransportError
+from app.export.builders.image_sources import resolve_original_path
 
 dispatch_bp = Blueprint("dispatch", __name__, url_prefix="/dispatch")
 
@@ -219,15 +220,10 @@ def list_coverage_options() -> list[dict[str, str]]:
 
 
 def is_photo_available_for_dispatch(photo: dict[str, Any]) -> bool:
-    storage_path = str(photo.get("storage_path", "")).strip()
-    if photo.get("available_on_disk", True) is False or not storage_path:
-        return False
-
     lens_extension = current_app.extensions.get("lens", {})
     coverage_store = lens_extension.get("coverage_store")
-    if coverage_store is None:
-        return photo.get("available_on_disk", True) is not False
-    return coverage_store.is_stored_file_available(storage_path)
+    media_root = getattr(coverage_store, "media_root", None)
+    return resolve_original_path(photo, media_root=media_root) is not None
 
 
 def get_caption_photo_options(coverage_id: str) -> list[dict[str, str]]:

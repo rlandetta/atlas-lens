@@ -306,6 +306,76 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("IMG001.jpg", body)
         self.assertIn("IMG002.jpg", body)
         self.assertNotIn(str(self.root), body)
+        self.assertIn("Abrir en LENS", body)
+        self.assertIn("/lens/open", body)
+        self.assertIn("Completar datos", body)
+
+    def test_flow_session_opens_directly_in_lens_with_real_photos(self):
+        received_at = datetime(2026, 8, 8, 14, 0, tzinfo=timezone.utc)
+        first = self.register_ingest_photo(filename="IMG001.jpg", source="canon-r6", received_at=received_at, valid_jpeg=True)
+        second = self.register_ingest_photo(filename="IMG002.jpg", source="sony-a9", received_at=received_at + timedelta(minutes=1), valid_jpeg=True)
+        session = self.app.extensions["ingest"]["store"].list_sessions()[0]
+
+        response = self.client.post(
+            f"/flow/sessions/{session['id']}/lens/open",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/coverages/", response.headers["Location"])
+        coverage_id = response.headers["Location"].rsplit("/", 1)[-1]
+        coverage = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        refreshed_session = self.app.extensions["ingest"]["store"].list_sessions()[0]
+
+        self.assertEqual(coverage["flow_session_id"], session["id"])
+        self.assertEqual(coverage["coverage_name"], "FLOW 2026-08-08")
+        self.assertEqual(len(coverage["photos"]), 2)
+        self.assertEqual({photo["filename"] for photo in coverage["photos"]}, {"IMG001.jpg", "IMG002.jpg"})
+        self.assertEqual({photo["flow_path"] for photo in coverage["photos"]}, {first["path"], second["path"]})
+        self.assertEqual({photo["camera"] for photo in coverage["photos"]}, {"canon-r6", "sony-a9"})
+        self.assertEqual({photo["source"] for photo in coverage["photos"]}, {"canon-r6", "sony-a9"})
+        self.assertEqual({photo["photographer"] for photo in coverage["photos"]}, {"Por definir"})
+        self.assertEqual({photo["event_date"] for photo in coverage["photos"]}, {"2026-08-08"})
+        self.assertEqual(refreshed_session["coverage_id"], coverage_id)
+
+        detail = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+        self.assertIn("Captions", detail)
+        self.assertIn(f"/coverages/{coverage_id}/photos/{first['id']}/thumbnail", detail)
+        self.assertIn("Cámara", detail)
+        self.assertIn("Fecha FLOW", detail)
+        self.assertIn("Exportaciones", detail)
+        self.assertIn("Enviar a DISPATCH", detail)
+
+        caption_response = self.client.post(
+            f"/coverages/{coverage_id}/photos/{first['id']}/caption",
+            json={
+                "caption_narrative": "Caption listo para despacho.",
+                "caption_status": "Aprobado",
+            },
+        )
+        caption_payload = caption_response.get_json()
+
+        self.assertEqual(caption_response.status_code, 200)
+        self.assertEqual(caption_payload["eligible_photo_count"], 1)
+        self.assertTrue(caption_payload["can_create_dispatch"])
+
+    def test_flow_open_lens_is_idempotent_for_existing_session_coverage(self):
+        self.register_ingest_photo(filename="IMG001.jpg", valid_jpeg=True)
+        session = self.app.extensions["ingest"]["store"].list_sessions()[0]
+        first_response = self.client.post(
+            f"/flow/sessions/{session['id']}/lens/open",
+            follow_redirects=False,
+        )
+        first_coverage_id = first_response.headers["Location"].rsplit("/", 1)[-1]
+
+        second_response = self.client.post(
+            f"/flow/sessions/{session['id']}/lens/open",
+            follow_redirects=False,
+        )
+
+        self.assertEqual(second_response.status_code, 302)
+        self.assertTrue(second_response.headers["Location"].endswith(f"/coverages/{first_coverage_id}"))
+        self.assertEqual(len(self.app.extensions["lens"]["coverage_store"].list_coverages()), 1)
 
     def test_flow_route_limits_latest_photos_to_12(self):
         base_time = datetime.now(timezone.utc)
@@ -340,6 +410,10 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(len(coverage["photos"]), 2)
         self.assertEqual({photo["flow_path"] for photo in coverage["photos"]}, {first["path"], second["path"]})
         self.assertEqual({photo["source"] for photo in coverage["photos"]}, {"canon-r6", "canon-1dx"})
+        self.assertEqual({photo["camera"] for photo in coverage["photos"]}, {"canon-r6", "canon-1dx"})
+        self.assertEqual({photo["coverage_name"] for photo in coverage["photos"]}, {"OPERATIVOS"})
+        self.assertEqual({photo["photographer"] for photo in coverage["photos"]}, {"Ricardo Landeta"})
+        self.assertEqual({photo["event_date"] for photo in coverage["photos"]}, {"2026-08-08"})
         self.assertEqual(refreshed_session["coverage_id"], coverage_id)
         self.assertTrue(first_path.exists())
         self.assertEqual(first_path.read_bytes(), before_hash)

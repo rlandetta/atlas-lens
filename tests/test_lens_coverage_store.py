@@ -96,6 +96,44 @@ class LensCoverageStoreTest(unittest.TestCase):
 
         self.assertFalse(photo["available_on_disk"])
 
+    def test_flow_photo_metadata_is_preserved(self):
+        flow_file = self.root / "events" / "IMG001.jpg"
+        flow_file.parent.mkdir(parents=True)
+        flow_file.write_bytes(b"jpg")
+        coverage = self.coverage()
+        coverage["photos"] = [
+            {
+                "id": "photo-flow",
+                "name": "IMG001.jpg",
+                "filename": "IMG001.jpg",
+                "flow_path": str(flow_file),
+                "flow_session_id": "session-1",
+                "flow_photo_id": "photo-flow",
+                "source": "canon-r6",
+                "camera": "canon-r6",
+                "coverage_name": "OPERATIVOS",
+                "photographer": "Ricardo Landeta",
+                "event_date": "2026-08-08",
+                "received_at": "2026-08-08T14:00:00+00:00",
+                "captured_at": "2026-08-08T13:55:00+00:00",
+            }
+        ]
+
+        self.store.set("cov-1", coverage)
+        photo = self.store.get("cov-1")["photos"][0]
+
+        self.assertEqual(photo["flow_path"], str(flow_file))
+        self.assertEqual(photo["flow_session_id"], "session-1")
+        self.assertEqual(photo["flow_photo_id"], "photo-flow")
+        self.assertEqual(photo["source"], "canon-r6")
+        self.assertEqual(photo["camera"], "canon-r6")
+        self.assertEqual(photo["coverage_name"], "OPERATIVOS")
+        self.assertEqual(photo["photographer"], "Ricardo Landeta")
+        self.assertEqual(photo["event_date"], "2026-08-08")
+        self.assertEqual(photo["received_at"], "2026-08-08T14:00:00+00:00")
+        self.assertEqual(photo["captured_at"], "2026-08-08T13:55:00+00:00")
+        self.assertTrue(photo["available_on_disk"])
+
     def test_caption_and_status_persist(self):
         coverage = self.coverage()
         coverage["photos"] = [

@@ -149,6 +149,7 @@ class LensCoverageStore:
             photo.get("storage_path") or photo.get("relative_path") or photo.get("file_path") or ""
         ))
         flow_path = str(photo.get("flow_path", "")).strip()
+        source = str(photo.get("source") or photo.get("camera") or "")
         available_on_disk = bool(
             photo.get("available_on_disk", True) is not False
             and (
@@ -172,11 +173,17 @@ class LensCoverageStore:
             "flow_path": flow_path if Path(flow_path).is_absolute() else "",
             "flow_session_id": str(photo.get("flow_session_id", "")),
             "flow_photo_id": str(photo.get("flow_photo_id", "")),
-            "source": str(photo.get("source") or photo.get("camera") or ""),
+            "source": source,
+            "camera": source,
             "size": self.optional_int(photo.get("size")),
             "type": str(photo.get("type", "image/jpeg") or "image/jpeg"),
             "width": self.optional_int(photo.get("width")),
             "height": self.optional_int(photo.get("height")),
+            "coverage_name": str(photo.get("coverage_name", "")),
+            "photographer": str(photo.get("photographer", "")),
+            "event_date": str(photo.get("event_date", "")),
+            "received_at": str(photo.get("received_at", "")),
+            "captured_at": str(photo.get("captured_at", "")),
             "caption_narrative": str(photo.get("caption_narrative", "")),
             "caption_status": str(photo.get("caption_status", "Sin editar") or "Sin editar"),
             "created_at": str(photo.get("created_at") or timestamp),

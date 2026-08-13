@@ -44,7 +44,10 @@
         <span>Cobertura: {{ active_session.coverage_name }}</span>
         <a class="secondary-button compact-action" href="{{ active_session.lens_url }}">Abrir en LENS</a>
         {% else %}
-        <a class="primary-button compact-action" href="{{ active_session.create_url }}">Crear cobertura</a>
+        <form method="post" action="{{ active_session.open_lens_url }}" class="inline-action-form">
+            <button type="submit" class="primary-button compact-action">Abrir en LENS</button>
+        </form>
+        <a class="secondary-button compact-action" href="{{ active_session.create_url }}">Completar datos</a>
         {% endif %}
     </div>
     {% endif %}
@@ -122,7 +125,10 @@
                 {% if session.lens_url %}
                 <a class="secondary-button compact-action" href="{{ session.lens_url }}">Abrir en LENS</a>
                 {% else %}
-                <a class="primary-button compact-action" href="{{ session.create_url }}">Crear cobertura</a>
+                <form method="post" action="{{ session.open_lens_url }}" class="inline-action-form">
+                    <button type="submit" class="primary-button compact-action">Abrir en LENS</button>
+                </form>
+                <a class="secondary-button compact-action" href="{{ session.create_url }}">Completar datos</a>
                 {% endif %}
             </div>
         </article>

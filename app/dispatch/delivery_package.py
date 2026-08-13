@@ -11,6 +11,7 @@ import zipfile
 
 from app.export.models import ExportRequest
 from app.export.service import ExportService
+from app.export.builders.image_sources import resolve_original_path
 
 
 class DeliveryPackageError(ValueError):
@@ -188,14 +189,11 @@ class DeliveryPackageService:
                 archive.write(source, arcname=item.path)
 
     def resolve_lens_photo(self, photo: dict[str, Any]) -> Path:
-        storage_path = str(photo.get("storage_path", "")).strip().replace("\\", "/")
-        if not storage_path or Path(storage_path).is_absolute() or storage_path.startswith("../") or "/../" in storage_path:
-            raise DeliveryPackageError("Ruta de fotografía inválida.")
-        media_root = self.media_root.resolve()
-        source = (media_root / storage_path).resolve()
-        if not source.is_relative_to(media_root) or not source.is_file() or source.is_symlink():
-            raise DeliveryPackageError("Fotografía no disponible en LENS.")
-        return source
+        source = resolve_original_path(photo, media_root=self.media_root)
+        if source is not None:
+            return source
+
+        raise DeliveryPackageError("Fotografía no disponible en LENS.")
 
     @staticmethod
     def resolve_package_member(package_root: Path, relative_path: str) -> Path:

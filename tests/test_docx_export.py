@@ -10,6 +10,7 @@ from app.export.engine import ExportEngine
 from app.export.models import ExportPhoto, ExportRequest
 from app.export.naming import ExportNames
 from app.export.builders.docx_builder import build_docx
+from app.export.builders.image_sources import load_image_source, resolve_original_path
 from app.export.builders.pdf_builder import build_pdf
 from app.export.builders.zip_builder import build_zip_archive
 from app.export.template_renderer import render_caption
@@ -62,6 +63,14 @@ def build_photos_zip(photos: list[ExportPhoto]) -> bytes:
         photos=photos,
     )
     return content
+
+
+def build_flow_events_path(root: Path, filename: str = "_21A1622.JPG") -> Path:
+    return root / "storage" / "events" / "2026" / "08" / "12" / "sabado" / "ricardo" / "canon-r6" / "JPG" / filename
+
+
+def build_flow_archive_path(root: Path, filename: str = "_21A1622.JPG") -> Path:
+    return root / "storage" / "archive" / "2026" / "08" / "12" / "canon-r6" / filename
 
 
 def assert_pdf_has_image(test_case: unittest.TestCase, content: bytes):
@@ -143,6 +152,84 @@ class DocxExportTest(unittest.TestCase):
 
         with zipfile.ZipFile(BytesIO(content)) as archive:
             self.assertGreater(len(archive.read("Fotografias/IMG003.jpg")), 0)
+
+    def test_flow_events_path_existing_resolves_original(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events_path = build_flow_events_path(Path(temp_dir))
+            archive_path = build_flow_archive_path(Path(temp_dir))
+            events_path.parent.mkdir(parents=True)
+            archive_path.parent.mkdir(parents=True)
+            events_path.write_bytes(b"events-original")
+            archive_path.write_bytes(b"archive-original")
+
+            source = resolve_original_path(build_photo(filename="_21A1622.JPG", flow_path=str(events_path)))
+
+        self.assertEqual(source, events_path.resolve())
+
+    def test_flow_events_path_missing_resolves_archive_original_deterministically(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events_path = build_flow_events_path(Path(temp_dir))
+            archive_path = build_flow_archive_path(Path(temp_dir))
+            archive_path.parent.mkdir(parents=True)
+            archive_path.write_bytes(JPG_BYTES + b"archive")
+
+            content = build_photos_zip([
+                build_photo(id="photo-flow", filename="_21A1622.JPG", flow_path=str(events_path))
+            ])
+
+        with zipfile.ZipFile(BytesIO(content)) as archive:
+            self.assertEqual(archive.read("Fotografias/_21A1622.JPG"), JPG_BYTES + b"archive")
+
+    def test_flow_events_path_missing_and_archive_missing_is_unresolved(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events_path = build_flow_events_path(Path(temp_dir))
+
+            source = resolve_original_path(build_photo(filename="_21A1622.JPG", flow_path=str(events_path)))
+
+        self.assertIsNone(source)
+
+    def test_flow_events_zero_byte_file_is_unresolved_without_archive_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events_path = build_flow_events_path(Path(temp_dir))
+            archive_path = build_flow_archive_path(Path(temp_dir))
+            events_path.parent.mkdir(parents=True)
+            archive_path.parent.mkdir(parents=True)
+            events_path.write_bytes(b"")
+            archive_path.write_bytes(JPG_BYTES)
+
+            source = resolve_original_path(build_photo(filename="_21A1622.JPG", flow_path=str(events_path)))
+
+        self.assertIsNone(source)
+
+    def test_flow_archive_zero_byte_file_is_unresolved(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            events_path = build_flow_events_path(Path(temp_dir))
+            archive_path = build_flow_archive_path(Path(temp_dir))
+            archive_path.parent.mkdir(parents=True)
+            archive_path.write_bytes(b"")
+
+            source = resolve_original_path(build_photo(filename="_21A1622.JPG", flow_path=str(events_path)))
+
+        self.assertIsNone(source)
+
+    def test_legacy_data_url_and_storage_path_still_resolve(self):
+        encoded = base64.b64encode(JPG_BYTES).decode("ascii")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            media_root = Path(temp_dir)
+            storage_path = "coverages/cov-1/IMG002.jpg"
+            target = media_root / storage_path
+            target.parent.mkdir(parents=True)
+            target.write_bytes(JPG_BYTES + b"storage")
+
+            image_bytes, content_type = load_image_source(
+                build_photo(data_url=f"data:image/jpeg;base64,{encoded}")
+            )
+            with patch("app.config.LENS_MEDIA_ROOT", str(media_root)):
+                storage_source = resolve_original_path(build_photo(id="photo-storage", storage_path=storage_path))
+
+        self.assertEqual(image_bytes, JPG_BYTES)
+        self.assertEqual(content_type, "image/jpeg")
+        self.assertEqual(storage_source, target.resolve())
 
     def test_zip_includes_exactly_six_jpgs_with_original_filenames_and_non_empty_bytes(self):
         photos = []

@@ -18,6 +18,9 @@ const photoInfoName = document.getElementById("photo-info-name");
 const photoInfoSize = document.getElementById("photo-info-size");
 const photoInfoType = document.getElementById("photo-info-type");
 const photoInfoDimensions = document.getElementById("photo-info-dimensions");
+const photoInfoCamera = document.getElementById("photo-info-camera");
+const photoInfoDate = document.getElementById("photo-info-date");
+const photoInfoPhotographer = document.getElementById("photo-info-photographer");
 const photoCaptionPreview = document.getElementById("photo-caption-preview");
 const captionPhotoCounter = document.getElementById("caption-photo-counter");
 const captionPhotoStatusIndicator = document.getElementById("caption-photo-status-indicator");
@@ -262,6 +265,11 @@ const normalizeInitialPhoto = (photo) => ({
     mediaUrl: photo.media_url || photo.mediaUrl || "",
     objectUrl: null,
     lastModified: photo.lastModified || null,
+    camera: photo.camera || photo.source || "",
+    photographer: photo.photographer || "",
+    eventDate: photo.event_date || photo.eventDate || "",
+    receivedAt: photo.received_at || photo.receivedAt || "",
+    capturedAt: photo.captured_at || photo.capturedAt || "",
     sourceFile: null,
     importStatus: "Lista",
     processingError: "",
@@ -503,6 +511,9 @@ const renderPhotoInfo = (photo) => {
     photoInfoSize.textContent = formatSize(photo.size);
     photoInfoType.textContent = photo.type || "image/jpeg";
     photoInfoDimensions.textContent = dimensions;
+    photoInfoCamera.textContent = photo.camera || "Sin cámara";
+    photoInfoDate.textContent = photo.capturedAt || photo.receivedAt || photo.eventDate || "Sin fecha";
+    photoInfoPhotographer.textContent = photo.photographer || getCoverageCaptionData().photographer || "Sin fotógrafo";
 
     photoInfoEmpty.hidden = true;
     setElementVisibility(photoInfoDetails, true);
@@ -518,6 +529,9 @@ const clearPhotoInfo = () => {
     photoInfoSize.textContent = "";
     photoInfoType.textContent = "";
     photoInfoDimensions.textContent = "";
+    photoInfoCamera.textContent = "";
+    photoInfoDate.textContent = "";
+    photoInfoPhotographer.textContent = "";
     clearCaptionEditor();
 };
 
@@ -1479,7 +1493,12 @@ const buildQueuedPhoto = (file) => {
         importStatus: "En cola",
         processingError: "",
         captionNarrative: "",
-        captionStatus: "Sin editar"
+        captionStatus: "Sin editar",
+        camera: "",
+        photographer: getCoverageCaptionData().photographer || "",
+        eventDate: getCoverageCaptionData().eventDate || "",
+        receivedAt: "",
+        capturedAt: ""
     };
 };
 
