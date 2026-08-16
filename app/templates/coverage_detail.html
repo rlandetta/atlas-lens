@@ -69,12 +69,12 @@
         </div>
     </form>
     {% endif %}
-    <a href="{{ url_for('web.home') }}" class="back-link compact-link">Volver a coberturas</a>
+    <a href="{{ url_for('web.lens_home') }}" class="back-link compact-link">Volver a coberturas</a>
 </section>
 
 <section class="ui-card atlas-panel--wide coverage-tabs-card">
     <nav class="coverage-tabs" role="tablist" aria-label="Secciones de cobertura">
-        <a class="tab-link" href="{{ url_for('web.home') }}">Coberturas</a>
+        <a class="tab-link" href="{{ url_for('web.lens_home') }}">Coberturas</a>
         <button class="tab-button is-active" type="button" role="tab" aria-selected="true" data-tab-button data-tab-target="tab-captions">Captions</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-watermark">Marca de agua</button>
         <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab-button data-tab-target="tab-exportaciones">Exportaciones</button>

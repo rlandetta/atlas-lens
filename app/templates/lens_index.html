@@ -65,10 +65,12 @@
                 type="button"
                 class="danger-button card-action"
                 data-delete-coverage-button
+                data-delete-coverage-id="{{ item.coverage_id }}"
                 data-delete-title="{{ item.title }}"
                 data-delete-action="{{ url_for('web.delete_coverage', coverage_id=item.coverage_id) }}"
+                data-delete-dispatch-count="{{ item.related_dispatch_count }}"
             >
-                Eliminar
+                Eliminar cobertura
             </button>
         </div>
     </article>
@@ -77,8 +79,23 @@
 <dialog id="delete-coverage-dialog" class="delete-dialog" aria-labelledby="delete-coverage-title">
     <form method="post" id="delete-coverage-form" class="delete-dialog-form">
         <h2 id="delete-coverage-title">Eliminar cobertura</h2>
-        <p>Esta acción eliminará la cobertura y sus datos temporales. No se puede deshacer.</p>
-        <p class="delete-dialog-coverage-title" id="delete-coverage-name"></p>
+        <p>Esta acción elimina la cobertura de LENS y sus datos editoriales. Las fotografías originales de FLOW se conservarán.</p>
+        <p id="delete-coverage-dispatch-warning" class="form-warning" hidden></p>
+        <p id="delete-coverage-error" class="form-error" hidden></p>
+        <p class="delete-dialog-coverage-title">
+            Cobertura: <span id="delete-coverage-name"></span>
+        </p>
+        <p class="delete-dialog-coverage-title">
+            ID para confirmar: <span id="delete-coverage-id"></span>
+        </p>
+        <div class="form-field">
+            <label for="confirm-coverage-id-field">Escriba el ID exacto para confirmar</label>
+            <input id="confirm-coverage-id-field" name="confirm_coverage_id" type="text" autocomplete="off" required>
+        </div>
+        <label class="checkbox-field">
+            <input id="preserve-flow-originals-field" name="preserve_flow_originals" type="checkbox" value="accepted" required>
+            Entiendo que las fotografías originales de FLOW no se eliminarán.
+        </label>
         <div class="dialog-actions">
             <button type="button" id="cancel-delete-coverage-button" class="secondary-button">Cancelar</button>
             <button type="submit" class="danger-button danger-confirm-button">Eliminar cobertura</button>

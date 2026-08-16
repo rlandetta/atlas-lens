@@ -717,6 +717,24 @@ def mark_ingest_session_coverage(session_id: str, coverage_id: str) -> dict | No
     return store.mutate(mutation)
 
 
+def clear_ingest_session_coverage(session_id: str, coverage_id: str) -> dict | None:
+    store = ingest_store()
+    if store is None or not session_id:
+        return None
+
+    def mutation(payload):
+        for session in payload["sessions"]:
+            if (
+                str(session.get("id", "")) == session_id
+                and str(session.get("coverage_id", "")) == coverage_id
+            ):
+                session["coverage_id"] = ""
+                return session
+        return None
+
+    return store.mutate(mutation)
+
+
 def create_lens_coverage_from_flow_session(session: dict, form_data: dict[str, str]) -> str:
     session_id = str(session.get("id", ""))
     session_photos = list_ingest_session_photos(session_id)
@@ -822,6 +840,31 @@ def build_dispatch_state(coverage: dict) -> dict:
         "eligible_photo_count": eligible_photo_count,
         "can_create_dispatch": eligible_photo_count > 0,
     }
+
+
+def list_related_dispatches(coverage_id: str) -> list[dict]:
+    dispatch_service = current_app.extensions.get("dispatch", {}).get("shipment_service")
+    if dispatch_service is None:
+        return []
+    return [
+        shipment
+        for shipment in dispatch_service.list_shipments()
+        if str(shipment.get("coverage_id", "")) == coverage_id
+    ]
+
+
+def build_lens_coverage_items() -> list[dict]:
+    return [
+        {
+            "coverage_id": coverage_id,
+            "coverage": coverage,
+            "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
+            "photo_count": len(ensure_coverage_photos(coverage)),
+            "related_dispatch_count": len(list_related_dispatches(coverage_id)),
+            "status": "En preparación",
+        }
+        for coverage_id, coverage in coverages.items()
+    ]
 
 
 def serialize_photos_for_detail(coverage_id: str, photos: list[dict]) -> list[dict]:
@@ -983,17 +1026,7 @@ def home() -> str:
 @web_bp.get("/lens")
 def lens_home() -> str:
     sync_flow_linked_coverages()
-    coverage_items = [
-        {
-            "coverage_id": coverage_id,
-            "coverage": coverage,
-            "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
-            "photo_count": len(ensure_coverage_photos(coverage)),
-            "status": "En preparación",
-        }
-        for coverage_id, coverage in coverages.items()
-    ]
-    return render_template("lens_index.html", coverages=coverage_items)
+    return render_template("lens_index.html", coverages=build_lens_coverage_items())
 
 
 @web_bp.get("/flow")
@@ -1160,13 +1193,30 @@ def save_coverage_ai_context(coverage_id: str) -> str:
 
 @web_bp.post("/coverages/<coverage_id>/delete")
 def delete_coverage(coverage_id: str) -> str:
-    if coverage_id not in coverages:
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
         abort(404)
 
+    typed_id = str(request.form.get("confirm_coverage_id", "") or "").strip()
+    expected_id = str(coverage_id or "").strip()
+    if typed_id != expected_id:
+        return "El ID ingresado no coincide con la cobertura. La cobertura no fue eliminada.", 400
+
+    preserve_flow_originals = str(request.form.get("preserve_flow_originals", "") or "").strip().lower()
+    if preserve_flow_originals not in {"accepted", "true", "on", "1"}:
+        return "Debe confirmar que comprende que las fotografías originales de FLOW se conservarán.", 400
+
+    related_dispatch_count = len(list_related_dispatches(coverage_id))
+    flow_session_id = str(coverage.get("flow_session_id", ""))
     del coverages[coverage_id]
     delete_persisted_coverage(coverage_id)
-    delete_persisted_coverage_media(coverage_id)
-    return redirect(url_for("web.home"))
+    clear_ingest_session_coverage(flow_session_id, coverage_id)
+    LOGGER.info(
+        "LENS coverage %s deleted; FLOW originals, media cache, exports and %s related dispatch(es) preserved",
+        coverage_id,
+        related_dispatch_count,
+    )
+    return redirect(url_for("web.lens_home"))
 
 
 @web_bp.post("/coverages/<coverage_id>/exports")

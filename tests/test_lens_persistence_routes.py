@@ -95,6 +95,36 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         return response
 
+    def delete_coverage(self, coverage_id, **overrides):
+        data = {
+            "confirm_coverage_id": coverage_id,
+            "preserve_flow_originals": "accepted",
+        }
+        data.update(overrides)
+        return self.client.post(
+            f"/coverages/{coverage_id}/delete",
+            data=data,
+            follow_redirects=False,
+        )
+
+    def seed_coverage(self, coverage_id):
+        web.coverages[coverage_id] = {
+            "coverage_name": "OPERATIVOS",
+            "submit_date": "2026-08-05",
+            "event_date": "2026-08-05",
+            "city": "Quito",
+            "country": "Ecuador",
+            "locality_type": "auto",
+            "agency": "Xinhua",
+            "photographer": "Ricardo Landeta",
+            "editor": "rl",
+            "photos": [],
+        }
+        web.attach_editor_metadata(web.coverages[coverage_id])
+        web.attach_default_ai_context(web.coverages[coverage_id])
+        web.persist_coverage(coverage_id)
+        return coverage_id
+
     def test_create_reload_and_dispatch_visibility(self):
         coverage_id = self.create_coverage()
 
@@ -105,6 +135,14 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn("Cobertura Persistida", body)
         self.assertIn(coverage_id, web.coverages)
 
+    def test_coverage_tab_links_to_lens_list_not_dashboard(self):
+        coverage_id = self.create_coverage()
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn('href="/lens">Coberturas</a>', body)
+        self.assertIn('href="/lens" class="back-link compact-link">Volver a coberturas</a>', body)
+        self.assertNotIn('href="/">Coberturas</a>', body)
     def test_locality_type_is_persisted_on_create_and_edit(self):
         coverage_id = self.create_coverage()
 
@@ -496,10 +534,74 @@ class LensPersistenceRoutesTest(unittest.TestCase):
     def test_delete_coverage_persists(self):
         coverage_id = self.create_coverage()
 
-        response = self.client.post(f"/coverages/{coverage_id}/delete")
+        response = self.delete_coverage(coverage_id)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/lens")
+        self.assertIsNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
+
+    def test_cancel_delete_keeps_coverage(self):
+        coverage_id = self.create_coverage()
+
+        body = self.client.get("/lens").get_data(as_text=True)
+
+        self.assertIn('id="cancel-delete-coverage-button"', body)
+        self.assertIn('id="delete-coverage-error"', body)
+        self.assertIn('id="delete-coverage-id"', body)
+        self.assertIn(f'data-delete-action="/coverages/{coverage_id}/delete"', body)
+        self.assertIn(f'data-delete-coverage-id="{coverage_id}"', body)
+        self.assertIsNotNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
+
+    def test_delete_coverage_accepts_browser_form_contract_with_exact_id(self):
+        coverage_id = self.seed_coverage("cov-20260805031335-1586")
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/delete",
+            data={
+                "confirm_coverage_id": "cov-20260805031335-1586",
+                "preserve_flow_originals": "accepted",
+            },
+            headers={"X-Requested-With": "fetch"},
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/lens")
+        self.assertIsNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
+
+    def test_delete_coverage_accepts_id_with_outer_spaces(self):
+        coverage_id = self.seed_coverage("cov-20260805031335-1586")
+
+        response = self.delete_coverage(
+            coverage_id,
+            confirm_coverage_id="  cov-20260805031335-1586  ",
+        )
 
         self.assertEqual(response.status_code, 302)
         self.assertIsNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
+
+    def test_delete_coverage_rejects_incorrect_confirmation(self):
+        coverage_id = self.create_coverage()
+
+        response = self.delete_coverage(coverage_id, confirm_coverage_id="cov-equivocada")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("El ID ingresado no coincide con la cobertura", response.get_data(as_text=True))
+        self.assertIsNotNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
+
+    def test_delete_coverage_requires_flow_original_acknowledgement(self):
+        coverage_id = self.create_coverage()
+
+        response = self.delete_coverage(coverage_id, preserve_flow_originals="")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Debe confirmar que comprende", response.get_data(as_text=True))
+        self.assertIsNotNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
+
+    def test_delete_missing_coverage_returns_404(self):
+        response = self.delete_coverage("cov-missing")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_delete_photo_removes_file(self):
         coverage_id = self.create_coverage()
@@ -513,15 +615,61 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertFalse(media_file.exists())
         self.assertEqual(self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"], [])
 
-    def test_delete_coverage_removes_media_directory(self):
+    def test_delete_coverage_preserves_media_directory(self):
         coverage_id = self.create_coverage()
         self.add_photo(coverage_id)
         media_dir = self.media_root / "coverages" / coverage_id
 
-        response = self.client.post(f"/coverages/{coverage_id}/delete")
+        response = self.delete_coverage(coverage_id)
 
         self.assertEqual(response.status_code, 302)
-        self.assertFalse(media_dir.exists())
+        self.assertTrue(media_dir.exists())
+
+    def test_delete_flow_coverage_preserves_flow_original(self):
+        coverage_id = self.create_coverage()
+        flow_file = self.root / "FLOW" / "sftpgo" / "storage" / "archive" / "2026" / "08" / "14" / "canon-r6" / "_21A1622.JPG"
+        flow_file.parent.mkdir(parents=True)
+        flow_file.write_bytes(self.jpeg_bytes)
+        web.coverages[coverage_id]["flow_session_id"] = "session-flow"
+        web.coverages[coverage_id]["photos"].append({
+            "id": "flow-photo",
+            "name": "_21A1622.JPG",
+            "filename": "_21A1622.JPG",
+            "flow_path": str(flow_file),
+            "flow_session_id": "session-flow",
+            "flow_photo_id": "flow-photo",
+            "caption_narrative": "Caption FLOW.",
+            "caption_status": "Aprobado",
+            "available_on_disk": True,
+        })
+        web.persist_coverage(coverage_id)
+
+        response = self.delete_coverage(coverage_id)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(flow_file.is_file())
+        self.assertIsNone(self.app.extensions["lens"]["coverage_store"].get(coverage_id))
+
+    def test_delete_coverage_preserves_related_dispatches(self):
+        coverage_id = self.create_coverage()
+        with self.app.app_context():
+            shipment = self.app.extensions["dispatch"]["shipment_service"].create_shipment(
+                name="Despacho relacionado",
+                coverage_id=coverage_id,
+                photo_ids=[],
+                recipients=[{"name": "Mesa", "email": "desk@example.com"}],
+                include_caption_docx=True,
+            )
+
+        body = self.client.get("/lens").get_data(as_text=True)
+        response = self.delete_coverage(coverage_id)
+
+        self.assertIn('data-delete-dispatch-count="1"', body)
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            stored_shipment = self.app.extensions["dispatch"]["shipment_service"].get_shipment(shipment["id"])
+        self.assertIsNotNone(stored_shipment)
+        self.assertEqual(stored_shipment["coverage_id"], coverage_id)
 
     def test_legacy_photo_without_file_is_not_sendable(self):
         coverage_id = self.create_coverage()
