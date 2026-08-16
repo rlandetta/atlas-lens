@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import base64
 import binascii
+import io
+import logging
 from pathlib import Path
 from typing import Any, Mapping
 
 from app import config
 from app.export.models import ExportPhoto
+from app.media import ThumbnailService
+
+LOGGER = logging.getLogger(__name__)
+DOCX_IMAGE_MAX_SIDE = 800
+DOCX_IMAGE_QUALITY = 80
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class ImageSourceError(ValueError):
@@ -122,6 +130,69 @@ def content_type_from_path(path: Path, fallback: str) -> str:
     if suffix == ".webp":
         return "image/webp"
     return fallback or "image/jpeg"
+
+
+def thumbnail_root_path() -> Path:
+    root = Path(config.THUMBNAIL_ROOT)
+    if root.is_absolute():
+        return root
+    return PROJECT_ROOT / root
+
+
+def load_existing_thumbnail(source_path: Path) -> bytes:
+    service = ThumbnailService(thumbnail_root_path())
+    thumbnail_path = service.thumbnail_path_for(source_path)
+    if thumbnail_path is None or not is_regular_nonempty_file(thumbnail_path):
+        return b""
+    return thumbnail_path.read_bytes()
+
+
+def build_docx_jpeg_preview(image_bytes: bytes, source_name: str) -> bytes:
+    try:
+        from PIL import Image, ImageOps
+    except ModuleNotFoundError as error:
+        if error.name == "PIL":
+            LOGGER.warning("No se pudo reducir imagen DOCX para %s: Pillow no está disponible.", source_name)
+            return b""
+        raise
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image = ImageOps.exif_transpose(image)
+            image.thumbnail((DOCX_IMAGE_MAX_SIDE, DOCX_IMAGE_MAX_SIDE))
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            output = io.BytesIO()
+            image.save(output, format="JPEG", quality=DOCX_IMAGE_QUALITY, optimize=True)
+            return output.getvalue()
+    except Exception as error:
+        LOGGER.warning("No se pudo reducir imagen DOCX para %s: %s", source_name, error)
+        return b""
+
+
+def load_docx_image_source(photo: ExportPhoto) -> tuple[bytes, str]:
+    source = resolve_original_path(photo)
+    if source is not None:
+        try:
+            thumbnail_bytes = load_existing_thumbnail(source)
+            if thumbnail_bytes:
+                return thumbnail_bytes, "image/jpeg"
+
+            original_bytes = source.read_bytes()
+            preview_bytes = build_docx_jpeg_preview(original_bytes, photo_label(photo))
+            if preview_bytes:
+                LOGGER.info("Imagen DOCX reducida en memoria para %s.", photo_label(photo))
+                return preview_bytes, "image/jpeg"
+        except OSError as error:
+            LOGGER.warning("No se pudo leer imagen local para DOCX de %s: %s", photo_label(photo), error)
+
+    image_bytes, content_type = decode_data_url(photo.data_url)
+    if not image_bytes:
+        return b"", content_type
+    preview_bytes = build_docx_jpeg_preview(image_bytes, photo_label(photo))
+    if preview_bytes:
+        return preview_bytes, "image/jpeg"
+    return b"", content_type
 
 
 def load_image_source(photo: ExportPhoto) -> tuple[bytes, str]:

@@ -32,6 +32,7 @@ class CoverageContext:
     notes: str
     photo_filename: str
     photo_sequence: int
+    is_drone: bool
     language: str
     editorial_template: str
 

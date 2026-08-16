@@ -56,6 +56,7 @@ class ContextEngine:
             notes=str(ai_context.get("notes", "") or ""),
             photo_filename=str(photo.get("name", "") or ""),
             photo_sequence=int(photo_sequence or 0),
+            is_drone=bool(photo.get("is_drone", False)),
             language="es",
             editorial_template="xinhua",
         )
@@ -84,6 +85,7 @@ class ContextEngine:
             "photo": {
                 "filename": payload["photo_filename"],
                 "sequence": payload["photo_sequence"],
+                "is_drone": payload["is_drone"],
             },
             "known_people": payload["known_people"],
             "organizations": payload["organizations"],

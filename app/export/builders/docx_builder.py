@@ -5,13 +5,13 @@ from dataclasses import dataclass
 from html import escape
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from app.export.builders.image_sources import load_image_source
+from app.export.builders.image_sources import load_docx_image_source
 from app.export.models import ExportPhoto
 
 EMU_PER_INCH = 914400
 TEXT_COLOR = "333333"
-MAX_IMAGE_WIDTH_EMU = int(1.70 * EMU_PER_INCH)
-MAX_IMAGE_HEIGHT_EMU = int(1.13 * EMU_PER_INCH)
+MAX_IMAGE_WIDTH_EMU = int(1.95 * EMU_PER_INCH)
+MAX_IMAGE_HEIGHT_EMU = int(1.35 * EMU_PER_INCH)
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ def image_extension(content_type: str, fallback_name: str) -> str:
 def build_embedded_images(photos: list[ExportPhoto]) -> list[EmbeddedImage]:
     images = []
     for index, photo in enumerate(photos, start=1):
-        image_bytes, content_type = load_image_source(photo)
+        image_bytes, content_type = load_docx_image_source(photo)
         if not image_bytes:
             continue
         width, height = detect_image_size(image_bytes, content_type)
@@ -183,7 +183,7 @@ def image_drawing(image: EmbeddedImage, doc_pr_id: int) -> str:
 
 def image_paragraph(image: EmbeddedImage, doc_pr_id: int) -> str:
     return (
-        '<w:p><w:pPr><w:jc w:val="left"/><w:keepNext/><w:keepLines/>'
+        '<w:p><w:pPr><w:jc w:val="center"/><w:keepNext/><w:keepLines/>'
         '<w:spacing w:after="0"/></w:pPr><w:r>'
         f'{image_drawing(image, doc_pr_id)}</w:r></w:p>'
     )
@@ -193,14 +193,15 @@ def empty_thumbnail_paragraph() -> str:
     return paragraph("Sin miniatura", size=18, color="606975", spacing_after=0)
 
 
-def cell(content: str, width: int, *, shade: str | None = None) -> str:
+def cell(content: str, width: int, *, shade: str | None = None, vertical_align: str | None = None) -> str:
     shading = f'<w:shd w:fill="{shade}"/>' if shade else ""
+    valign = f'<w:vAlign w:val="{vertical_align}"/>' if vertical_align else ""
     return (
         '<w:tc><w:tcPr>'
         f'<w:tcW w:w="{width}" w:type="dxa"/>'
         '<w:tcMar><w:top w:w="120" w:type="dxa"/><w:left w:w="120" w:type="dxa"/>'
         '<w:bottom w:w="120" w:type="dxa"/><w:right w:w="120" w:type="dxa"/></w:tcMar>'
-        f'{shading}</w:tcPr>{content}</w:tc>'
+        f'{shading}{valign}</w:tcPr>{content}</w:tc>'
     )
 
 
@@ -220,7 +221,7 @@ def photo_block(index: int, photo: ExportPhoto, image: EmbeddedImage | None) -> 
         '<w:tblCellMar><w:top w:w="80" w:type="dxa"/><w:left w:w="80" w:type="dxa"/>'
         '<w:bottom w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar>'
         '</w:tblPr><w:tr>'
-        f'{cell(thumbnail, 2350, shade="F4F6F8")}'
+        f'{cell(thumbnail, 2350, shade="F4F6F8", vertical_align="center")}'
         f'{cell(photo_copy, 7000)}'
         '</w:tr></w:tbl>'
     )
@@ -272,7 +273,7 @@ def build_document_xml(photos: list[ExportPhoto], coverage_metadata: dict, image
     body = [
         paragraph(title, bold=True, size=34, align="left", spacing_after=160),
         cover_table(coverage_metadata),
-        paragraph("", spacing_after=90),
+        paragraph("", spacing_after=420),
     ]
     for index, photo in enumerate(photos, start=1):
         body.append(photo_block(index, photo, images_by_photo.get(photo.filename)))

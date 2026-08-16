@@ -12,8 +12,12 @@ class PromptBuilder:
             "No inventar identidades, cargos, hechos, lugares ni eventos.",
             "No emitir opiniones ni lenguaje promocional.",
             "Devolver únicamente la narración editable.",
-            "No incluir fecha, ciudad, país, fotógrafo, agencia, iniciales ni caption completo.",
+            "No incluir fecha, ciudad, país, ubicación estructurada, fotógrafo, agencia, iniciales ni caption completo.",
         ]
+        if context.is_drone:
+            rules.append(
+                "La fotografía está marcada como tomada con dron: no comenzar la narración con 'vista aérea', 'una vista aérea' ni 'vista aérea tomada con un dron'; describir directamente el sujeto o contenido visible."
+            )
         context_bits = [
             f"Título de cobertura: {context.coverage_title}",
             f"Descripción: {context.description or 'No especificada'}",

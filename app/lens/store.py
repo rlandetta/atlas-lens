@@ -134,6 +134,9 @@ class LensCoverageStore:
 
     def normalize_coverage(self, coverage: dict[str, Any]) -> dict[str, Any]:
         normalized = deepcopy(coverage)
+        normalized["locality_type"] = self.normalize_locality_type(
+            normalized.get("locality_type", "auto")
+        )
         photos = normalized.get("photos", [])
         normalized["photos"] = [
             self.normalize_photo(photo)
@@ -186,6 +189,7 @@ class LensCoverageStore:
             "captured_at": str(photo.get("captured_at", "")),
             "caption_narrative": str(photo.get("caption_narrative", "")),
             "caption_status": str(photo.get("caption_status", "Sin editar") or "Sin editar"),
+            "is_drone": self.optional_bool(photo.get("is_drone", False)),
             "created_at": str(photo.get("created_at") or timestamp),
             "updated_at": str(photo.get("updated_at") or timestamp),
             "available_on_disk": available_on_disk,
@@ -199,6 +203,19 @@ class LensCoverageStore:
             return int(value)
         except (TypeError, ValueError):
             return None
+
+    @staticmethod
+    def optional_bool(value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    @staticmethod
+    def normalize_locality_type(value: Any) -> str:
+        normalized = str(value or "auto").strip().lower()
+        return normalized if normalized in {"auto", "city", "locality"} else "auto"
 
     @staticmethod
     def normalize_storage_path(value: str) -> str:

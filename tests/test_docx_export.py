@@ -13,7 +13,8 @@ from app.export.builders.docx_builder import build_docx
 from app.export.builders.image_sources import load_image_source, resolve_original_path
 from app.export.builders.pdf_builder import build_pdf
 from app.export.builders.zip_builder import build_zip_archive
-from app.export.template_renderer import render_caption
+from app.media import ThumbnailService
+from app.export.template_renderer import format_xinhua_location, render_caption
 
 
 PNG_BYTES = base64.b64decode(
@@ -27,9 +28,29 @@ PDF_JPG_BYTES = (
 )
 
 
+CAPTION_COVERAGE = {
+    "city": "Quito",
+    "country": "Ecuador",
+    "agency": "Xinhua",
+    "photographer": "Ricardo Landeta",
+    "editor": "rl",
+    "submit_date": "2026-08-16",
+    "event_date": "2026-08-15",
+}
+
+
 def docx_members(content: bytes) -> tuple[list[str], str]:
     with zipfile.ZipFile(BytesIO(content)) as archive:
         return archive.namelist(), archive.read("word/document.xml").decode("utf-8")
+
+
+def docx_media(content: bytes) -> dict[str, bytes]:
+    with zipfile.ZipFile(BytesIO(content)) as archive:
+        return {
+            name: archive.read(name)
+            for name in archive.namelist()
+            if name.startswith("word/media/")
+        }
 
 
 def build_photo(**overrides) -> ExportPhoto:
@@ -78,7 +99,199 @@ def assert_pdf_has_image(test_case: unittest.TestCase, content: bytes):
     test_case.assertIn(b"/Subtype /Image", content)
 
 
+def build_test_jpeg(width: int, height: int, *, quality: int = 95) -> bytes:
+    try:
+        from PIL import Image
+    except ModuleNotFoundError as error:
+        if error.name == "PIL":
+            raise unittest.SkipTest("Pillow no está disponible para crear JPEGs de prueba.") from error
+        raise
+
+    image = Image.new("RGB", (width, height), color=(210, 80, 40))
+    output = BytesIO()
+    image.save(output, format="JPEG", quality=quality)
+    return output.getvalue()
+
+
+def image_dimensions(image_bytes: bytes) -> tuple[int, int]:
+    try:
+        from PIL import Image
+    except ModuleNotFoundError as error:
+        if error.name == "PIL":
+            raise unittest.SkipTest("Pillow no está disponible para leer JPEGs de prueba.") from error
+        raise
+
+    with Image.open(BytesIO(image_bytes)) as image:
+        return image.size
+
+
 class DocxExportTest(unittest.TestCase):
+    def test_format_xinhua_location_handles_capitals_city_locality_and_auto(self):
+        cases = (
+            ("Quito", "Ecuador", "auto", "en Quito, capital de Ecuador"),
+            ("Quito", "Ecuador", "city", "en Quito, capital de Ecuador"),
+            ("Quito", "Ecuador", "locality", "en Quito, capital de Ecuador"),
+            ("Cuenca", "Ecuador", "city", "en la ciudad de Cuenca, en Ecuador"),
+            ("Cuenca", "Ecuador", "auto", "en Cuenca, en Ecuador"),
+            ("Mindo", "Ecuador", "locality", "en Mindo, en Ecuador"),
+            ("San Antonio de Pichincha", "Ecuador", "auto", "en San Antonio de Pichincha, en Ecuador"),
+            ("Bogotá", "Colombia", "auto", "en Bogotá, capital de Colombia"),
+            ("Beijing", "China", "auto", "en Beijing, capital de China"),
+            ("Mindo", "", "locality", "en Mindo"),
+            ("Mindo", "Ecuador", "", "en Mindo, en Ecuador"),
+        )
+
+        for city, country, locality_type, expected in cases:
+            with self.subTest(city=city, country=country, locality_type=locality_type):
+                self.assertEqual(
+                    format_xinhua_location(city, country, locality_type),
+                    expected,
+                )
+
+    def test_xinhua_normal_caption_different_dates_keeps_existing_prefix(self):
+        caption = render_caption(
+            "xinhua",
+            CAPTION_COVERAGE,
+            {"caption_narrative": "visitantes recorren el monumento ecuatorial"},
+        )
+
+        self.assertIn(
+            "Imagen del 15 de agosto de 2026 de visitantes recorren el monumento ecuatorial",
+            caption,
+        )
+        self.assertNotIn("Vista aérea tomada con un dron", caption)
+
+    def test_xinhua_normal_caption_same_dates_keeps_date_at_end(self):
+        coverage = {**CAPTION_COVERAGE, "event_date": "2026-08-16"}
+
+        caption = render_caption(
+            "xinhua",
+            coverage,
+            {"caption_narrative": "Visitantes recorren el monumento ecuatorial"},
+        )
+
+        self.assertIn(
+            "Visitantes recorren el monumento ecuatorial, en Quito, capital de Ecuador, el 16 de agosto de 2026.",
+            caption,
+        )
+        self.assertNotIn("Imagen del", caption)
+
+    def test_xinhua_drone_caption_different_dates_uses_drone_prefix_with_date(self):
+        caption = render_caption(
+            "xinhua",
+            CAPTION_COVERAGE,
+            {
+                "caption_narrative": "la Ciudad Mitad del Mundo y su monumento ecuatorial",
+                "is_drone": True,
+            },
+        )
+
+        self.assertIn(
+            "Vista aérea tomada con un dron el 15 de agosto de 2026 de la Ciudad Mitad del Mundo y su monumento ecuatorial",
+            caption,
+        )
+        self.assertNotIn("el 16 de agosto de 2026. (Xinhua", caption)
+
+    def test_xinhua_drone_caption_same_dates_uses_drone_prefix_and_final_date(self):
+        coverage = {**CAPTION_COVERAGE, "event_date": "2026-08-16"}
+
+        caption = render_caption(
+            "xinhua",
+            coverage,
+            {
+                "caption_narrative": "la Ciudad Mitad del Mundo y su monumento ecuatorial",
+                "is_drone": True,
+            },
+        )
+
+        self.assertIn(
+            "Vista aérea tomada con un dron de la Ciudad Mitad del Mundo y su monumento ecuatorial",
+            caption,
+        )
+        self.assertIn(
+            "en Quito, capital de Ecuador, el 16 de agosto de 2026.",
+            caption,
+        )
+
+    def test_xinhua_caption_location_combinations(self):
+        cases = (
+            (
+                "normal_diff_capital",
+                CAPTION_COVERAGE,
+                {"caption_narrative": "visitantes recorren el monumento ecuatorial"},
+                "Imagen del 15 de agosto de 2026 de visitantes recorren el monumento ecuatorial, en Quito, capital de Ecuador.",
+            ),
+            (
+                "normal_same_capital",
+                {**CAPTION_COVERAGE, "event_date": "2026-08-16"},
+                {"caption_narrative": "Visitantes recorren el monumento ecuatorial"},
+                "Visitantes recorren el monumento ecuatorial, en Quito, capital de Ecuador, el 16 de agosto de 2026.",
+            ),
+            (
+                "drone_diff_capital",
+                CAPTION_COVERAGE,
+                {"caption_narrative": "la Ciudad Mitad del Mundo", "is_drone": True},
+                "Vista aérea tomada con un dron el 15 de agosto de 2026 de la Ciudad Mitad del Mundo, en Quito, capital de Ecuador.",
+            ),
+            (
+                "drone_same_capital",
+                {**CAPTION_COVERAGE, "event_date": "2026-08-16"},
+                {"caption_narrative": "la Ciudad Mitad del Mundo", "is_drone": True},
+                "Vista aérea tomada con un dron de la Ciudad Mitad del Mundo, en Quito, capital de Ecuador, el 16 de agosto de 2026.",
+            ),
+            (
+                "normal_city",
+                {**CAPTION_COVERAGE, "city": "Cuenca", "locality_type": "city", "event_date": "2026-08-16"},
+                {"caption_narrative": "Personas caminan por el centro histórico"},
+                "Personas caminan por el centro histórico, en la ciudad de Cuenca, en Ecuador, el 16 de agosto de 2026.",
+            ),
+            (
+                "drone_city",
+                {**CAPTION_COVERAGE, "city": "Cuenca", "locality_type": "city", "event_date": "2026-08-16"},
+                {"caption_narrative": "centro histórico", "is_drone": True},
+                "Vista aérea tomada con un dron de centro histórico, en la ciudad de Cuenca, en Ecuador, el 16 de agosto de 2026.",
+            ),
+            (
+                "normal_locality",
+                {**CAPTION_COVERAGE, "city": "Mindo", "locality_type": "locality", "event_date": "2026-08-16"},
+                {"caption_narrative": "Visitantes recorren senderos"},
+                "Visitantes recorren senderos, en Mindo, en Ecuador, el 16 de agosto de 2026.",
+            ),
+            (
+                "drone_locality",
+                {**CAPTION_COVERAGE, "city": "Mindo", "locality_type": "locality", "event_date": "2026-08-16"},
+                {"caption_narrative": "senderos junto al bosque", "is_drone": True},
+                "Vista aérea tomada con un dron de senderos junto al bosque, en Mindo, en Ecuador, el 16 de agosto de 2026.",
+            ),
+        )
+
+        for name, coverage, photo, expected in cases:
+            with self.subTest(name=name):
+                self.assertIn(expected, render_caption("xinhua", coverage, photo))
+
+    def test_xinhua_missing_is_drone_behaves_as_normal_false(self):
+        caption = render_caption(
+            "xinhua",
+            CAPTION_COVERAGE,
+            {"caption_narrative": "visitantes recorren el monumento ecuatorial"},
+        )
+
+        self.assertIn("Imagen del 15 de agosto de 2026", caption)
+        self.assertNotIn("Vista aérea tomada con un dron", caption)
+
+    def test_xinhua_drone_caption_avoids_duplicate_aerial_phrase(self):
+        caption = render_caption(
+            "xinhua",
+            CAPTION_COVERAGE,
+            {
+                "caption_narrative": "Vista aérea tomada con un dron de la Ciudad Mitad del Mundo",
+                "is_drone": True,
+            },
+        )
+
+        self.assertEqual(caption.count("Vista aérea tomada con un dron"), 1)
+        self.assertIn("de la Ciudad Mitad del Mundo", caption)
+
     def test_pdf_embeds_media_from_data_url(self):
         encoded = base64.b64encode(PDF_JPG_BYTES).decode("ascii")
         content = build_pdf(
@@ -290,6 +503,85 @@ class DocxExportTest(unittest.TestCase):
         self.assertTrue(any(name.startswith("word/media/") for name in names))
         self.assertIn("<w:drawing>", document_xml)
         self.assertIn("Caption de prueba.", document_xml)
+
+    def test_docx_embeds_reduced_jpeg_preview_and_preserves_original(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            media_root = root / "media"
+            thumbnail_root = root / "thumbnails"
+            storage_path = "coverages/cov-1/IMG001.jpg"
+            target = media_root / storage_path
+            target.parent.mkdir(parents=True)
+            original_bytes = build_test_jpeg(2400, 1600)
+            target.write_bytes(original_bytes)
+
+            with (
+                patch("app.config.LENS_MEDIA_ROOT", str(media_root)),
+                patch("app.config.THUMBNAIL_ROOT", str(thumbnail_root)),
+            ):
+                content = build_docx(
+                    [build_photo(storage_path=storage_path)],
+                    {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+                )
+
+            media = docx_media(content)
+            self.assertEqual(len(media), 1)
+            embedded_name, embedded_bytes = next(iter(media.items()))
+
+            self.assertTrue(embedded_name.endswith(".jpg"))
+            self.assertLess(len(embedded_bytes), len(original_bytes))
+            self.assertLessEqual(max(image_dimensions(embedded_bytes)), 800)
+            self.assertEqual(target.read_bytes(), original_bytes)
+            self.assertIn("word/document.xml", docx_members(content)[0])
+
+    def test_docx_reuses_existing_atlas_thumbnail_when_available(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            media_root = root / "media"
+            thumbnail_root = root / "thumbnails"
+            storage_path = "coverages/cov-1/IMG001.jpg"
+            target = media_root / storage_path
+            target.parent.mkdir(parents=True)
+            target.write_bytes(build_test_jpeg(2400, 1600))
+            thumbnail_bytes = build_test_jpeg(320, 213, quality=70)
+            service = ThumbnailService(thumbnail_root)
+            thumbnail_path = service.thumbnail_path_for(target)
+            self.assertIsNotNone(thumbnail_path)
+            thumbnail_path.parent.mkdir(parents=True)
+            thumbnail_path.write_bytes(thumbnail_bytes)
+
+            with (
+                patch("app.config.LENS_MEDIA_ROOT", str(media_root)),
+                patch("app.config.THUMBNAIL_ROOT", str(thumbnail_root)),
+            ):
+                content = build_docx(
+                    [build_photo(storage_path=storage_path)],
+                    {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+                )
+
+            media = docx_media(content)
+            self.assertEqual(next(iter(media.values())), thumbnail_bytes)
+
+    def test_docx_thumbnail_cell_centers_image(self):
+        encoded = base64.b64encode(build_test_jpeg(800, 533)).decode("ascii")
+        content = build_docx(
+            [build_photo(data_url=f"data:image/jpeg;base64,{encoded}")],
+            {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+        )
+
+        _names, document_xml = docx_members(content)
+        self.assertIn('<w:jc w:val="center"/>', document_xml)
+        self.assertIn('<w:vAlign w:val="center"/>', document_xml)
+
+    def test_docx_adds_visual_spacing_after_coverage_header(self):
+        encoded = base64.b64encode(build_test_jpeg(800, 533)).decode("ascii")
+        content = build_docx(
+            [build_photo(data_url=f"data:image/jpeg;base64,{encoded}")],
+            {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
+        )
+
+        _names, document_xml = docx_members(content)
+        self.assertIn('<w:spacing w:after="420"', document_xml)
 
     def test_docx_embeds_media_when_submit_date_differs_from_event_date(self):
         with tempfile.TemporaryDirectory() as temp_dir:

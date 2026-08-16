@@ -31,6 +31,7 @@ const captionAiButton = document.getElementById("caption-ai-button");
 const captionAiContextButton = document.getElementById("caption-ai-context-button");
 const captionAiStatus = document.getElementById("caption-ai-status");
 const captionReviewStatusField = document.getElementById("caption-review-status-field");
+const captionDroneField = document.getElementById("caption-drone-field");
 const captionFooterStatus = document.getElementById("caption-footer-status");
 const captionCharacterCount = document.getElementById("caption-character-count");
 const captionWordCount = document.getElementById("caption-word-count");
@@ -161,6 +162,7 @@ const getCoverageCaptionData = () => ({
     template: photoWorkspace.dataset.captionTemplate || "xinhua",
     city: photoWorkspace.dataset.captionCity || "",
     country: photoWorkspace.dataset.captionCountry || "",
+    localityType: photoWorkspace.dataset.captionLocalityType || "auto",
     date: photoWorkspace.dataset.captionDate || "",
     sendDate: photoWorkspace.dataset.captionSendDate || photoWorkspace.dataset.captionDate || "",
     eventDate: photoWorkspace.dataset.captionEventDate || photoWorkspace.dataset.captionDate || "",
@@ -274,7 +276,8 @@ const normalizeInitialPhoto = (photo) => ({
     importStatus: "Lista",
     processingError: "",
     captionNarrative: photo.caption_narrative || photo.captionNarrative || "",
-    captionStatus: photo.caption_status || photo.captionStatus || "Sin editar"
+    captionStatus: photo.caption_status || photo.captionStatus || "Sin editar",
+    isDrone: Boolean(photo.is_drone || photo.isDrone)
 });
 
 const serializePhotoForServer = (photo) => ({
@@ -286,7 +289,8 @@ const serializePhotoForServer = (photo) => ({
     height: photo.height,
     data_url: photo.dataUrl,
     caption_narrative: photo.captionNarrative || "",
-    caption_status: photo.captionStatus || "Sin editar"
+    caption_status: photo.captionStatus || "Sin editar",
+    is_drone: Boolean(photo.isDrone)
 });
 
 const buildPhotoDeleteUrl = (photoId) => (
@@ -359,7 +363,8 @@ const persistPhotoCaption = async (photoId, record, keepalive = false) => {
         },
         body: JSON.stringify({
             caption_narrative: record.narrative,
-            caption_status: record.status
+            caption_status: record.status,
+            is_drone: Boolean(record.isDrone)
         })
     });
 
@@ -617,24 +622,76 @@ const referenceCountries = (
     window.ATLAS_EDITORIAL_REFERENCE.countries
 ) || {};
 
-const resolveLocationPhrase = (city, country) => {
-    const safeCity = city || "Ciudad pendiente";
-    const safeCountry = country || "País pendiente";
+const xinhuaCapitals = {
+    "alemania": "Berlín",
+    "argentina": "Buenos Aires",
+    "bolivia": "Sucre",
+    "brasil": "Brasilia",
+    "canada": "Ottawa",
+    "chile": "Santiago",
+    "china": "Beijing",
+    "colombia": "Bogotá",
+    "costa rica": "San José",
+    "cuba": "La Habana",
+    "ecuador": "Quito",
+    "espana": "Madrid",
+    "estados unidos": "Washington",
+    "francia": "París",
+    "italia": "Roma",
+    "mexico": "Ciudad de México",
+    "panama": "Ciudad de Panamá",
+    "paraguay": "Asunción",
+    "peru": "Lima",
+    "reino unido": "Londres",
+    "republica dominicana": "Santo Domingo",
+    "uruguay": "Montevideo",
+    "venezuela": "Caracas"
+};
+
+const normalizeComparisonText = (value) => (
+    (value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase()
+);
+
+const normalizeLocalityType = (value) => (
+    ["auto", "city", "locality"].includes(value) ? value : "auto"
+);
+
+const resolveLocationPhrase = (city, country, localityType = "auto") => {
+    const safeCity = (city || "").trim();
+    const safeCountry = (country || "").trim();
     const validation = (
         window.ATLAS_EDITORIAL_REFERENCE &&
         typeof window.ATLAS_EDITORIAL_REFERENCE.validate_city_country === "function"
     )
-        ? window.ATLAS_EDITORIAL_REFERENCE.validate_city_country(safeCity, safeCountry)
+        ? window.ATLAS_EDITORIAL_REFERENCE.validate_city_country(safeCity || "Ciudad pendiente", safeCountry || "País pendiente")
         : {
             is_capital: false,
             city_country_warning: ""
         };
-    const isCapital = Boolean(validation.is_capital);
+    const expectedCapital = xinhuaCapitals[normalizeComparisonText(safeCountry)];
+    const isCapital = Boolean(
+        expectedCapital &&
+        normalizeComparisonText(safeCity) === normalizeComparisonText(expectedCapital)
+    );
+    let text = "";
+
+    if (safeCity && !safeCountry) {
+        text = `en ${safeCity}`;
+    } else if (safeCity && safeCountry && isCapital) {
+        text = `en ${safeCity}, capital de ${safeCountry}`;
+    } else if (safeCity && safeCountry && normalizeLocalityType(localityType) === "city") {
+        text = `en la ciudad de ${safeCity}, en ${safeCountry}`;
+    } else if (safeCity && safeCountry) {
+        text = `en ${safeCity}, en ${safeCountry}`;
+    }
 
     return {
-        text: isCapital
-            ? `en ${safeCity}, capital de ${safeCountry},`
-            : `en ${safeCity}, en ${safeCountry},`,
+        text,
         isCapital,
         warning: Boolean(validation.city_country_warning),
         warningText: validation.city_country_warning || ""
@@ -747,6 +804,26 @@ const buildEventDateNarrative = (eventDate, narrative) => {
     return `Imagen del ${eventDate} de ${cleanNarrative}`;
 };
 
+const normalizeDroneNarrative = (narrative) => {
+    const cleanNarrative = normalizeNarrative(narrative);
+    const patterns = [
+        /^una\s+vista\s+a[eé]rea\s+tomada\s+con\s+un\s+dron\s+(?:de\s+)?/i,
+        /^una\s+vista\s+a[eé]rea\s+tomada\s+con\s+dron\s+(?:de\s+)?/i,
+        /^vista\s+a[eé]rea\s+tomada\s+con\s+un\s+dron\s+(?:de\s+)?/i,
+        /^vista\s+a[eé]rea\s+tomada\s+con\s+dron\s+(?:de\s+)?/i,
+        /^una\s+vista\s+a[eé]rea\s+(?:de\s+)?/i,
+        /^vista\s+a[eé]rea\s+(?:de\s+)?/i
+    ];
+
+    for (const pattern of patterns) {
+        const stripped = cleanNarrative.replace(pattern, "").trim();
+        if (stripped && stripped !== cleanNarrative) {
+            return stripped;
+        }
+    }
+    return cleanNarrative;
+};
+
 const cleanCaptionString = (caption) => (
     caption
         .replace(/\s+/g, " ")
@@ -756,6 +833,27 @@ const cleanCaptionString = (caption) => (
         .replace(/:\s*:+/g, ":")
         .replace(/,\s*\./g, ".")
         .trim()
+);
+
+const appendLocationClause = (text, location) => {
+    const cleanText = (text || "").trim();
+    const cleanLocation = (location || "").trim();
+    if (!cleanLocation) {
+        return cleanText;
+    }
+    if (cleanText.endsWith(",")) {
+        return `${cleanText} ${cleanLocation}`;
+    }
+    const narrativeText = cleanText.endsWith(".")
+        ? cleanText.slice(0, -1).trim()
+        : cleanText;
+    return narrativeText
+        ? `${narrativeText}, ${cleanLocation}`
+        : cleanLocation;
+};
+
+const appendDateClause = (text, dateText) => (
+    `${(text || "").replace(/[,\s]+$/g, "")}, el ${dateText}`
 );
 
 const captionTemplates = {
@@ -768,7 +866,7 @@ const captionTemplates = {
             const agency = context.agency || "Xinhua";
             const credit = `${agency}/${context.photographer || "Fotógrafo pendiente"}`;
             const editorInitials = buildEditorInitials(context.editorInitials || context.editor);
-            const location = resolveLocationPhrase(city, country);
+            const location = resolveLocationPhrase(city, country, context.localityType);
             const usesSameDate = areCoverageDatesEqual(sendDate, eventDate);
 
             return {
@@ -785,14 +883,28 @@ const captionTemplates = {
         },
         generate(context, photo, narrative) {
             const blocks = this.buildContext(context, photo);
-            const cleanNarrative = normalizeNarrative(narrative);
-            const narrativeText = blocks.usesSameDate
-                ? cleanNarrative
-                : buildEventDateNarrative(blocks.eventDate, cleanNarrative);
+            const isDrone = Boolean(photo && photo.isDrone);
+            const cleanNarrative = isDrone
+                ? normalizeDroneNarrative(narrative)
+                : normalizeNarrative(narrative);
+            let narrativeText = "";
+            if (isDrone && blocks.usesSameDate) {
+                narrativeText = `Vista aérea tomada con un dron de ${cleanNarrative}`;
+            } else if (isDrone) {
+                narrativeText = `Vista aérea tomada con un dron el ${blocks.eventDate} de ${cleanNarrative}`;
+            } else {
+                narrativeText = blocks.usesSameDate
+                    ? cleanNarrative
+                    : buildEventDateNarrative(blocks.eventDate, cleanNarrative);
+            }
             const dateClause = blocks.usesSameDate
-                ? ` el ${blocks.sendDate}`
+                ? blocks.sendDate
                 : "";
-            const caption = `${blocks.header} ${narrativeText}, ${blocks.location.text}${dateClause}. (${blocks.credit}) (${blocks.editorInitials})`;
+            const locationText = appendLocationClause(narrativeText, blocks.location.text);
+            const body = blocks.usesSameDate
+                ? appendDateClause(locationText, dateClause)
+                : locationText;
+            const caption = `${blocks.header} ${body}. (${blocks.credit}) (${blocks.editorInitials})`;
 
             return cleanCaptionString(caption);
         }
@@ -817,8 +929,10 @@ const getCurrentLocationValidation = () => {
 const createCaptionRecord = (photo = {}) => ({
     narrative: photo.captionNarrative || "",
     status: captionStatusOptions.includes(photo.captionStatus) ? photo.captionStatus : "Sin editar",
+    isDrone: Boolean(photo.isDrone),
     savedNarrative: photo.captionNarrative || "",
-    savedStatus: captionStatusOptions.includes(photo.captionStatus) ? photo.captionStatus : "Sin editar"
+    savedStatus: captionStatusOptions.includes(photo.captionStatus) ? photo.captionStatus : "Sin editar",
+    savedIsDrone: Boolean(photo.isDrone)
 });
 
 const getCaptionRecord = (photoId) => {
@@ -952,7 +1066,9 @@ const closeAiContext = () => {
 };
 
 const hasUnsavedCaption = (record) => (
-    record.narrative !== record.savedNarrative || record.status !== record.savedStatus
+    record.narrative !== record.savedNarrative
+    || record.status !== record.savedStatus
+    || Boolean(record.isDrone) !== Boolean(record.savedIsDrone)
 );
 
 const autosaveCaption = async (photoId = activePhotoId) => {
@@ -984,10 +1100,12 @@ const autosaveCaption = async (photoId = activePhotoId) => {
     if (photo) {
         photo.captionNarrative = record.narrative;
         photo.captionStatus = record.status;
+        photo.isDrone = Boolean(record.isDrone);
     }
 
     record.savedNarrative = record.narrative;
     record.savedStatus = record.status;
+    record.savedIsDrone = Boolean(record.isDrone);
 
     if (photoId === activePhotoId) {
         setSaveStatus("saved");
@@ -1031,6 +1149,7 @@ const renderCaptionPreview = (photo = getActivePhoto()) => {
 const bindCoverageCaptionMetadataUpdates = () => {
     const editCityField = document.getElementById("edit_city");
     const editCountryField = document.getElementById("edit_country");
+    const editLocalityTypeField = document.getElementById("edit_locality_type");
 
     const syncCaptionMetadata = () => {
         if (editCityField) {
@@ -1039,11 +1158,15 @@ const bindCoverageCaptionMetadataUpdates = () => {
         if (editCountryField) {
             photoWorkspace.dataset.captionCountry = editCountryField.value;
         }
+        if (editLocalityTypeField) {
+            photoWorkspace.dataset.captionLocalityType = editLocalityTypeField.value;
+        }
         renderCaptionPreview();
     };
 
     editCityField?.addEventListener("input", syncCaptionMetadata);
     editCountryField?.addEventListener("change", syncCaptionMetadata);
+    editLocalityTypeField?.addEventListener("change", syncCaptionMetadata);
 };
 
 const confirmAiNarrationReplacement = () => new Promise((resolve) => {
@@ -1163,6 +1286,11 @@ const syncCaptionRecordFromFields = () => {
     const record = getCaptionRecord(activePhotoId);
     record.narrative = captionNarrativeField.value;
     record.status = captionReviewStatusField.value;
+    record.isDrone = Boolean(captionDroneField.checked);
+    const photo = getPhotoById(activePhotoId);
+    if (photo) {
+        photo.isDrone = Boolean(record.isDrone);
+    }
     updateCaptionPhotoNavigation();
     setSaveStatus(hasUnsavedCaption(record) ? "dirty" : "saved");
 };
@@ -1173,8 +1301,10 @@ const renderCaptionEditor = (photo) => {
     captionReviewStatusField.value = captionStatusOptions.includes(record.status)
         ? record.status
         : "Sin editar";
+    captionDroneField.checked = Boolean(record.isDrone);
     captionNarrativeField.disabled = false;
     captionReviewStatusField.disabled = false;
+    captionDroneField.disabled = false;
     setAiStatus("");
     setAiButtonState(
         activeAiGenerationPhotoId === photo.id ? "Generando..." : "Generar con IA",
@@ -1193,6 +1323,8 @@ const clearCaptionEditor = () => {
     setAiButtonState("Generar con IA", true);
     captionReviewStatusField.value = "Sin editar";
     captionReviewStatusField.disabled = true;
+    captionDroneField.checked = false;
+    captionDroneField.disabled = true;
     captionLocationWarning.hidden = true;
     captionFullPreview.textContent = "";
     updateCaptionTextCounters();
@@ -1494,6 +1626,7 @@ const buildQueuedPhoto = (file) => {
         processingError: "",
         captionNarrative: "",
         captionStatus: "Sin editar",
+        isDrone: false,
         camera: "",
         photographer: getCoverageCaptionData().photographer || "",
         eventDate: getCoverageCaptionData().eventDate || "",
@@ -1881,6 +2014,15 @@ if (photoWorkspace && dropZone && photoInput && selectPhotosButton) {
 
         syncCaptionRecordFromFields();
         updatePhotoCaptionBadge(activePhotoId);
+        autosaveCaption(activePhotoId);
+    });
+    captionDroneField.addEventListener("change", () => {
+        if (activePhotoId === null) {
+            return;
+        }
+
+        syncCaptionRecordFromFields();
+        renderCaptionPreview();
         autosaveCaption(activePhotoId);
     });
     bindCoverageCaptionMetadataUpdates();

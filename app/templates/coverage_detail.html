@@ -98,6 +98,7 @@
             {% endif %}
             data-caption-city="{{ coverage.city }}"
             data-caption-country="{{ coverage.country }}"
+            data-caption-locality-type="{{ coverage.locality_type or 'auto' }}"
             data-caption-date="{{ coverage.event_date }}"
             data-caption-send-date="{{ coverage.submit_date }}"
             data-caption-event-date="{{ coverage.event_date }}"
@@ -215,6 +216,10 @@
                                     <option value="Revisado">Revisado</option>
                                     <option value="Aprobado">Aprobado</option>
                                 </select>
+                                <label class="caption-drone-toggle" for="caption-drone-field">
+                                    <input id="caption-drone-field" type="checkbox">
+                                    <span>Fotografía aérea con dron</span>
+                                </label>
                                 <p class="caption-status-save-label">Autoguardado</p>
                                 <p id="caption-save-status" class="caption-status-save-pill">✓ Guardado</p>
                             </section>
@@ -444,8 +449,17 @@
             </div>
 
             <div class="form-field">
-                <label for="edit_city">Ciudad</label>
+                <label for="edit_city">Localidad / ciudad</label>
                 <input id="edit_city" name="city" type="text" value="{{ coverage.city }}" list="edit-city-suggestions" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="edit_locality_type">Tipo de localidad</label>
+                <select id="edit_locality_type" name="locality_type">
+                    <option value="auto" {% if (coverage.locality_type or 'auto') == 'auto' %}selected{% endif %}>Automático</option>
+                    <option value="city" {% if coverage.locality_type == 'city' %}selected{% endif %}>Ciudad</option>
+                    <option value="locality" {% if coverage.locality_type == 'locality' %}selected{% endif %}>Localidad</option>
+                </select>
             </div>
 
             <div class="form-field">

@@ -49,6 +49,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
                 "event_date": "2026-08-03",
                 "city": "Quito",
                 "country": "Ecuador",
+                "locality_type": "auto",
                 "agency": "Xinhua",
                 "photographer": "Ricardo Landeta",
                 "editor": "rl",
@@ -65,6 +66,7 @@ class LensPersistenceRoutesTest(unittest.TestCase):
             "event_date": "2026-08-04",
             "city": "Guayaquil",
             "country": "Ecuador",
+            "locality_type": "auto",
             "agency": "AFP",
             "photographer": "Nuevo Fotógrafo",
             "editor": "ab",
@@ -102,6 +104,30 @@ class LensPersistenceRoutesTest(unittest.TestCase):
 
         self.assertIn("Cobertura Persistida", body)
         self.assertIn(coverage_id, web.coverages)
+
+    def test_locality_type_is_persisted_on_create_and_edit(self):
+        coverage_id = self.create_coverage()
+
+        created = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertEqual(created["locality_type"], "auto")
+
+        response = self.edit_coverage(coverage_id, city="Mindo", locality_type="locality")
+
+        self.assertEqual(response.status_code, 302)
+        updated = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertEqual(updated["city"], "Mindo")
+        self.assertEqual(updated["locality_type"], "locality")
+
+    def test_locality_type_selector_is_visible_in_lens_forms(self):
+        coverage_id = self.create_coverage()
+
+        new_body = self.client.get("/coverages/new").get_data(as_text=True)
+        detail_body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn('label for="locality_type">Tipo de localidad</label>', new_body)
+        self.assertIn('name="locality_type"', new_body)
+        self.assertIn('label for="edit_locality_type">Tipo de localidad</label>', detail_body)
+        self.assertIn('data-caption-locality-type="auto"', detail_body)
 
     def test_photo_upload_persists_file_relative_path_and_excludes_data_url(self):
         coverage_id = self.create_coverage()
@@ -182,6 +208,33 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(photo["caption_narrative"], "Caption aprobado.")
         self.assertEqual(photo["caption_status"], "Aprobado")
 
+    def test_photo_is_drone_is_persisted_after_caption_save_and_reload(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={
+                "caption_narrative": "Caption con dron.",
+                "caption_status": "Revisado",
+                "is_drone": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["is_drone"])
+        reloaded = create_app()
+        photo = reloaded.extensions["lens"]["coverage_store"].get(coverage_id)["photos"][0]
+        self.assertTrue(photo["is_drone"])
+
+    def test_uploaded_photo_is_drone_defaults_false(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        photo = self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"][0]
+
+        self.assertFalse(photo["is_drone"])
+
     def test_caption_status_selector_is_visible_in_lens(self):
         coverage_id = self.create_coverage()
         self.add_photo(coverage_id)
@@ -195,6 +248,16 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn('<option value="En edición">En edición</option>', body)
         self.assertIn('<option value="Revisado">Revisado</option>', body)
         self.assertIn('<option value="Aprobado">Aprobado</option>', body)
+
+    def test_drone_checkbox_is_visible_in_lens_caption_editor(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn('label class="caption-drone-toggle" for="caption-drone-field"', body)
+        self.assertIn('id="caption-drone-field" type="checkbox"', body)
+        self.assertIn("Fotografía aérea con dron", body)
 
     def test_empty_caption_keeps_dispatch_button_disabled(self):
         coverage_id = self.create_coverage()

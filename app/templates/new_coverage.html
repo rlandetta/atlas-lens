@@ -35,8 +35,17 @@
             </div>
 
             <div class="form-field">
-                <label for="city">Ciudad</label>
+                <label for="city">Localidad / ciudad</label>
                 <input id="city" name="city" type="text" value="{{ form_data.city or '' }}" list="city-suggestions" required spellcheck="true">
+            </div>
+
+            <div class="form-field">
+                <label for="locality_type">Tipo de localidad</label>
+                <select id="locality_type" name="locality_type">
+                    <option value="auto" {% if (form_data.locality_type or 'auto') == 'auto' %}selected{% endif %}>Automático</option>
+                    <option value="city" {% if form_data.locality_type == 'city' %}selected{% endif %}>Ciudad</option>
+                    <option value="locality" {% if form_data.locality_type == 'locality' %}selected{% endif %}>Localidad</option>
+                </select>
             </div>
 
             <div class="form-field">

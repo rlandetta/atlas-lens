@@ -42,6 +42,8 @@ REQUIRED_COVERAGE_FIELDS = (
     "editor",
 )
 
+LOCALITY_TYPES = {"auto", "city", "locality"}
+
 COUNTRY_GROUPS = (
     (
         "Sudamérica",
@@ -133,16 +135,23 @@ def build_editorial_title(coverage_name: str, country: str) -> str:
 
 
 def collect_coverage_form_data() -> dict[str, str]:
-    return {
+    form_data = {
         field: request.form.get(field, "").strip()
         for field in REQUIRED_COVERAGE_FIELDS
     }
+    form_data["locality_type"] = normalize_locality_type(request.form.get("locality_type", "auto"))
+    return form_data
 
 
 def validate_coverage_data(form_data: dict[str, str]) -> str | None:
     if any(not form_data.get(field) for field in REQUIRED_COVERAGE_FIELDS):
         return "Completa todos los campos obligatorios."
     return None
+
+
+def normalize_locality_type(value: str) -> str:
+    normalized = str(value or "auto").strip().lower()
+    return normalized if normalized in LOCALITY_TYPES else "auto"
 
 
 def normalize_initial_source(value: str) -> str:
@@ -181,6 +190,9 @@ def apply_coverage_edit_fields(coverage: dict, form_data: dict[str, str]) -> dic
     updated = deepcopy(coverage)
     for field in REQUIRED_COVERAGE_FIELDS:
         updated[field] = form_data[field]
+    updated["locality_type"] = normalize_locality_type(
+        form_data.get("locality_type", updated.get("locality_type", "auto"))
+    )
     attach_editor_metadata(updated)
     return updated
 
@@ -204,6 +216,14 @@ def parse_optional_int(value):
         return None
 
     return int(value)
+
+
+def parse_optional_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def max_photo_bytes() -> int:
@@ -335,6 +355,7 @@ def build_persisted_photo(coverage_id: str, payload: dict) -> dict:
         "height": parse_optional_int(payload.get("height")),
         "caption_narrative": str(payload.get("caption_narrative", "")),
         "caption_status": normalize_caption_status(str(payload.get("caption_status", "Sin editar"))),
+        "is_drone": parse_optional_bool(payload.get("is_drone", False)),
         "created_at": str(payload.get("created_at") or timestamp),
         "updated_at": str(payload.get("updated_at") or timestamp),
         "available_on_disk": True,
@@ -597,6 +618,7 @@ def build_flow_coverage_form_data(session: dict) -> dict[str, str]:
         "submit_date": flow_date_value(str(session.get("last_received_at") or session.get("started_at") or "")),
         "city": "Por definir",
         "country": "Por definir",
+        "locality_type": "auto",
         "photographer": "Por definir",
         "editor": "flow",
     }
@@ -1290,6 +1312,7 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
     payload = request.get_json(silent=True) or {}
     caption_narrative = str(payload.get("caption_narrative", ""))
     caption_status = normalize_caption_status(str(payload.get("caption_status", "Sin editar")))
+    is_drone = parse_optional_bool(payload.get("is_drone", False))
 
     def update_caption(current_coverage: dict) -> dict:
         photo = find_coverage_photo(current_coverage, photo_id)
@@ -1297,6 +1320,7 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
             raise KeyError(photo_id)
         photo["caption_narrative"] = caption_narrative
         photo["caption_status"] = caption_status
+        photo["is_drone"] = is_drone
         photo["updated_at"] = utc_now_iso()
         return current_coverage
 
@@ -1319,6 +1343,7 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
         "photo_id": photo_id,
         "caption_narrative": photo["caption_narrative"],
         "caption_status": photo["caption_status"],
+        "is_drone": bool(photo.get("is_drone", False)),
         "eligible_photo_count": dispatch_state["eligible_photo_count"],
         "can_create_dispatch": dispatch_state["can_create_dispatch"],
     })

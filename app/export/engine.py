@@ -148,6 +148,7 @@ class ExportEngine:
                 "width": photo.get("width"),
                 "height": photo.get("height"),
                 "caption_status": photo.get("caption_status", "Sin editar"),
+                "is_drone": bool(photo.get("is_drone", False)),
             },
             data_url=str(photo.get("data_url", "")),
             storage_path=str(photo.get("storage_path", "")),

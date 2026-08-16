@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+import re
+import unicodedata
 
 SPANISH_MONTHS = (
     "enero",
@@ -17,27 +19,37 @@ SPANISH_MONTHS = (
     "diciembre",
 )
 
-CAPITALS = {
+XINHUA_CAPITALS = {
     "Argentina": "Buenos Aires",
-    "Bolivia": "La Paz",
+    "Alemania": "Berlín",
+    "Bolivia": "Sucre",
     "Brasil": "Brasilia",
+    "Canadá": "Ottawa",
     "Chile": "Santiago",
+    "China": "Beijing",
     "Colombia": "Bogotá",
     "Costa Rica": "San José",
     "Cuba": "La Habana",
     "Ecuador": "Quito",
-    "El Salvador": "San Salvador",
-    "Guatemala": "Ciudad de Guatemala",
-    "Haití": "Puerto Príncipe",
-    "Honduras": "Tegucigalpa",
-    "Nicaragua": "Managua",
+    "España": "Madrid",
+    "Estados Unidos": "Washington",
+    "Francia": "París",
+    "Italia": "Roma",
+    "México": "Ciudad de México",
     "Panamá": "Ciudad de Panamá",
     "Paraguay": "Asunción",
     "Perú": "Lima",
+    "Reino Unido": "Londres",
     "República Dominicana": "Santo Domingo",
     "Uruguay": "Montevideo",
     "Venezuela": "Caracas",
 }
+
+# Alias kept for callers/tests that imported the previous table name.
+CAPITALS = XINHUA_CAPITALS
+LOCALITY_TYPES = {"auto", "city", "locality"}
+
+CAPITALS_BY_COUNTRY_KEY: dict[str, str] = {}
 
 
 def parse_iso_date(value: str) -> datetime | None:
@@ -74,45 +86,136 @@ def normalize_text(value: str) -> str:
     return " ".join(str(value or "").split())
 
 
+def normalize_comparison_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFD", normalize_text(value).casefold())
+    return "".join(
+        character
+        for character in normalized
+        if unicodedata.category(character) != "Mn"
+    )
+
+
+CAPITALS_BY_COUNTRY_KEY.update({
+    normalize_comparison_text(country): capital
+    for country, capital in XINHUA_CAPITALS.items()
+})
+
+
+def bool_value(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def normalize_drone_narrative(value: str) -> str:
+    narrative = normalize_text(value)
+    if not narrative:
+        return narrative
+
+    patterns = (
+        r"^una\s+vista\s+a[eé]rea\s+tomada\s+con\s+un\s+dron\s+(?:de\s+)?",
+        r"^una\s+vista\s+a[eé]rea\s+tomada\s+con\s+dron\s+(?:de\s+)?",
+        r"^vista\s+a[eé]rea\s+tomada\s+con\s+un\s+dron\s+(?:de\s+)?",
+        r"^vista\s+a[eé]rea\s+tomada\s+con\s+dron\s+(?:de\s+)?",
+        r"^una\s+vista\s+a[eé]rea\s+(?:de\s+)?",
+        r"^vista\s+a[eé]rea\s+(?:de\s+)?",
+    )
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", narrative, count=1, flags=re.IGNORECASE).strip()
+        if cleaned != narrative and cleaned:
+            return cleaned
+    return narrative
+
+
+def normalize_locality_type(value: str) -> str:
+    normalized = normalize_text(value).casefold()
+    return normalized if normalized in LOCALITY_TYPES else "auto"
+
+
 def same_city(left: str, right: str) -> bool:
-    return normalize_text(left).casefold() == normalize_text(right).casefold()
+    return normalize_comparison_text(left) == normalize_comparison_text(right)
+
+
+def format_xinhua_location(city: str, country: str, locality_type: str = "auto") -> str:
+    city = normalize_text(city)
+    country = normalize_text(country)
+    locality_type = normalize_locality_type(locality_type)
+
+    if not city:
+        return ""
+    if not country:
+        return f"en {city}"
+
+    capital = CAPITALS_BY_COUNTRY_KEY.get(normalize_comparison_text(country))
+    if capital and same_city(city, capital):
+        return f"en {city}, capital de {country}"
+    if locality_type == "city":
+        return f"en la ciudad de {city}, en {country}"
+    return f"en {city}, en {country}"
 
 
 def build_location_phrase(city: str, country: str) -> str:
-    city = normalize_text(city)
-    country = normalize_text(country)
-    capital = CAPITALS.get(country)
-    if capital and same_city(city, capital):
-        return f"en la ciudad de {city}, capital de {country},"
-    return f"en la ciudad de {city}, en {country}," if city and country else ""
+    location = format_xinhua_location(city, country, "city")
+    return f"{location}," if location else ""
+
+
+def append_location_clause(text: str, location: str) -> str:
+    text = normalize_text(text).rstrip()
+    location = normalize_text(location)
+    if not location:
+        return text
+
+    text = text.rstrip()
+    if text.endswith(","):
+        return f"{text} {location}"
+    if text.endswith("."):
+        text = text[:-1].rstrip()
+    return f"{text}, {location}" if text else location
+
+
+def append_date_clause(text: str, date_text: str) -> str:
+    text = normalize_text(text).rstrip(" ,")
+    return f"{text}, el {date_text}" if text else f"el {date_text}"
 
 
 def render_xinhua_caption(coverage: dict, photo: dict) -> str:
     narrative = normalize_text(photo.get("caption_narrative", ""))
     if not narrative:
         return ""
+    is_drone = bool_value(photo.get("is_drone", False))
+    if is_drone:
+        narrative = normalize_drone_narrative(narrative)
 
     send_date = coverage.get("submit_date", "")
     event_date = coverage.get("event_date", "") or send_date
     city = normalize_text(coverage.get("city", ""))
     country = normalize_text(coverage.get("country", ""))
+    locality_type = normalize_locality_type(coverage.get("locality_type", "auto"))
     agency = normalize_text(coverage.get("agency", "Xinhua")) or "Xinhua"
     photographer = normalize_text(coverage.get("photographer", ""))
     editor = normalize_text(coverage.get("editor_initials", "")) or normalize_text(coverage.get("editor", ""))
 
     header = f"({format_dateline_code(send_date)}) -- {city.upper()}, {format_header_date(send_date)} ({agency}) --"
-    location = build_location_phrase(city, country)
+    location = format_xinhua_location(city, country, locality_type)
     credit = f"({agency}/{photographer})" if photographer else f"({agency})"
     editor_credit = f" ({editor})" if editor else ""
 
-    if event_date and event_date != send_date:
-        body = f"Imagen del {format_long_date(event_date)} de {narrative} {location}".strip()
+    if is_drone and event_date and event_date != send_date:
+        body = f"Vista aérea tomada con un dron el {format_long_date(event_date)} de {narrative}"
+    elif is_drone:
+        body = f"Vista aérea tomada con un dron de {narrative}"
+    elif event_date and event_date != send_date:
+        body = f"Imagen del {format_long_date(event_date)} de {narrative}"
     else:
-        body = f"{narrative} {location} el {format_long_date(send_date)}".strip()
+        body = narrative
 
-    body = body.rstrip()
-    if body.endswith(","):
-        body = body[:-1]
+    body = append_location_clause(body, location)
+    if not (event_date and event_date != send_date):
+        body = append_date_clause(body, format_long_date(send_date))
+
+    body = body.rstrip(" ,")
     return f"{header} {body}. {credit}{editor_credit}"
 
 

@@ -50,6 +50,21 @@ class LensCoverageStoreTest(unittest.TestCase):
 
         self.assertEqual(coverages["cov-1"]["coverage_name"], "Cobertura Persistida")
 
+    def test_locality_type_defaults_to_auto_when_missing(self):
+        self.store.set("cov-1", self.coverage())
+
+        coverage = self.store.get("cov-1")
+
+        self.assertEqual(coverage["locality_type"], "auto")
+
+    def test_locality_type_persists(self):
+        coverage = {**self.coverage(), "locality_type": "locality"}
+
+        self.store.set("cov-1", coverage)
+        reloaded = LensCoverageStore(self.store_path, self.media_root)
+
+        self.assertEqual(reloaded.get("cov-1")["locality_type"], "locality")
+
     def test_persists_relative_photo_path_and_excludes_data_url(self):
         photo_path = self.media_root / "cov-1" / "IMG001.jpg"
         photo_path.parent.mkdir(parents=True)
@@ -95,6 +110,37 @@ class LensCoverageStoreTest(unittest.TestCase):
         photo = self.store.get("cov-1")["photos"][0]
 
         self.assertFalse(photo["available_on_disk"])
+
+    def test_photo_is_drone_defaults_false_when_missing(self):
+        coverage = self.coverage()
+        coverage["photos"] = [
+            {
+                "id": "photo-1",
+                "name": "IMG001.jpg",
+                "caption_narrative": "Caption.",
+            }
+        ]
+
+        self.store.set("cov-1", coverage)
+        photo = self.store.get("cov-1")["photos"][0]
+
+        self.assertFalse(photo["is_drone"])
+
+    def test_photo_is_drone_persists(self):
+        coverage = self.coverage()
+        coverage["photos"] = [
+            {
+                "id": "photo-1",
+                "name": "IMG001.jpg",
+                "caption_narrative": "Caption.",
+                "is_drone": True,
+            }
+        ]
+
+        self.store.set("cov-1", coverage)
+        photo = LensCoverageStore(self.store_path, self.media_root).get("cov-1")["photos"][0]
+
+        self.assertTrue(photo["is_drone"])
 
     def test_flow_photo_metadata_is_preserved(self):
         flow_file = self.root / "events" / "IMG001.jpg"

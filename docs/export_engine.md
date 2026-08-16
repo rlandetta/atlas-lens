@@ -50,7 +50,17 @@ El ZIP incluye únicamente los elementos seleccionados. No se crean carpetas vac
 ```
 
 Las fotografías conservan exactamente el nombre original importado.
-DOCX y PDF resuelven imágenes desde `data_url`, `storage_path` o `flow_path` para sus vistas de captions. El ZIP escribe los archivos originales desde esas mismas fuentes; si una fotografía no puede resolverse, la exportación falla explícitamente con su nombre e ID en lugar de crear un archivo vacío.
+El DOCX de captions incrusta una imagen reducida: primero reutiliza la miniatura existente de ATLAS cuando está disponible y, si no existe una miniatura utilizable, genera una variante JPEG temporal para el documento con un lado largo máximo aproximado de 800 px. Esta variante no modifica ni reemplaza la fotografía original.
+PDF resuelve imágenes desde `data_url`, `storage_path` o `flow_path` para su vista de captions. El ZIP escribe los archivos originales desde esas mismas fuentes; si una fotografía no puede resolverse, la exportación falla explícitamente con su nombre e ID en lugar de crear un archivo vacío.
+
+Cada fotografía puede marcarse individualmente con `is_drone`. En captions Xinhua, este atributo solo cambia el inicio de la narración generada:
+
+- Foto normal con fecha de toma diferente: `Imagen del [fecha] de [narración] ...`.
+- Foto normal con fecha de toma igual al envío: `[narración] ... el [fecha].`.
+- Foto con dron y fecha de toma diferente: `Vista aérea tomada con un dron el [fecha] de [narración] ...`.
+- Foto con dron y fecha de toma igual al envío: `Vista aérea tomada con un dron de [narración] ... el [fecha].`.
+
+Si `is_drone` no existe en una cobertura antigua, LENS lo interpreta como `false`.
 
 ## Nomenclatura
 
