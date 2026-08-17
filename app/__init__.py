@@ -35,12 +35,91 @@ ATLAS_NAVIGATION = (
 )
 
 
+CANONICAL_ROUTE_ALIASES = (
+    ("/flow/", "web.flow_home", ("GET",)),
+    ("/lens/", "web.lens_home", ("GET",)),
+    ("/lens/coverages/new", "web.new_coverage", ("GET", "POST")),
+    ("/lens/coverages/<coverage_id>", "web.coverage_detail", ("GET",)),
+    ("/lens/coverages/<coverage_id>/edit", "web.edit_coverage", ("POST",)),
+    ("/lens/coverages/<coverage_id>/ai-context", "web.save_coverage_ai_context", ("POST",)),
+    ("/lens/coverages/<coverage_id>/delete", "web.delete_coverage", ("POST",)),
+    ("/lens/coverages/<coverage_id>/exports", "web.create_coverage_export", ("POST",)),
+    ("/lens/coverages/<coverage_id>/photos", "web.add_coverage_photo", ("POST",)),
+    (
+        "/lens/coverages/<coverage_id>/photos/<photo_id>/thumbnail",
+        "web.coverage_photo_thumbnail",
+        ("GET",),
+    ),
+    (
+        "/lens/coverages/<coverage_id>/photos/<photo_id>/media",
+        "web.coverage_photo_media",
+        ("GET",),
+    ),
+    (
+        "/lens/coverages/<coverage_id>/photos/<photo_id>/caption",
+        "web.save_coverage_photo_caption",
+        ("POST",),
+    ),
+    (
+        "/lens/coverages/<coverage_id>/captions/copy-caption-empty",
+        "web.copy_caption_to_empty_photos",
+        ("POST",),
+    ),
+    (
+        "/lens/coverages/<coverage_id>/photos/<photo_id>/generate-narration",
+        "web.generate_photo_narration",
+        ("POST",),
+    ),
+    (
+        "/lens/coverages/<coverage_id>/photos/<photo_id>/ai-context",
+        "web.get_photo_ai_context",
+        ("GET",),
+    ),
+    (
+        "/lens/coverages/<coverage_id>/photos/<photo_id>/delete",
+        "web.delete_coverage_photo",
+        ("POST",),
+    ),
+)
+
+
+class UrlPrefixMiddleware:
+    def __init__(self, app, prefix: str):
+        self.app = app
+        self.prefix = prefix.rstrip("/")
+
+    def __call__(self, environ, start_response):
+        path_info = environ.get("PATH_INFO", "")
+        if path_info == self.prefix:
+            environ["SCRIPT_NAME"] = self.prefix
+            environ["PATH_INFO"] = "/"
+        elif path_info.startswith(f"{self.prefix}/"):
+            environ["SCRIPT_NAME"] = self.prefix
+            environ["PATH_INFO"] = path_info[len(self.prefix):] or "/"
+        else:
+            script_name = environ.get("SCRIPT_NAME", "").rstrip("/")
+            if script_name == self.prefix:
+                environ["SCRIPT_NAME"] = self.prefix
+        return self.app(environ, start_response)
+
+
+def register_canonical_route_aliases(app) -> None:
+    for rule, endpoint, methods in CANONICAL_ROUTE_ALIASES:
+        app.add_url_rule(
+            rule,
+            endpoint=endpoint,
+            view_func=app.view_functions[endpoint],
+            methods=list(methods),
+        )
+
+
 def create_app():
     from pathlib import Path
 
     from flask import Flask
 
     from app.config import (
+        ATLAS_URL_PREFIX,
         DELIVERY_LINKS_STORE_PATH,
         DELIVERY_ROOT,
         DISPATCH_STORE_PATH,
@@ -67,6 +146,9 @@ def create_app():
     from app.routes.web import configure_coverage_store, web_bp
 
     app = Flask(__name__)
+    if ATLAS_URL_PREFIX:
+        app.config["APPLICATION_ROOT"] = ATLAS_URL_PREFIX
+        app.wsgi_app = UrlPrefixMiddleware(app.wsgi_app, ATLAS_URL_PREFIX)
     app.config["LENS_MAX_PHOTO_BYTES"] = LENS_MAX_PHOTO_BYTES
     app.config["FLOW_EVENTS_ROOT"] = FLOW_EVENTS_ROOT
     ingest_store = IngestStore(INGEST_STORE_PATH)
@@ -125,4 +207,6 @@ def create_app():
     app.register_blueprint(dispatch_bp)
     app.register_blueprint(downloads_bp)
     app.register_blueprint(settings_bp)
+    if not ATLAS_URL_PREFIX:
+        register_canonical_route_aliases(app)
     return app

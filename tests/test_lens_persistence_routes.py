@@ -143,6 +143,36 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn('href="/lens">Coberturas</a>', body)
         self.assertIn('href="/lens" class="back-link compact-link">Volver a coberturas</a>', body)
         self.assertNotIn('href="/">Coberturas</a>', body)
+
+    def test_coverage_tab_respects_url_prefix(self):
+        with patch("app.config.ATLAS_URL_PREFIX", "/atlas"):
+            prefixed_app = create_app()
+        prefixed_app.config.update(TESTING=True)
+        client = prefixed_app.test_client()
+
+        response = client.post(
+            "/atlas/coverages/new",
+            data={
+                "coverage_name": "Cobertura con prefijo",
+                "submit_date": "2026-08-03",
+                "event_date": "2026-08-03",
+                "city": "Quito",
+                "country": "Ecuador",
+                "locality_type": "auto",
+                "agency": "Xinhua",
+                "photographer": "Ricardo Landeta",
+                "editor": "rl",
+            },
+            follow_redirects=False,
+        )
+        coverage_id = response.headers["Location"].rsplit("/", 1)[-1]
+
+        body = client.get(f"/atlas/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('href="/atlas/lens">Coberturas</a>', body)
+        self.assertNotIn('href="/atlas/">Coberturas</a>', body)
+
     def test_locality_type_is_persisted_on_create_and_edit(self):
         coverage_id = self.create_coverage()
 

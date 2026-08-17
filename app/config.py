@@ -27,8 +27,17 @@ def get_list_env(name: str, default: list[str]) -> list[str]:
     return [item for item in items if item]
 
 
+def get_url_prefix_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        return ""
+    normalized = "/" + value.strip("/")
+    return "" if normalized == "/" else normalized
+
+
 AI_ENABLED = get_bool_env("AI_ENABLED", False)
 AI_PROVIDER = os.getenv("AI_PROVIDER", "mock").strip().lower()
+ATLAS_URL_PREFIX = get_url_prefix_env("ATLAS_URL_PREFIX")
 DISPATCH_STORE_PATH = os.getenv(
     "DISPATCH_STORE_PATH",
     os.path.join("instance", "dispatch_shipments.json"),
