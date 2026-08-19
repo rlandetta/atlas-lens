@@ -4,7 +4,7 @@ import io
 import zlib
 from dataclasses import dataclass
 
-from app.export.builders.image_sources import load_image_source
+from app.export.builders.image_sources import load_preview_image_source
 from app.export.models import ExportPhoto
 
 PAGE_WIDTH = 612
@@ -15,6 +15,13 @@ BOTTOM_Y = 36
 TEXT_RGB = (0.2, 0.2, 0.2)
 MAX_IMAGE_WIDTH = 205
 MAX_IMAGE_HEIGHT = 137
+CARD_GAP = 18
+CARD_PADDING = 12
+CARD_IMAGE_WIDTH = 155
+CARD_IMAGE_HEIGHT = 105
+CARD_TEXT_X = MARGIN_X + CARD_PADDING + CARD_IMAGE_WIDTH + 18
+CARD_RIGHT = PAGE_WIDTH - MARGIN_X
+CARD_WIDTH = CARD_RIGHT - MARGIN_X
 
 
 @dataclass(frozen=True)
@@ -39,6 +46,12 @@ def pdf_escape(value: str) -> bytes:
 
 def coverage_name(coverage_metadata: dict) -> str:
     return str(coverage_metadata.get("coverage_name") or coverage_metadata.get("name") or "Reporte editorial")
+
+
+def build_report_title(coverage_metadata: dict) -> str:
+    title = coverage_name(coverage_metadata).upper()
+    country = str(coverage_metadata.get("country", "")).upper()
+    return f"{title} · {country}".strip(" ·")
 
 
 def jpeg_size(data: bytes) -> tuple[int, int] | None:
@@ -151,18 +164,13 @@ def png_image(data: bytes, name: str) -> PdfImage | None:
 
 
 def build_pdf_image(photo: ExportPhoto, name: str) -> PdfImage | None:
-    try:
-        data, content_type = load_image_source(photo)
-    except OSError:
+    preview = load_preview_image_source(photo)
+    if preview is None:
         return None
-    if not data:
-        return None
-    if content_type in {"image/jpeg", "image/jpg"}:
-        size = jpeg_size(data)
-        if size:
-            return PdfImage(name=name, width=size[0], height=size[1], color_space="DeviceRGB", bits=8, filters="/DCTDecode", data=data)
-    if content_type == "image/png":
-        return png_image(data, name)
+    if preview.content_type in {"image/jpeg", "image/jpg"}:
+        return PdfImage(name=name, width=preview.width, height=preview.height, color_space="DeviceRGB", bits=8, filters="/DCTDecode", data=preview.data)
+    if preview.content_type == "image/png":
+        return png_image(preview.data, name)
     return None
 
 
@@ -187,6 +195,11 @@ def scaled_size(width: int, height: int) -> tuple[float, float]:
     return width * scale, height * scale
 
 
+def scaled_card_image_size(width: int, height: int) -> tuple[float, float]:
+    scale = min(CARD_IMAGE_WIDTH / max(width, 1), CARD_IMAGE_HEIGHT / max(height, 1), 1)
+    return width * scale, height * scale
+
+
 def text_op(x: float, y: float, text: str, size: int = 11, bold: bool = False) -> bytes:
     font = "/F1" if not bold else "/F2"
     return b"BT " + font.encode("ascii") + f" {size} Tf {TEXT_RGB[0]} {TEXT_RGB[1]} {TEXT_RGB[2]} rg {x:.2f} {y:.2f} Td ".encode("ascii") + b"(" + pdf_escape(text) + b") Tj ET\n"
@@ -194,6 +207,12 @@ def text_op(x: float, y: float, text: str, size: int = 11, bold: bool = False) -
 
 def line_op(y: float) -> bytes:
     return f"0.82 0.85 0.88 RG 0.6 w {MARGIN_X} {y:.2f} m {PAGE_WIDTH - MARGIN_X} {y:.2f} l S\n".encode("ascii")
+
+
+def rect_op(x: float, y: float, width: float, height: float, *, fill: bool = False) -> bytes:
+    if fill:
+        return f"0.96 0.97 0.98 rg {x:.2f} {y:.2f} {width:.2f} {height:.2f} re f\n".encode("ascii")
+    return f"0.82 0.85 0.88 RG 0.6 w {x:.2f} {y:.2f} {width:.2f} {height:.2f} re S\n".encode("ascii")
 
 
 def image_op(image: PdfImage, x: float, y: float, width: float, height: float) -> bytes:
@@ -222,7 +241,7 @@ def build_pdf(photos: list[ExportPhoto], coverage_metadata: dict) -> bytes:
         pages[-1].extend(text_op(x, y, text, size, bold))
         y -= leading if leading is not None else size + 5
 
-    add_text(f"{coverage_name(coverage_metadata).upper()} · {str(coverage_metadata.get('country', '')).upper()}".strip(" ·"), size=18, bold=True, leading=30)
+    add_text(build_report_title(coverage_metadata), size=18, bold=True, leading=30)
     label_x = MARGIN_X
     value_x = MARGIN_X + 128
     rows = (
@@ -242,21 +261,27 @@ def build_pdf(photos: list[ExportPhoto], coverage_metadata: dict) -> bytes:
 
     for index, photo in enumerate(photos, start=1):
         image = images_by_filename.get(photo.filename)
-        image_height = scaled_size(image.width, image.height)[1] if image else 90
-        caption_lines = wrap_text(photo.caption or "[Sin caption]", 94)
-        block_height = 22 + image_height + 22 + 18 + (len(caption_lines) * 14) + 30
+        caption_lines = wrap_text(photo.caption or "[Sin caption]", 62)
+        text_height = 20 + len(caption_lines) * 14
+        block_height = max(CARD_IMAGE_HEIGHT, text_height) + (CARD_PADDING * 2)
         ensure(block_height)
-        add_text(f"{index}.", size=12, bold=True, leading=22)
+        card_top = y
+        card_bottom = y - block_height
+        pages[-1].extend(rect_op(MARGIN_X, card_bottom, CARD_WIDTH, block_height))
+        pages[-1].extend(rect_op(MARGIN_X + CARD_PADDING, card_bottom + CARD_PADDING, CARD_IMAGE_WIDTH, CARD_IMAGE_HEIGHT, fill=True))
         if image:
-            image_width, image_height = scaled_size(image.width, image.height)
-            pages[-1].extend(image_op(image, MARGIN_X, y - image_height, image_width, image_height))
-            y -= image_height + 18
-        add_text(photo.filename, size=12, bold=True, leading=20)
+            image_width, image_height = scaled_card_image_size(image.width, image.height)
+            image_x = MARGIN_X + CARD_PADDING + ((CARD_IMAGE_WIDTH - image_width) / 2)
+            image_y = card_bottom + CARD_PADDING + ((CARD_IMAGE_HEIGHT - image_height) / 2)
+            pages[-1].extend(image_op(image, image_x, image_y, image_width, image_height))
+        else:
+            pages[-1].extend(text_op(MARGIN_X + CARD_PADDING + 30, card_bottom + CARD_PADDING + 48, "Sin miniatura", 10, False))
+        pages[-1].extend(text_op(CARD_TEXT_X, card_top - CARD_PADDING - 11, f"{index}. {photo.filename}", 12, True))
+        text_y = card_top - CARD_PADDING - 32
         for line in caption_lines:
-            add_text(line, size=11, leading=14)
-        y -= 10
-        pages[-1].extend(line_op(y))
-        y -= 28
+            pages[-1].extend(text_op(CARD_TEXT_X, text_y, line, 11, False))
+            text_y -= 14
+        y = card_bottom - CARD_GAP
 
     ensure(80)
     add_text("«········ FIN DEL ENVÍO ········»", size=14, bold=True, x=180, leading=0)

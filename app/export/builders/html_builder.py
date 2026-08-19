@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from html import escape
 
+from app.export.builders.image_sources import load_preview_image_source
 from app.export.models import ExportPhoto
 
 TEXT_COLOR = "#333333"
@@ -9,6 +11,24 @@ TEXT_COLOR = "#333333"
 
 def coverage_name(coverage_metadata: dict) -> str:
     return str(coverage_metadata.get("coverage_name") or coverage_metadata.get("name") or "Reporte editorial")
+
+
+def build_report_title(coverage_metadata: dict) -> str:
+    title = coverage_name(coverage_metadata).upper()
+    country = str(coverage_metadata.get("country", "")).upper()
+    return f"{title} · {country}".strip(" ·")
+
+
+def embedded_preview(photo: ExportPhoto) -> str:
+    preview = load_preview_image_source(photo)
+    if preview is None:
+        return '<div class="photo-placeholder">Sin miniatura</div>'
+    encoded = base64.b64encode(preview.data).decode("ascii")
+    return (
+        f'<img src="data:{escape(preview.content_type, quote=True)};base64,{encoded}" '
+        f'width="{preview.width}" height="{preview.height}" '
+        f'alt="{escape(photo.filename, quote=True)}">'
+    )
 
 
 def build_html(photos: list[ExportPhoto], coverage_metadata: dict) -> bytes:
@@ -20,19 +40,17 @@ def build_html(photos: list[ExportPhoto], coverage_metadata: dict) -> bytes:
                 {image}
             </div>
             <div class="photo-copy">
-                <p class="filename">{filename}</p>
+                <p class="filename">{index}. {filename}</p>
                 <p class="caption">{caption}</p>
             </div>
         </article>
         """.format(
-            image=(
-                f'<img src="{escape(photo.data_url, quote=True)}" alt="{escape(photo.filename, quote=True)}">'
-                if photo.data_url else '<div class="photo-placeholder">Sin miniatura</div>'
-            ),
+            image=embedded_preview(photo),
+            index=index,
             filename=escape(photo.filename),
             caption=escape(photo.caption or "[Sin caption]"),
         )
-        for photo in photos
+        for index, photo in enumerate(photos, start=1)
     )
     html = f"""<!doctype html>
 <html lang="es">
@@ -107,6 +125,7 @@ body {{
     box-shadow: var(--shadow);
     padding: 22px;
 }}
+.photo-card {{ break-inside: avoid; }}
 .photo-media {{ justify-self: start; width: 100%; }}
 .photo-media img {{
     display: block;
@@ -157,9 +176,11 @@ body {{
 <body>
 <main class="report-page">
 <header class="report-header">
-<h1>{escape(title)}</h1>
+<h1>{escape(build_report_title(coverage_metadata))}</h1>
 <dl class="report-meta">
 <dt>Agencia</dt><dd>{escape(str(coverage_metadata.get('agency', '')))}</dd>
+<dt>Cobertura</dt><dd>{escape(str(coverage_metadata.get('coverage_name') or coverage_metadata.get('name') or ''))}</dd>
+<dt>Ciudad</dt><dd>{escape(str(coverage_metadata.get('city', '')))}</dd>
 <dt>Fotógrafo</dt><dd>{escape(str(coverage_metadata.get('photographer', '')))}</dd>
 <dt>Editor</dt><dd>{escape(str(coverage_metadata.get('editor', '')))}</dd>
 <dt>Fecha cobertura</dt><dd>{escape(str(coverage_metadata.get('event_date') or coverage_metadata.get('submit_date') or ''))}</dd>

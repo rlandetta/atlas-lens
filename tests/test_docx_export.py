@@ -1,4 +1,5 @@
 import base64
+import re
 import tempfile
 import unittest
 import zipfile
@@ -10,6 +11,7 @@ from app.export.engine import ExportEngine
 from app.export.models import ExportPhoto, ExportRequest
 from app.export.naming import ExportNames
 from app.export.builders.docx_builder import build_docx
+from app.export.builders.html_builder import build_html
 from app.export.builders.image_sources import load_image_source, resolve_original_path
 from app.export.builders.pdf_builder import build_pdf
 from app.export.builders.zip_builder import build_zip_archive
@@ -97,6 +99,17 @@ def build_flow_archive_path(root: Path, filename: str = "_21A1622.JPG") -> Path:
 def assert_pdf_has_image(test_case: unittest.TestCase, content: bytes):
     test_case.assertTrue(content.startswith(b"%PDF-1.4"))
     test_case.assertIn(b"/Subtype /Image", content)
+
+
+def pdf_image_dimensions(content: bytes) -> list[tuple[int, int]]:
+    return [
+        (int(width), int(height))
+        for width, height in re.findall(rb"/Subtype /Image /Width (\d+) /Height (\d+)", content)
+    ]
+
+
+def pdf_card_count(content: bytes) -> int:
+    return len(re.findall(rb"\d+\.\d+ \d+\.\d+ \d+\.\d+ \d+\.\d+ re S", content))
 
 
 def build_test_jpeg(width: int, height: int, *, quality: int = 95) -> bytes:
@@ -293,7 +306,7 @@ class DocxExportTest(unittest.TestCase):
         self.assertIn("de la Ciudad Mitad del Mundo", caption)
 
     def test_pdf_embeds_media_from_data_url(self):
-        encoded = base64.b64encode(PDF_JPG_BYTES).decode("ascii")
+        encoded = base64.b64encode(build_test_jpeg(800, 533)).decode("ascii")
         content = build_pdf(
             [build_photo(data_url=f"data:image/jpeg;base64,{encoded}")],
             {"coverage_name": "Cobertura Quito", "country": "Ecuador"},
@@ -307,7 +320,7 @@ class DocxExportTest(unittest.TestCase):
             storage_path = "coverages/cov-1/IMG002.jpg"
             target = media_root / storage_path
             target.parent.mkdir(parents=True)
-            target.write_bytes(PDF_JPG_BYTES)
+            target.write_bytes(build_test_jpeg(800, 533))
 
             with patch("app.config.LENS_MEDIA_ROOT", str(media_root)):
                 content = build_pdf(
@@ -320,7 +333,7 @@ class DocxExportTest(unittest.TestCase):
     def test_pdf_embeds_media_from_flow_path(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             flow_path = Path(temp_dir) / "IMG003.jpg"
-            flow_path.write_bytes(PDF_JPG_BYTES)
+            flow_path.write_bytes(build_test_jpeg(800, 533))
 
             content = build_pdf(
                 [build_photo(id="photo-3", filename="IMG003.jpg", flow_path=str(flow_path))],
@@ -328,6 +341,126 @@ class DocxExportTest(unittest.TestCase):
             )
 
         assert_pdf_has_image(self, content)
+
+    def test_html_embeds_real_portable_previews_from_storage_path(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            media_root = Path(temp_dir) / "media"
+            thumbnail_root = Path(temp_dir) / "thumbnails"
+            storage_path = "coverages/cov-1/IMG001.jpg"
+            target = media_root / storage_path
+            target.parent.mkdir(parents=True)
+            target.write_bytes(build_test_jpeg(1200, 800))
+
+            with (
+                patch("app.config.LENS_MEDIA_ROOT", str(media_root)),
+                patch("app.config.THUMBNAIL_ROOT", str(thumbnail_root)),
+            ):
+                html = build_html(
+                    [build_photo(storage_path=storage_path)],
+                    {**CAPTION_COVERAGE, "coverage_name": "Cobertura Quito"},
+                ).decode("utf-8")
+
+        self.assertIn('src="data:image/jpeg;base64,', html)
+        self.assertEqual(html.count('class="photo-card"'), 1)
+        self.assertNotIn("Sin miniatura", html)
+        self.assertNotIn(str(media_root), html)
+        self.assertNotIn('src="/', html)
+        self.assertIn("COBERTURA QUITO · ECUADOR", html)
+        self.assertIn("<dt>Agencia</dt>", html)
+        self.assertIn("<dt>Cobertura</dt>", html)
+        self.assertIn("<dt>Ciudad</dt>", html)
+        self.assertIn("FIN DEL ENVÍO", html)
+
+    def test_pdf_uses_docx_preview_source_and_compact_photo_cards(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            media_root = root / "media"
+            thumbnail_root = root / "thumbnails"
+            photos = []
+            for index in range(1, 4):
+                storage_path = f"coverages/cov-1/IMG00{index}.jpg"
+                target = media_root / storage_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(build_test_jpeg(2400, 1600))
+                photos.append(build_photo(
+                    id=f"photo-{index}",
+                    filename=f"IMG00{index}.jpg",
+                    storage_path=storage_path,
+                    caption=f"Caption {index}.",
+                ))
+
+            with (
+                patch("app.config.LENS_MEDIA_ROOT", str(media_root)),
+                patch("app.config.THUMBNAIL_ROOT", str(thumbnail_root)),
+            ):
+                docx = build_docx(photos, {**CAPTION_COVERAGE, "coverage_name": "Cobertura Quito"})
+                pdf = build_pdf(photos, {**CAPTION_COVERAGE, "coverage_name": "Cobertura Quito"})
+            original_size = sum((media_root / photo.storage_path).stat().st_size for photo in photos)
+
+        _names, document_xml = docx_members(docx)
+        self.assertEqual(document_xml.count("<w:tbl><w:tblPr>") - 1, 3)
+        self.assertEqual(pdf_card_count(pdf), 3)
+        self.assertEqual(pdf.count(b"/Subtype /Image"), 3)
+        for photo in photos:
+            self.assertIn(photo.filename.encode("latin-1"), pdf)
+        self.assertIn(b"COBERTURA QUITO", pdf)
+        self.assertIn(b"Agencia:", pdf)
+        self.assertIn(b"Cobertura:", pdf)
+        self.assertIn(b"Ciudad:", pdf)
+        self.assertIn("FIN DEL ENV".encode("latin-1"), pdf)
+
+        dimensions = pdf_image_dimensions(pdf)
+        self.assertEqual(len(dimensions), 3)
+        self.assertTrue(all(max(size) <= 800 for size in dimensions))
+        self.assertEqual(dimensions[0], (800, 533))
+        self.assertLess(len(pdf), original_size)
+
+    def test_pdf_fixture_size_does_not_embed_large_originals(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            media_root = root / "media"
+            thumbnail_root = root / "thumbnails"
+            photos = []
+            for index in range(1, 13):
+                storage_path = f"coverages/cov-1/BIG{index:02}.jpg"
+                target = media_root / storage_path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(build_test_jpeg(2400, 1600, quality=98))
+                photos.append(build_photo(
+                    id=f"photo-{index}",
+                    filename=f"BIG{index:02}.jpg",
+                    storage_path=storage_path,
+                    caption="Caption de control para PDF compacto.",
+                ))
+
+            with (
+                patch("app.config.LENS_MEDIA_ROOT", str(media_root)),
+                patch("app.config.THUMBNAIL_ROOT", str(thumbnail_root)),
+            ):
+                pdf = build_pdf(photos, {**CAPTION_COVERAGE, "coverage_name": "Fixture PDF"})
+
+        self.assertEqual(pdf.count(b"/Subtype /Image"), 12)
+        self.assertEqual(pdf_card_count(pdf), 12)
+        self.assertLess(len(pdf), 1_500_000)
+
+    def test_thumbnail_failure_keeps_filename_and_caption_in_html_and_pdf(self):
+        photo = build_photo(
+            filename="MISSING.jpg",
+            storage_path="coverages/cov-1/missing.jpg",
+            data_url="",
+            caption="Caption conservado.",
+            available_on_disk=False,
+        )
+
+        html = build_html([photo], {**CAPTION_COVERAGE, "coverage_name": "Cobertura Quito"}).decode("utf-8")
+        pdf = build_pdf([photo], {**CAPTION_COVERAGE, "coverage_name": "Cobertura Quito"})
+
+        self.assertIn("Sin miniatura", html)
+        self.assertIn("MISSING.jpg", html)
+        self.assertIn("Caption conservado.", html)
+        self.assertIn(b"MISSING.jpg", pdf)
+        self.assertIn(b"Caption conservado.", pdf)
+        self.assertIn(b"Sin miniatura", pdf)
 
     def test_zip_writes_non_empty_photo_from_data_url(self):
         encoded = base64.b64encode(JPG_BYTES).decode("ascii")

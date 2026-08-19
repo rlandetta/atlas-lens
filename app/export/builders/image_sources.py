@@ -4,6 +4,7 @@ import base64
 import binascii
 import io
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -19,6 +20,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 class ImageSourceError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class PreviewImageSource:
+    data: bytes
+    content_type: str
+    width: int
+    height: int
+    source: str
 
 
 def photo_label(photo: ExportPhoto) -> str:
@@ -170,29 +180,72 @@ def build_docx_jpeg_preview(image_bytes: bytes, source_name: str) -> bytes:
         return b""
 
 
-def load_docx_image_source(photo: ExportPhoto) -> tuple[bytes, str]:
+def detect_preview_size(image_bytes: bytes, content_type: str) -> tuple[int, int] | None:
+    try:
+        from PIL import Image
+    except ModuleNotFoundError as error:
+        if error.name == "PIL":
+            LOGGER.warning("No se pudo medir preview para %s: Pillow no está disponible.", content_type)
+            return None
+        raise
+
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            return image.size
+    except Exception as error:
+        LOGGER.warning("No se pudo medir preview %s: %s", content_type, error)
+        return None
+
+
+def build_preview_result(data: bytes, content_type: str, source: str) -> PreviewImageSource | None:
+    if not data:
+        return None
+    size = detect_preview_size(data, content_type)
+    if size is None:
+        return None
+    return PreviewImageSource(
+        data=data,
+        content_type=content_type,
+        width=size[0],
+        height=size[1],
+        source=source,
+    )
+
+
+def load_preview_image_source(photo: ExportPhoto) -> PreviewImageSource | None:
     source = resolve_original_path(photo)
     if source is not None:
         try:
             thumbnail_bytes = load_existing_thumbnail(source)
-            if thumbnail_bytes:
-                return thumbnail_bytes, "image/jpeg"
+            thumbnail = build_preview_result(thumbnail_bytes, "image/jpeg", "thumbnail")
+            if thumbnail is not None:
+                return thumbnail
 
             original_bytes = source.read_bytes()
             preview_bytes = build_docx_jpeg_preview(original_bytes, photo_label(photo))
-            if preview_bytes:
-                LOGGER.info("Imagen DOCX reducida en memoria para %s.", photo_label(photo))
-                return preview_bytes, "image/jpeg"
+            preview = build_preview_result(preview_bytes, "image/jpeg", "generated")
+            if preview is not None:
+                LOGGER.info("Imagen preview reducida en memoria para %s.", photo_label(photo))
+                return preview
         except OSError as error:
-            LOGGER.warning("No se pudo leer imagen local para DOCX de %s: %s", photo_label(photo), error)
+            LOGGER.warning("No se pudo leer imagen local para preview de %s: %s", photo_label(photo), error)
 
-    image_bytes, content_type = decode_data_url(photo.data_url)
+    image_bytes, _content_type = decode_data_url(photo.data_url)
     if not image_bytes:
-        return b"", content_type
+        LOGGER.warning("No se pudo resolver preview para %s.", photo_label(photo))
+        return None
     preview_bytes = build_docx_jpeg_preview(image_bytes, photo_label(photo))
-    if preview_bytes:
-        return preview_bytes, "image/jpeg"
-    return b"", content_type
+    preview = build_preview_result(preview_bytes, "image/jpeg", "data-url")
+    if preview is None:
+        LOGGER.warning("No se pudo generar preview para %s.", photo_label(photo))
+    return preview
+
+
+def load_docx_image_source(photo: ExportPhoto) -> tuple[bytes, str]:
+    preview = load_preview_image_source(photo)
+    if preview is None:
+        return b"", "image/jpeg"
+    return preview.data, preview.content_type
 
 
 def load_image_source(photo: ExportPhoto) -> tuple[bytes, str]:
