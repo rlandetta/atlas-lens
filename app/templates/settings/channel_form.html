@@ -41,23 +41,23 @@
                 </select>
                 <small class="field-help">Los canales antiguos sin tipo se interpretan como SMTP.</small>
             </div>
-            <div class="form-field">
+            <div class="form-field" data-smtp-field>
                 <label for="sender_email">Correo remitente</label>
                 <input id="sender_email" name="sender_email" type="email" value="{{ form_data.sender_email or '' }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-smtp-field>
                 <label for="reply_to">Reply-To</label>
                 <input id="reply_to" name="reply_to" type="email" value="{{ form_data.reply_to or '' }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-smtp-field>
                 <label for="smtp_host">Servidor SMTP</label>
                 <input id="smtp_host" name="smtp_host" type="text" value="{{ form_data.smtp_host or '' }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-smtp-field>
                 <label for="smtp_port">Puerto</label>
                 <input id="smtp_port" name="smtp_port" type="number" min="1" max="65535" value="{{ form_data.smtp_port or 465 }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-smtp-field>
                 <label for="smtp_security">Seguridad</label>
                 <select id="smtp_security" name="smtp_security">
                     {% for option in smtp_security_options %}
@@ -65,32 +65,32 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="form-field">
+            <div class="form-field" data-smtp-field>
                 <label for="smtp_username">Usuario SMTP</label>
                 <input id="smtp_username" name="smtp_username" type="text" value="{{ form_data.smtp_username or '' }}">
             </div>
             <div class="form-field">
                 <label for="credential_ref">Referencia de credencial</label>
                 <input id="credential_ref" name="credential_ref" type="text" value="{{ form_data.credential_ref or '' }}">
-                <small class="field-help">Nombre de la variable de entorno que contendrá la contraseña. Ejemplo: ATLAS_SMTP_CHANNEL_XINHUA</small>
+                <small class="field-help">Nombre de la variable de entorno que contiene la credencial SMTP. La contraseña no se guarda en ATLAS.</small>
             </div>
-            <div class="form-field">
+            <div class="form-field" data-sftp-field>
                 <label for="host">Servidor SFTP</label>
                 <input id="host" name="host" type="text" value="{{ form_data.host or '' }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-sftp-field>
                 <label for="port">Puerto SFTP</label>
                 <input id="port" name="port" type="number" min="1" max="65535" value="{{ form_data.port or 22 }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-sftp-field>
                 <label for="username">Usuario SFTP</label>
                 <input id="username" name="username" type="text" value="{{ form_data.username or '' }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-sftp-field>
                 <label for="remote_path">Ruta remota SFTP</label>
                 <input id="remote_path" name="remote_path" type="text" value="{{ form_data.remote_path or '' }}" placeholder="/incoming">
             </div>
-            <div class="form-field atlas-span-full">
+            <div class="form-field atlas-span-full" data-sftp-field>
                 <label for="host_key_fingerprint">Fingerprint host key</label>
                 <input id="host_key_fingerprint" name="host_key_fingerprint" type="text" value="{{ form_data.host_key_fingerprint or '' }}">
                 <small class="field-help">Opcional en esta fase. No se guardan private keys ni passwords.</small>
@@ -105,4 +105,30 @@
 
     <a href="{{ url_for('settings.channels') }}" class="back-link">Volver a canales</a>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const channelType = document.getElementById("channel_type");
+const smtpFields = document.querySelectorAll("[data-smtp-field]");
+const sftpFields = document.querySelectorAll("[data-sftp-field]");
+
+function setChannelFieldVisibility(fields, visible) {
+    fields.forEach((field) => {
+        field.hidden = !visible;
+        field.querySelectorAll("input, select").forEach((input) => {
+            input.disabled = !visible;
+        });
+    });
+}
+
+function syncChannelFields() {
+    const type = channelType.value;
+    setChannelFieldVisibility(smtpFields, type === "smtp");
+    setChannelFieldVisibility(sftpFields, type === "sftp");
+}
+
+channelType.addEventListener("change", syncChannelFields);
+syncChannelFields();
+</script>
 {% endblock %}

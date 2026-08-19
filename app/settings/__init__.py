@@ -4,6 +4,7 @@ from app.settings.models import (
     SettingsSecretError,
     SettingsStoreError,
     SettingsValidationError,
+    validate_new_channel_id,
 )
 from app.settings.service import SettingsService
 from app.settings.store import SettingsStore
@@ -16,4 +17,5 @@ __all__ = [
     "SettingsStore",
     "SettingsStoreError",
     "SettingsValidationError",
+    "validate_new_channel_id",
 ]

@@ -4,7 +4,7 @@
 {% block main_class %}settings-page{% endblock %}
 
 {% block content %}
-<section class="page-heading">
+<section class="page-heading settings-channel-heading">
     <div>
         <p class="coverage-id">SETTINGS</p>
         <h1>Canales de salida</h1>
@@ -22,15 +22,17 @@
             <p>{% if channel.channel_type == "download_link" %}Enlace de descarga{% elif channel.channel_type == "sftp" %}SFTP{% elif channel.channel_type == "api" %}API · Próximamente{% else %}Correo (SMTP){% endif %}</p>
             <p>{% if channel.channel_type == "sftp" %}{{ channel.host }} · {{ channel.port }} · {{ channel.remote_path }}{% elif channel.channel_type == "smtp" %}{{ channel.sender_email }} · {{ channel.smtp_host }} · {{ channel.smtp_port }} · {{ channel.smtp_security | upper }}{% else %}Sin credenciales locales{% endif %}</p>
         </div>
-        <div class="settings-channel-badges">
-            {% if channel.is_default %}<span class="dispatch-status-badge">Predeterminado</span>{% endif %}
-            <span class="dispatch-status-badge">{{ "Activo" if channel.is_active else "Inactivo" }}</span>
-        </div>
-        <div class="dispatch-row-actions" aria-label="Acciones para {{ channel.name }}">
-            <a href="{{ url_for('settings.edit_channel', channel_id=channel.id) }}">Editar</a>
-            <form method="post" action="{{ url_for('settings.delete_channel', channel_id=channel.id) }}" data-confirm-message="¿Eliminar este canal de salida? No se eliminarán despachos existentes.">
-                <button type="submit">Eliminar</button>
-            </form>
+        <div class="settings-channel-side">
+            <div class="settings-channel-badges">
+                <span class="dispatch-status-badge">{{ "Activo" if channel.is_active else "Inactivo" }}</span>
+                {% if channel.is_default %}<span class="dispatch-status-badge">Predeterminado</span>{% endif %}
+            </div>
+            <div class="dispatch-row-actions" aria-label="Acciones para {{ channel.name }}">
+                <a href="{{ url_for('settings.edit_channel', channel_id=channel.id) }}">Editar</a>
+                <form method="post" action="{{ url_for('settings.delete_channel', channel_id=channel.id) }}" data-confirm-message="¿Eliminar este canal de salida? No se eliminarán despachos existentes.">
+                    <button type="submit">Eliminar</button>
+                </form>
+            </div>
         </div>
     </article>
     {% endfor %}

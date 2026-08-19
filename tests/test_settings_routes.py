@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from app import create_app
 from app.settings import OutboundChannelDraft, SettingsSecretError, SettingsService, SettingsStore, SettingsValidationError
+from app.settings.models import build_channel
 
 
 class SettingsRoutesTest(unittest.TestCase):
@@ -108,6 +109,39 @@ class SettingsRoutesTest(unittest.TestCase):
         self.assertNotIn("ATLAS_SMTP_CHANNEL_XINHUA", list_body)
         self.assertIn("Xinhua", list_body)
 
+    def test_smtp_form_hides_sftp_fields_and_keeps_credential_help_secret_safe(self):
+        body = self.client.get("/settings/channels/new").get_data(as_text=True)
+
+        self.assertIn('data-smtp-field', body)
+        self.assertIn('data-sftp-field', body)
+        self.assertIn('type === "smtp"', body)
+        self.assertIn('input.disabled = !visible', body)
+        self.assertIn("La contraseña no se guarda en ATLAS.", body)
+
+    def test_sftp_form_renders_only_sftp_fields_after_type_selection(self):
+        body = self.client.post(
+            "/settings/channels/new",
+            data=self.valid_form(
+                channel_type="sftp",
+                sender_email="",
+                reply_to="",
+                smtp_host="",
+                smtp_port="",
+                smtp_security="",
+                smtp_username="",
+                credential_ref="ATLAS_SFTP_XINHUA",
+                host="sftp.example.com",
+                port="22",
+                username="atlas",
+                remote_path="/incoming",
+                name="",
+            ),
+        ).get_data(as_text=True)
+
+        self.assertIn('data-sftp-field', body)
+        self.assertIn('type === "sftp"', body)
+        self.assertNotIn("Servidor SMTP es obligatorio", body)
+
     def test_validations_reject_invalid_email_port_security_and_missing_credential_ref(self):
         cases = [
             {"sender_email": "invalid"},
@@ -118,6 +152,34 @@ class SettingsRoutesTest(unittest.TestCase):
         for override in cases:
             response = self.client.post("/settings/channels/new", data=self.valid_form(**override), follow_redirects=False)
             self.assertEqual(response.status_code, 400)
+
+    def test_new_channel_id_requires_lowercase_ascii_but_existing_id_is_preserved(self):
+        response = self.client.post("/settings/channels/new", data=self.valid_form(id="La_Vocería"), follow_redirects=False)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("minúsculas ASCII", response.get_data(as_text=True))
+
+        legacy_draft = OutboundChannelDraft(
+            id="La_Vocería",
+            name="Legado",
+            display_name="Legado",
+            channel_type="smtp",
+            sender_email="atlas@lavoceria.com",
+            reply_to="",
+            smtp_host="smtp.zoho.com",
+            smtp_port=465,
+            smtp_security="ssl",
+            smtp_username="atlas@lavoceria.com",
+            credential_ref="ATLAS_SMTP_CHANNEL_LEGACY",
+        )
+        legacy = build_channel(legacy_draft)
+        self.service.store.save_channels([legacy])
+        response = self.client.post(
+            "/settings/channels/La_Vocería/edit",
+            data=self.valid_form(id="La_Vocería", name="Legado", credential_ref="ATLAS_SMTP_CHANNEL_LEGACY"),
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.service.get_outbound_channel(legacy["id"])["id"], "La_Vocería")
 
     def test_only_one_default_channel(self):
         self.create_channel(id="xinhua", name="Xinhua", credential_ref="ATLAS_SMTP_CHANNEL_XINHUA")
@@ -160,6 +222,25 @@ class SettingsRoutesTest(unittest.TestCase):
         self.assertEqual(channel["host"], "sftp.example.com")
         self.assertEqual(channel["remote_path"], "/incoming")
         self.assertNotIn("do-not-store", raw_json)
+
+    def test_smtp_channel_ignores_legacy_sftp_values(self):
+        channel = self.create_channel(host="smtp.zoho.com", port="465", username="atlas@lavoceria.com", remote_path="/wrong")
+
+        self.assertEqual(channel["channel_type"], "smtp")
+        self.assertEqual(channel["host"], "")
+        self.assertEqual(channel["port"], "")
+        self.assertEqual(channel["username"], "")
+        self.assertEqual(channel["remote_path"], "")
+
+    def test_channel_list_uses_separate_badges_and_actions(self):
+        self.create_channel()
+
+        body = self.client.get("/settings/channels").get_data(as_text=True)
+
+        self.assertIn("settings-channel-side", body)
+        self.assertIn("settings-channel-badges", body)
+        self.assertIn("Editar", body)
+        self.assertIn("Eliminar", body)
 
     def test_download_link_and_api_types_are_visible(self):
         body = self.client.get("/settings/channels/new").get_data(as_text=True)

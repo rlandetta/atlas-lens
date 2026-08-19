@@ -4,6 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+import re
 
 SETTINGS_SCHEMA_VERSION = 1
 SMTP_SECURITY_OPTIONS = ("ssl", "starttls")
@@ -68,6 +69,13 @@ def validate_channel_id(value: str) -> str:
     return channel_id
 
 
+def validate_new_channel_id(value: str) -> str:
+    channel_id = validate_channel_id(value)
+    if not re.fullmatch(r"[a-z0-9_-]+", channel_id):
+        raise SettingsValidationError("El identificador debe usar minúsculas ASCII, números, guiones o guiones bajos, sin espacios ni tildes.")
+    return channel_id
+
+
 def validate_port(value: Any, *, label: str = "El puerto SMTP") -> int:
     try:
         port = int(value)
@@ -91,32 +99,38 @@ def normalize_channel(channel: dict[str, Any]) -> dict[str, Any]:
     normalized["sender_email"] = str(normalized.get("sender_email", "")).strip()
     if normalized["channel_type"] == "smtp":
         normalized["sender_email"] = validate_email(normalized["sender_email"], "El correo remitente")
-    reply_to = str(normalized.get("reply_to", "")).strip()
-    normalized["reply_to"] = validate_email(reply_to, "Reply-To") if reply_to else ""
-    normalized["smtp_host"] = str(normalized.get("smtp_host", "")).strip()
-    if normalized["channel_type"] == "smtp" and not normalized["smtp_host"]:
-        raise SettingsValidationError("El servidor SMTP es obligatorio.")
-    normalized["smtp_port"] = validate_port(normalized.get("smtp_port", 465) or 465)
-    normalized["smtp_security"] = str(normalized.get("smtp_security", "")).strip().lower()
-    if normalized["channel_type"] == "smtp" and normalized["smtp_security"] not in SMTP_SECURITY_OPTIONS:
-        raise SettingsValidationError("La seguridad SMTP debe ser ssl o starttls.")
-    if normalized["smtp_security"] not in SMTP_SECURITY_OPTIONS:
-        normalized["smtp_security"] = "ssl"
-    normalized["smtp_username"] = str(normalized.get("smtp_username", "")).strip()
-    if normalized["channel_type"] == "smtp" and not normalized["smtp_username"]:
-        raise SettingsValidationError("El usuario SMTP es obligatorio.")
-    normalized["host"] = str(normalized.get("host") or normalized["smtp_host"] or "").strip()
-    normalized["port"] = validate_port(normalized.get("port") or (22 if normalized["channel_type"] == "sftp" else normalized["smtp_port"]), label="El puerto")
-    normalized["username"] = str(normalized.get("username") or normalized["smtp_username"] or "").strip()
-    normalized["remote_path"] = str(normalized.get("remote_path", "")).strip()
-    normalized["host_key_fingerprint"] = str(normalized.get("host_key_fingerprint", "")).strip()
-    if normalized["channel_type"] == "sftp":
+    if normalized["channel_type"] == "smtp":
+        reply_to = str(normalized.get("reply_to", "")).strip()
+        normalized["reply_to"] = validate_email(reply_to, "Reply-To") if reply_to else ""
+        normalized["smtp_host"] = str(normalized.get("smtp_host", "")).strip()
+        if not normalized["smtp_host"]:
+            raise SettingsValidationError("El servidor SMTP es obligatorio.")
+        normalized["smtp_port"] = validate_port(normalized.get("smtp_port", 465) or 465)
+        normalized["smtp_security"] = str(normalized.get("smtp_security", "")).strip().lower()
+        if normalized["smtp_security"] not in SMTP_SECURITY_OPTIONS:
+            raise SettingsValidationError("La seguridad SMTP debe ser ssl o starttls.")
+        normalized["smtp_username"] = str(normalized.get("smtp_username", "")).strip()
+        if not normalized["smtp_username"]:
+            raise SettingsValidationError("El usuario SMTP es obligatorio.")
+        normalized.update({"host": "", "port": "", "username": "", "remote_path": "", "host_key_fingerprint": ""})
+    elif normalized["channel_type"] == "sftp":
+        normalized.update({"sender_email": "", "reply_to": "", "smtp_host": "", "smtp_port": "", "smtp_security": "", "smtp_username": ""})
+        normalized["host"] = str(normalized.get("host", "")).strip()
+        normalized["port"] = validate_port(normalized.get("port", 22) or 22, label="El puerto SFTP")
+        normalized["username"] = str(normalized.get("username", "")).strip()
+        normalized["remote_path"] = str(normalized.get("remote_path", "")).strip()
+        normalized["host_key_fingerprint"] = str(normalized.get("host_key_fingerprint", "")).strip()
         if not normalized["host"]:
             raise SettingsValidationError("El servidor SFTP es obligatorio.")
         if not normalized["username"]:
             raise SettingsValidationError("El usuario SFTP es obligatorio.")
         if not normalized["remote_path"].startswith("/"):
             raise SettingsValidationError("La ruta remota SFTP debe iniciar con /.")
+    else:
+        normalized.update({
+            "sender_email": "", "reply_to": "", "smtp_host": "", "smtp_port": "", "smtp_security": "", "smtp_username": "",
+            "host": "", "port": "", "username": "", "remote_path": "", "host_key_fingerprint": "",
+        })
     normalized["credential_ref"] = str(normalized.get("credential_ref", "")).strip()
     if normalized["channel_type"] in {"smtp", "sftp"} and not normalized["credential_ref"]:
         raise SettingsValidationError("La referencia de credencial es obligatoria.")

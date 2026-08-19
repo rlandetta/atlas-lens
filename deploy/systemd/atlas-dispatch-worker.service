@@ -8,4 +8,5 @@ Type=oneshot
 User=atlas
 WorkingDirectory=/opt/atlas-lens
 Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/atlas/atlas.env
 ExecStart=/opt/atlas-lens/.venv/bin/python -m app.dispatch.worker --process-due

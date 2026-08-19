@@ -3420,18 +3420,30 @@ h1 {
 }
 
 .settings-channel-card {
-    align-items: center;
-    grid-template-columns: minmax(220px, 1fr) auto auto;
+    align-items: start;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.8rem 1.1rem;
 }
 
 .settings-channel-main,
-.settings-channel-badges {
+.settings-channel-badges,
+.settings-channel-side {
     display: grid;
     gap: 0.28rem;
 }
 
 .settings-channel-badges {
-    justify-items: start;
+    grid-auto-flow: column;
+    justify-content: end;
+}
+
+.settings-channel-side {
+    justify-items: end;
+    gap: 0.6rem;
+}
+
+.settings-channel-side .dispatch-row-actions {
+    justify-content: end;
 }
 
 .settings-toggle-row {
@@ -3456,6 +3468,13 @@ h1 {
     .settings-channel-card {
         align-items: stretch;
         grid-template-columns: 1fr;
+    }
+
+    .settings-channel-side,
+    .settings-channel-badges,
+    .settings-channel-side .dispatch-row-actions {
+        justify-items: start;
+        justify-content: start;
     }
 }
 

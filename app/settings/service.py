@@ -11,6 +11,7 @@ from app.settings.models import (
     build_channel,
     normalize_channel,
     utc_now_iso,
+    validate_new_channel_id,
 )
 from app.settings.store import SettingsStore
 
@@ -36,9 +37,10 @@ class SettingsService:
 
     def create_outbound_channel(self, draft: OutboundChannelDraft) -> dict[str, Any]:
         channels = self.store.list_channels()
-        if any(channel.get("id") == draft.id for channel in channels):
+        channel_id = validate_new_channel_id(draft.id)
+        if any(channel.get("id") == channel_id for channel in channels):
             raise SettingsValidationError("Ya existe un canal con ese identificador.")
-        channel = build_channel(draft)
+        channel = build_channel(OutboundChannelDraft(**{**draft.__dict__, "id": channel_id}))
         channels.append(channel)
         self.store.save_channels(self._normalize_default(channels, channel["id"] if channel.get("is_default") else ""))
         return self.store.get_channel(channel["id"]) or channel
