@@ -2,13 +2,14 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from app.dispatch import DispatchShipmentStore
 from app.dispatch_worker import main
+from app.dispatch.smtp_transport import SMTPTransportError
 from app.lens import LensCoverageStore
 from app.settings import OutboundChannelDraft, SettingsService, SettingsStore
 
@@ -348,6 +349,134 @@ class DispatchWorkerTest(unittest.TestCase):
         link_store = json.loads(self.links_path.read_text(encoding="utf-8"))
         self.assertEqual(len(link_store["links"]), 1)
         self.assertTrue(send_link.call_args.kwargs["download_url"].startswith("https://atlas.example/d/"))
+
+    def test_process_due_module_path_is_app_dispatch_worker(self):
+        from app.dispatch.worker import main as package_main
+
+        self.assertIs(package_main, main)
+
+    def test_process_due_failure_transitions_to_error_without_stopping(self):
+        self.write_store([
+            self.shipment(
+                "ship-fail",
+                coverage_id="cov-1",
+                photo_ids=["photo-1"],
+                delivery_method="download_link_email",
+                channel_id="xinhua-smtp",
+                channel_name_snapshot="Xinhua SMTP",
+                include_caption_docx=False,
+            ),
+            self.shipment(
+                "ship-ok",
+                coverage_id="cov-1",
+                photo_ids=["photo-1"],
+                delivery_method="download_link_email",
+                channel_id="xinhua-smtp",
+                channel_name_snapshot="Xinhua SMTP",
+                include_caption_docx=False,
+            ),
+        ])
+        self.write_lens_and_settings()
+        patches = self.process_patches()
+        for item in patches:
+            item.start()
+        try:
+            with patch("app.dispatch.smtp_transport.SMTPLinkTransport.send_link") as send_link:
+                send_link.side_effect = [SMTPTransportError("SMTP rechazado."), {"recipients": ["desk@example.com"], "subject": "Cobertura"}]
+                exit_code, stdout, stderr = self.run_worker("--process-due")
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("ERROR: ship-fail", stdout)
+        self.assertIn("PROCESADO: ship-ok", stdout)
+        self.assertEqual(stderr, "")
+        store = DispatchShipmentStore(self.store_path)
+        failed_shipment = store.get("ship-fail")
+        ok_shipment = store.get("ship-ok")
+        self.assertEqual(failed_shipment["status"], "Error")
+        self.assertEqual(failed_shipment["last_error"], "SMTP rechazado.")
+        self.assertEqual(ok_shipment["status"], "Enviado")
+
+    def test_process_due_does_not_send_twice_on_repeated_runs(self):
+        self.write_store([
+            self.shipment(
+                coverage_id="cov-1",
+                photo_ids=["photo-1"],
+                delivery_method="download_link_email",
+                channel_id="xinhua-smtp",
+                channel_name_snapshot="Xinhua SMTP",
+                include_caption_docx=False,
+            )
+        ])
+        self.write_lens_and_settings()
+        patches = self.process_patches()
+        for item in patches:
+            item.start()
+        try:
+            with patch("app.dispatch.smtp_transport.SMTPLinkTransport.send_link") as send_link:
+                first_code, first_stdout, _ = self.run_worker("--process-due")
+                second_code, second_stdout, _ = self.run_worker("--process-due")
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+        self.assertEqual(first_code, 0)
+        self.assertEqual(second_code, 0)
+        self.assertIn("PROCESADO: ship-1", first_stdout)
+        self.assertIn("No hay despachos vencidos para procesar.", second_stdout)
+        self.assertEqual(send_link.call_count, 1)
+        shipment = DispatchShipmentStore(self.store_path).get("ship-1")
+        self.assertEqual(shipment["status"], "Enviado")
+
+    def test_process_due_processes_multiple_due_shipments(self):
+        self.write_store([
+            self.shipment(
+                "ship-a",
+                coverage_id="cov-1",
+                photo_ids=["photo-1"],
+                delivery_method="download_link_email",
+                channel_id="xinhua-smtp",
+                channel_name_snapshot="Xinhua SMTP",
+                include_caption_docx=False,
+            ),
+            self.shipment(
+                "ship-b",
+                coverage_id="cov-1",
+                photo_ids=["photo-1"],
+                delivery_method="download_link_email",
+                channel_id="xinhua-smtp",
+                channel_name_snapshot="Xinhua SMTP",
+                include_caption_docx=False,
+            ),
+        ])
+        self.write_lens_and_settings()
+        patches = self.process_patches()
+        for item in patches:
+            item.start()
+        try:
+            with patch("app.dispatch.smtp_transport.SMTPLinkTransport.send_link") as send_link:
+                exit_code, stdout, stderr = self.run_worker("--process-due")
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(send_link.call_count, 2)
+        self.assertIn("procesados=2", stdout)
+        store = DispatchShipmentStore(self.store_path)
+        self.assertEqual(store.get("ship-a")["status"], "Enviado")
+        self.assertEqual(store.get("ship-b")["status"], "Enviado")
+
+    def test_process_due_uses_guayaquil_offset_for_due_comparison(self):
+        past_local = datetime.now(self.guayaquil) - timedelta(minutes=1)
+        self.write_store([self.shipment(scheduled_at=past_local.isoformat(), timezone="America/Guayaquil")])
+
+        exit_code, stdout, _ = self.run_worker("--dry-run")
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("vencidos=1", stdout)
 
 
 if __name__ == "__main__":

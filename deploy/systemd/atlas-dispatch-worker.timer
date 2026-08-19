@@ -1,0 +1,12 @@
+[Unit]
+Description=Run ATLAS DISPATCH scheduled delivery worker every minute
+After=network.target
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=10s
+Unit=atlas-dispatch-worker.service
+
+[Install]
+WantedBy=timers.target
