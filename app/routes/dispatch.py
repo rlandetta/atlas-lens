@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
 from app.dispatch import DELIVERY_METHODS, DispatchValidationError
+from app.dispatch.service import ACTIVE_DELETE_PROTECTED_STATUSES, HISTORY_DELETE_ELIGIBLE_STATUSES
 from app.dispatch.delivery_package import DeliveryPackageError
 from app.dispatch.smtp_transport import SMTPTransportError
 from app.dispatch.sftp_transport import SFTPTransport, SFTPTransportError
@@ -465,7 +466,8 @@ def build_action_links(shipment: dict[str, Any]) -> dict[str, bool]:
         "can_edit": status in EDITABLE_STATUSES,
         "can_duplicate": status in DUPLICABLE_STATUSES,
         "can_cancel": status == "Programado",
-        "can_delete": status in {"Borrador", "Cancelado"},
+        "can_delete": status in HISTORY_DELETE_ELIGIBLE_STATUSES,
+        "delete_protected": status in ACTIVE_DELETE_PROTECTED_STATUSES,
     }
 
 
@@ -504,23 +506,12 @@ def sort_timestamp(value: str) -> datetime:
 
 
 def sort_shipments(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    status_rank = {
-        "Programado": 0,
-        "Borrador": 1,
-        "Error": 2,
-        "Enviado": 3,
-        "Entregado": 3,
-        "Cancelado": 4,
-    }
+    def key(shipment: dict[str, Any]) -> tuple[float, float]:
+        scheduled_at = sort_timestamp(str(shipment.get("scheduled_at") or shipment.get("created_at", ""))).timestamp()
+        created_at = sort_timestamp(str(shipment.get("created_at", ""))).timestamp()
+        return (scheduled_at, created_at)
 
-    def key(shipment: dict[str, Any]) -> tuple[int, float]:
-        status = str(shipment.get("status", ""))
-        rank = status_rank.get(status, 5)
-        if status == "Programado":
-            return (rank, sort_timestamp(str(shipment.get("scheduled_at", ""))).timestamp())
-        return (rank, -sort_timestamp(str(shipment.get("updated_at", ""))).timestamp())
-
-    return sorted(shipments, key=key)
+    return sorted(shipments, key=key, reverse=True)
 
 
 def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
@@ -584,7 +575,6 @@ def build_index_rows(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         item["docx_label"] = "Sí" if build_content_summary(shipment).get("docx_included") else "No"
         item["channel_display"] = channel_display(shipment)
         item["delivery_method_display"] = delivery_method_display(str(shipment.get("delivery_method", "")))
-        item["can_delete"] = shipment.get("status") in {"Borrador", "Cancelado"}
         item["actions"] = build_action_links(shipment)
         rows.append(item)
     return rows
@@ -1042,6 +1032,7 @@ def index() -> str:
         shipment_rows=build_index_rows(visible_shipments),
         dispatch_filters=build_index_filters(shipments, selected_status),
         active_status=active_status,
+        dispatch_message=str(request.args.get("message", "")),
     )
 
 
@@ -1256,9 +1247,19 @@ def regenerate_delivery_link(shipment_id: str) -> str:
 def delete(shipment_id: str) -> str:
     try:
         get_dispatch_services()["shipment_service"].delete_shipment_record(shipment_id)
-    except DispatchValidationError:
+    except DispatchValidationError as error:
+        if str(error) == "Este despacho está activo. Debe cancelarlo antes de eliminarlo.":
+            return redirect(url_for("dispatch.index", message="active_delete_blocked"))
         abort(403)
-    return redirect(url_for("dispatch.index"))
+    return redirect(url_for("dispatch.index", message="deleted"))
+
+
+@dispatch_bp.post("/clear-history")
+def clear_history() -> str:
+    deleted_count = get_dispatch_services()["shipment_service"].clear_history()
+    message = "history_cleared" if deleted_count else "history_empty"
+    return redirect(url_for("dispatch.index", message=message))
+
 
 @dispatch_bp.post("/delete-cancelled")
 def delete_cancelled() -> str:

@@ -21,16 +21,26 @@
         </a>
         {% endfor %}
     </div>
-    {% if active_status == "Cancelado" %}
-    <form method="post" action="{{ url_for('dispatch.delete_cancelled') }}" class="dispatch-bulk-action" data-confirm-message="¿Eliminar todos los despachos cancelados? Esta acción no elimina coberturas ni fotografías.">
-        <button type="submit" class="danger-button compact-action">Eliminar cancelados</button>
-    </form>
-    {% endif %}
 </section>
+
+{% if dispatch_message == "deleted" %}
+<p class="form-success dispatch-feedback" role="status">Despacho eliminado.</p>
+{% elif dispatch_message == "history_cleared" %}
+<p class="form-success dispatch-feedback" role="status">Historial limpiado.</p>
+{% elif dispatch_message == "history_empty" %}
+<p class="form-success dispatch-feedback" role="status">No hay despachos históricos que puedan eliminarse.</p>
+{% elif dispatch_message == "active_delete_blocked" %}
+<p class="form-error dispatch-feedback" role="alert">Este despacho está activo. Debe cancelarlo antes de eliminarlo.</p>
+{% endif %}
 
 {% if shipment_rows %}
 <section class="dispatch-manager-list" aria-labelledby="dispatch-history-title">
-    <h2 id="dispatch-history-title">Historial de despachos</h2>
+    <div class="dispatch-history-header">
+        <h2 id="dispatch-history-title">Historial de despachos</h2>
+        <form method="post" action="{{ url_for('dispatch.clear_history') }}" data-dispatch-clear-history-form>
+            <button type="submit" class="danger-button compact-action">Limpiar historial</button>
+        </form>
+    </div>
     <div class="dispatch-shipment-list">
         {% for shipment in shipment_rows %}
         <article class="ui-card atlas-panel--compact dispatch-shipment-row">
@@ -76,8 +86,8 @@
                 </form>
                 {% endif %}
                 {% if shipment.actions.can_delete %}
-                <form method="post" action="{{ url_for('dispatch.delete', shipment_id=shipment.id) }}" data-confirm-message="{% if shipment.status == 'Cancelado' %}¿Eliminar este despacho cancelado? Esta acción elimina únicamente el registro de DISPATCH; la cobertura y las fotografías de LENS se conservarán.{% else %}¿Eliminar este borrador? Esta acción no elimina la cobertura ni las fotografías.{% endif %}">
-                    <button type="submit">Eliminar</button>
+                <form method="post" action="{{ url_for('dispatch.delete', shipment_id=shipment.id) }}" data-dispatch-delete-form>
+                    <button type="submit" class="dispatch-danger-link">Eliminar</button>
                 </form>
                 {% endif %}
             </div>
@@ -91,14 +101,75 @@
     <p>{% if active_status %}Cambie el filtro para revisar otros despachos.{% else %}Cuando LENS prepare despachos para distribución, aparecerán en este gestor editorial.{% endif %}</p>
 </section>
 {% endif %}
+
+<dialog id="dispatch-delete-dialog" class="delete-dialog" aria-labelledby="dispatch-delete-title">
+    <form method="dialog" class="delete-dialog-form">
+        <h2 id="dispatch-delete-title">Eliminar despacho</h2>
+        <p>Se eliminará este registro del historial de DISPATCH.</p>
+        <p>No se eliminarán:</p>
+        <ul class="dispatch-delete-safety-list">
+            <li>cobertura de LENS</li>
+            <li>fotografías</li>
+            <li>captions</li>
+            <li>originales de FLOW</li>
+        </ul>
+        <div class="dialog-actions">
+            <button type="submit" class="secondary-button compact-action" value="cancel">Cancelar</button>
+            <button type="submit" class="danger-button compact-action danger-confirm-button" value="confirm">Eliminar despacho</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dispatch-clear-history-dialog" class="delete-dialog" aria-labelledby="dispatch-clear-history-title">
+    <form method="dialog" class="delete-dialog-form">
+        <h2 id="dispatch-clear-history-title">Limpiar historial de DISPATCH</h2>
+        <p>Se eliminarán los registros históricos elegibles.</p>
+        <p>No se eliminarán coberturas, fotografías ni archivos originales.</p>
+        <p>Los despachos activos/programados no serán eliminados.</p>
+        <div class="dialog-actions">
+            <button type="submit" class="secondary-button compact-action" value="cancel">Cancelar</button>
+            <button type="submit" class="danger-button compact-action danger-confirm-button" value="confirm">Limpiar historial</button>
+        </div>
+    </form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function confirmWithDialog(dialog, form) {
+    if (!dialog || typeof dialog.showModal !== "function") {
+        return window.confirm("Confirme la acción.");
+    }
+    dialog.showModal();
+    return new Promise((resolve) => {
+        dialog.addEventListener("close", () => {
+            resolve(dialog.returnValue === "confirm");
+        }, {once: true});
+    });
+}
+
 document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
     form.addEventListener("submit", (event) => {
         if (!window.confirm(form.dataset.confirmMessage)) {
             event.preventDefault();
+        }
+    });
+});
+
+document.querySelectorAll("form[data-dispatch-delete-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (await confirmWithDialog(document.getElementById("dispatch-delete-dialog"), form)) {
+            form.submit();
+        }
+    });
+});
+
+document.querySelectorAll("form[data-dispatch-clear-history-form]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (await confirmWithDialog(document.getElementById("dispatch-clear-history-dialog"), form)) {
+            form.submit();
         }
     });
 });

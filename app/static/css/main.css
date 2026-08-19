@@ -796,6 +796,10 @@ h1 {
     margin: 0.75rem 0 0;
 }
 
+.dispatch-feedback {
+    margin: 0;
+}
+
 .dispatch-filter-chip {
     align-items: center;
     background: #111a24;
@@ -828,6 +832,17 @@ h1 {
 }
 
 .dispatch-manager-list h2 {
+    margin: 0;
+}
+
+.dispatch-history-header {
+    align-items: center;
+    display: flex;
+    gap: 0.75rem;
+    justify-content: space-between;
+}
+
+.dispatch-history-header form {
     margin: 0;
 }
 
@@ -917,6 +932,14 @@ h1 {
     color: var(--text-muted);
     cursor: not-allowed;
     opacity: 0.7;
+}
+
+.dispatch-row-actions .dispatch-danger-link {
+    color: #f0a4a4;
+}
+
+.dispatch-row-actions .dispatch-danger-link:hover {
+    color: #ffd0d0;
 }
 
 .dispatch-status-badge,
@@ -2398,6 +2421,13 @@ h1 {
 
 .delete-dialog-form p {
     margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+}
+
+.dispatch-delete-safety-list {
+    margin: 0;
+    padding-left: 1.15rem;
     color: var(--text-secondary);
     font-size: 0.86rem;
 }

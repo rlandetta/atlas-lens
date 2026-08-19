@@ -696,7 +696,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Sin programación", body)
         self.assertNotIn("<table>", body)
         self.assertNotIn("Ver detalle", body)
-        self.assertNotIn("T", body.split("Historial de despachos", 1)[-1])
+        self.assertNotIn("2099-08-04T14:45:00+00:00", body.split("Historial de despachos", 1)[-1])
 
     def test_dispatch_index_links_to_new_shipment(self):
         response = self.client.get("/dispatch/")
@@ -1335,20 +1335,70 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn(draft["name"], invalid_body)
         self.assertIn('href="/dispatch/" class="dispatch-filter-chip is-active"', invalid_body)
 
-    def test_dispatch_index_orders_programmed_before_drafts_and_errors(self):
-        draft = self.create_docx_shipment_from_route(name="Borrador final")
-        error = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Error medio"), status="Error")
-        scheduled = self.create_docx_shipment_from_route(
-            name="Programado primero",
-            mode="schedule",
-            scheduled_date="2099-08-04",
-            scheduled_time="09:45",
+    def test_dispatch_index_orders_by_scheduled_at_desc_then_created_at_desc(self):
+        older = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Programado antiguo"),
+            created_at="2026-08-01T10:00:00+00:00",
+            scheduled_at="2026-08-05T10:00:00+00:00",
+            status="Programado",
+        )
+        newer = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Programado reciente"),
+            created_at="2026-08-02T10:00:00+00:00",
+            scheduled_at="2026-08-07T10:00:00+00:00",
+            status="Programado",
+        )
+        same_schedule_newer_created = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Desempate reciente"),
+            created_at="2026-08-03T10:00:00+00:00",
+            scheduled_at="2026-08-05T10:00:00+00:00",
+            status="Programado",
         )
 
         body = self.client.get("/dispatch/").get_data(as_text=True)
 
-        self.assertLess(body.index(scheduled["name"]), body.index(draft["name"]))
-        self.assertLess(body.index(draft["name"]), body.index(error["name"]))
+        self.assertLess(body.index(newer["name"]), body.index(same_schedule_newer_created["name"]))
+        self.assertLess(body.index(same_schedule_newer_created["name"]), body.index(older["name"]))
+
+    def test_dispatch_index_orders_by_created_at_desc_when_scheduled_at_is_missing(self):
+        older = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Borrador antiguo"),
+            created_at="2026-08-01T10:00:00+00:00",
+            scheduled_at="",
+        )
+        newer = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Borrador reciente"),
+            created_at="2026-08-02T10:00:00+00:00",
+            scheduled_at="",
+        )
+
+        body = self.client.get("/dispatch/").get_data(as_text=True)
+
+        self.assertLess(body.index(newer["name"]), body.index(older["name"]))
+
+    def test_dispatch_index_does_not_depend_on_status_order(self):
+        draft = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Borrador reciente"),
+            created_at="2026-08-05T10:00:00+00:00",
+            scheduled_at="",
+        )
+        error = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Error antiguo"),
+            status="Error",
+            created_at="2026-08-01T10:00:00+00:00",
+            scheduled_at="",
+        )
+        scheduled = self.save_shipment_changes(
+            self.create_docx_shipment_from_route(name="Programado intermedio"),
+            status="Programado",
+            created_at="2026-08-03T10:00:00+00:00",
+            scheduled_at="",
+        )
+
+        body = self.client.get("/dispatch/").get_data(as_text=True)
+
+        self.assertLess(body.index(draft["name"]), body.index(scheduled["name"]))
+        self.assertLess(body.index(scheduled["name"]), body.index(error["name"]))
 
     def test_dispatch_index_empty_filtered_state_is_clear(self):
         self.create_docx_shipment_from_route()
@@ -1456,10 +1506,20 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(cancelled["history"][0]["note"], "Programación cancelada por el usuario.")
         self.assertEqual(self.client.post(f"/dispatch/{draft['id']}/cancel").status_code, 403)
 
-    def test_dispatch_delete_allows_draft_and_cancelled_only_and_never_by_get(self):
-        draft = self.create_docx_shipment_from_route()
-        cancelled = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado"), status="Cancelado")
+    def test_dispatch_delete_allows_historical_statuses_only_and_never_by_get(self):
+        photo_file = self.lens_media_root / "coverages" / "cov-1" / "photo-approved_IMG001.jpg"
+        flow_photo = self.register_ingest_photo(filename="FLOW001.JPG", valid_jpeg=True)
+        flow_path = Path(flow_photo["path"])
+        eligible = {
+            "Borrador": self.create_docx_shipment_from_route(name="Borrador"),
+            "Listo": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Listo"), status="Listo"),
+            "Enviado": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado"),
+            "Entregado": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Entregado"), status="Entregado"),
+            "Error": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Error"), status="Error"),
+            "Cancelado": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado"), status="Cancelado"),
+        }
         protected = {
+            "Preparando": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Preparando"), status="Preparando"),
             "Programado": self.create_docx_shipment_from_route(
                 name="Programado",
                 mode="schedule",
@@ -1467,69 +1527,133 @@ class DispatchRoutesTest(unittest.TestCase):
                 scheduled_time="09:45",
             ),
             "Enviando": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviando"), status="Enviando"),
-            "Enviado": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado"),
-            "Entregado": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Entregado"), status="Entregado"),
-            "Error": self.save_shipment_changes(self.create_docx_shipment_from_route(name="Error"), status="Error"),
         }
 
-        self.assertEqual(self.client.get(f"/dispatch/{draft['id']}/delete").status_code, 405)
-        self.assertEqual(self.client.get(f"/dispatch/{cancelled['id']}/delete").status_code, 405)
+        self.assertEqual(self.client.get(f"/dispatch/{eligible['Borrador']['id']}/delete").status_code, 405)
         for shipment in protected.values():
-            self.assertEqual(self.client.post(f"/dispatch/{shipment['id']}/delete").status_code, 403)
+            response = self.client.post(f"/dispatch/{shipment['id']}/delete", follow_redirects=True)
+            body = response.get_data(as_text=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Este despacho está activo. Debe cancelarlo antes de eliminarlo.", body)
             self.assertIsNotNone(self.shipment_service.get_shipment(shipment["id"]))
 
-        draft_response = self.client.post(f"/dispatch/{draft['id']}/delete", follow_redirects=False)
-        cancelled_response = self.client.post(f"/dispatch/{cancelled['id']}/delete", follow_redirects=False)
+        for shipment in eligible.values():
+            response = self.client.post(f"/dispatch/{shipment['id']}/delete", follow_redirects=True)
+            body = response.get_data(as_text=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("Despacho eliminado.", body)
+            self.assertIsNone(self.shipment_service.get_shipment(shipment["id"]))
 
-        self.assertEqual(draft_response.status_code, 302)
-        self.assertEqual(cancelled_response.status_code, 302)
-        self.assertIsNone(self.shipment_service.get_shipment(draft["id"]))
-        self.assertIsNone(self.shipment_service.get_shipment(cancelled["id"]))
         self.assertEqual(self.coverages, self.original_coverages)
+        self.assertTrue(photo_file.exists())
+        self.assertTrue(flow_path.exists())
+        self.assertEqual(len(self.app.extensions["ingest"]["store"].list_photos()), 1)
 
-    def test_dispatch_cancelled_delete_actions_are_visible_in_index_and_detail(self):
-        cancelled = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado"), status="Cancelado")
+    def test_dispatch_delete_actions_and_modals_are_visible_in_index_and_detail(self):
+        sent = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado")
 
-        index_body = self.client.get("/dispatch/?status=Cancelado").get_data(as_text=True)
-        detail_body = self.client.get(f"/dispatch/{cancelled['id']}").get_data(as_text=True)
+        index_body = self.client.get("/dispatch/?status=Enviado").get_data(as_text=True)
+        detail_body = self.client.get(f"/dispatch/{sent['id']}").get_data(as_text=True)
 
-        self.assertIn("Eliminar cancelados", index_body)
-        self.assertIn("¿Eliminar este despacho cancelado?", index_body)
+        self.assertIn("Limpiar historial", index_body)
+        self.assertIn("Eliminar despacho", index_body)
+        self.assertIn("Se eliminará este registro del historial de DISPATCH.", index_body)
+        self.assertIn("No se eliminarán:", index_body)
+        self.assertIn("originales de FLOW", index_body)
+        self.assertIn("Limpiar historial de DISPATCH", index_body)
+        self.assertIn(">Ver</a>", index_body)
+        self.assertIn("data-dispatch-delete-form", index_body)
         self.assertIn("Eliminar", index_body)
         self.assertIn("Duplicar", index_body)
-        self.assertIn("¿Eliminar este despacho cancelado?", detail_body)
+        self.assertIn("¿Eliminar este despacho?", detail_body)
         self.assertIn("Eliminar", detail_body)
         self.assertIn("Duplicar", detail_body)
         self.assertNotIn("Editar", detail_body)
         self.assertNotIn("Cancelar programación", detail_body)
 
-    def test_dispatch_bulk_delete_cancelled_removes_only_cancelled(self):
-        cancelled_one = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado 1"), status="Cancelado")
-        cancelled_two = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado 2"), status="Cancelado")
+    def test_dispatch_clear_history_removes_only_eligible_dispatch_records(self):
+        photo_file = self.lens_media_root / "coverages" / "cov-1" / "photo-approved_IMG001.jpg"
+        flow_photo = self.register_ingest_photo(filename="FLOW002.JPG", valid_jpeg=True)
+        flow_path = Path(flow_photo["path"])
+        eligible = [
+            self.create_docx_shipment_from_route(name="Borrador"),
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Listo"), status="Listo"),
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado"),
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Entregado"), status="Entregado"),
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Error"), status="Error"),
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado"), status="Cancelado"),
+        ]
+        protected = [
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Preparando"), status="Preparando"),
+            self.create_docx_shipment_from_route(
+                name="Programado",
+                mode="schedule",
+                scheduled_date="2099-08-04",
+                scheduled_time="09:45",
+            ),
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviando"), status="Enviando"),
+        ]
+
+        response = self.client.post("/dispatch/clear-history", follow_redirects=True)
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Historial limpiado.", body)
+        for shipment in eligible:
+            self.assertIsNone(self.shipment_service.get_shipment(shipment["id"]))
+        for shipment in protected:
+            self.assertIsNotNone(self.shipment_service.get_shipment(shipment["id"]))
+        self.assertEqual(self.coverages, self.original_coverages)
+        self.assertTrue(photo_file.exists())
+        self.assertTrue(flow_path.exists())
+        self.assertEqual(len(self.app.extensions["ingest"]["store"].list_photos()), 1)
+
+    def test_dispatch_clear_history_with_no_eligible_records_shows_feedback(self):
+        protected = [
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Preparando"), status="Preparando"),
+            self.create_docx_shipment_from_route(
+                name="Programado",
+                mode="schedule",
+                scheduled_date="2099-08-04",
+                scheduled_time="09:45",
+            ),
+            self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviando"), status="Enviando"),
+        ]
+
+        response = self.client.post("/dispatch/clear-history", follow_redirects=True)
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("No hay despachos históricos que puedan eliminarse.", body)
+        for shipment in protected:
+            self.assertIsNotNone(self.shipment_service.get_shipment(shipment["id"]))
+
+    def test_dispatch_delete_and_clear_history_update_filter_counters(self):
         draft = self.create_docx_shipment_from_route(name="Borrador")
-        scheduled = self.create_docx_shipment_from_route(
+        sent = self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviado"), status="Enviado")
+        self.save_shipment_changes(self.create_docx_shipment_from_route(name="Error"), status="Error")
+        self.save_shipment_changes(self.create_docx_shipment_from_route(name="Cancelado"), status="Cancelado")
+        self.save_shipment_changes(self.create_docx_shipment_from_route(name="Enviando"), status="Enviando")
+        self.create_docx_shipment_from_route(
             name="Programado",
             mode="schedule",
             scheduled_date="2099-08-04",
             scheduled_time="09:45",
         )
 
-        response = self.client.post("/dispatch/delete-cancelled", follow_redirects=False)
+        after_delete = self.client.post(f"/dispatch/{sent['id']}/delete", follow_redirects=True).get_data(as_text=True)
 
-        self.assertEqual(response.status_code, 302)
-        self.assertIsNone(self.shipment_service.get_shipment(cancelled_one["id"]))
-        self.assertIsNone(self.shipment_service.get_shipment(cancelled_two["id"]))
-        self.assertIsNotNone(self.shipment_service.get_shipment(draft["id"]))
-        self.assertIsNotNone(self.shipment_service.get_shipment(scheduled["id"]))
-        self.assertEqual(self.coverages, self.original_coverages)
+        self.assertRegex(after_delete, r"<span>Todos</span>\s*<strong>5</strong>")
+        self.assertRegex(after_delete, r"<span>Enviados</span>\s*<strong>0</strong>")
+        self.assertRegex(after_delete, r"<span>Borradores</span>\s*<strong>1</strong>")
 
-    def test_dispatch_bulk_delete_cancelled_with_none_is_controlled(self):
-        draft = self.create_docx_shipment_from_route(name="Borrador")
+        after_clear = self.client.post("/dispatch/clear-history", follow_redirects=True).get_data(as_text=True)
 
-        response = self.client.post("/dispatch/delete-cancelled", follow_redirects=False)
-
-        self.assertEqual(response.status_code, 302)
-        self.assertIsNotNone(self.shipment_service.get_shipment(draft["id"]))
+        self.assertIsNone(self.shipment_service.get_shipment(draft["id"]))
+        self.assertRegex(after_clear, r"<span>Todos</span>\s*<strong>2</strong>")
+        self.assertRegex(after_clear, r"<span>Programados</span>\s*<strong>1</strong>")
+        self.assertRegex(after_clear, r"<span>Enviando</span>\s*<strong>1</strong>")
+        self.assertRegex(after_clear, r"<span>Error</span>\s*<strong>0</strong>")
 
     def test_dispatch_detail_shows_only_allowed_actions_by_status(self):
         draft = self.create_docx_shipment_from_route()
@@ -1557,7 +1681,7 @@ class DispatchRoutesTest(unittest.TestCase):
         sent_body = self.client.get(f"/dispatch/{sent['id']}").get_data(as_text=True)
         self.assertNotIn("Editar", sent_body)
         self.assertIn("Duplicar", sent_body)
-        self.assertNotIn("Eliminar", sent_body)
+        self.assertIn("Eliminar", sent_body)
 
         sending_body = self.client.get(f"/dispatch/{sending['id']}").get_data(as_text=True)
         self.assertNotIn("Editar", sending_body)

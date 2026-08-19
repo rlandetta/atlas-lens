@@ -15,6 +15,9 @@ from app.dispatch.store import DispatchShipmentStore
 from app.export.models import ExportResult
 from app.lens_read_service import LensReadError, LensReadService
 
+ACTIVE_DELETE_PROTECTED_STATUSES = {"Preparando", "Programado", "Enviando"}
+HISTORY_DELETE_ELIGIBLE_STATUSES = {"Borrador", "Listo", "Enviado", "Entregado", "Error", "Cancelado"}
+
 
 class DispatchHandoffService:
     def prepare(self, coverage: dict, result: ExportResult) -> dict:
@@ -224,9 +227,19 @@ class ShipmentService:
         shipment = self.store.get(shipment_id)
         if shipment is None:
             raise DispatchValidationError("No existe el despacho solicitado.")
-        if shipment.get("status") not in {"Borrador", "Cancelado"}:
-            raise DispatchValidationError("Solo se pueden eliminar despachos en borrador o cancelados.")
+        if shipment.get("status") in ACTIVE_DELETE_PROTECTED_STATUSES:
+            raise DispatchValidationError("Este despacho está activo. Debe cancelarlo antes de eliminarlo.")
+        if shipment.get("status") not in HISTORY_DELETE_ELIGIBLE_STATUSES:
+            raise DispatchValidationError("Este despacho no puede eliminarse en su estado actual.")
         return self.store.delete(shipment_id)
+
+    def clear_history(self) -> int:
+        deleted_count = 0
+        for shipment in self.store.list_shipments():
+            if shipment.get("status") in HISTORY_DELETE_ELIGIBLE_STATUSES:
+                self.store.delete(str(shipment.get("id", "")))
+                deleted_count += 1
+        return deleted_count
 
     def delete_cancelled_shipments(self) -> int:
         deleted_count = 0
