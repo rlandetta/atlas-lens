@@ -90,6 +90,28 @@
         {% endif %}
     </section>
 
+    <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-activity-title">
+        <h2 id="dispatch-activity-title">Actividad de descargas</h2>
+        {% if download_activity.events %}
+        <ul class="dispatch-download-activity" aria-label="Descargas registradas">
+            {% for event in download_activity.events %}
+            <li class="dispatch-download-activity-row">
+                <div class="dispatch-download-activity-header">
+                    <span>{{ event.location }}</span>
+                    <span>{{ event.when }}</span>
+                </div>
+                <p>Descargó: {{ event.description }}</p>
+            </li>
+            {% endfor %}
+        </ul>
+        {% if download_activity.has_more %}
+        <p class="dispatch-muted">Mostrando las 10 descargas más recientes</p>
+        {% endif %}
+        {% else %}
+        <p>No hay descargas registradas todavía.</p>
+        {% endif %}
+    </section>
+
     {% if shipment.delivery_method in ["download_link", "download_link_email"] %}
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-link-title">
         <h2 id="dispatch-link-title">Entrega</h2>

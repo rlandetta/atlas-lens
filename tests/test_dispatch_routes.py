@@ -778,7 +778,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="" disabled', body)
         self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="" disabled', body)
         self.assertNotIn('data-timezone-panel', body)
-        self.assertIn('id="timezone" name="timezone" data-preserve-timezone="true" disabled', body)
+        self.assertIn('id="timezone" type="hidden" name="timezone" value="America/Guayaquil"', body)
         self.assertEqual(body.count('name="timezone"'), 1)
 
     def test_get_dispatch_new_schedule_shows_date_time_and_single_timezone_reference(self):
@@ -803,7 +803,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertNotIn('data-timezone-panel', body)
         self.assertNotIn('Cambiar zona horaria', body)
         self.assertEqual(body.count('name="timezone"'), 1)
-        self.assertEqual(body.count("<label for=\"timezone\">"), 1)
+        self.assertIn("America/Guayaquil", body)
 
     def test_get_dispatch_new_with_valid_coverage_id(self):
         response = self.client.get("/dispatch/new?coverage_id=cov-1")
@@ -1112,7 +1112,7 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("cloneNode", script)
         self.assertIn("renumberRecipients", script)
         self.assertIn('replaceAll("|", "")', script)
-        self.assertIn("Intl.DateTimeFormat().resolvedOptions().timeZone", script)
+        self.assertNotIn("Intl.DateTimeFormat().resolvedOptions().timeZone", script)
         self.assertIn("Generar enlace ahora", script)
         self.assertIn("Enviar enlace ahora", script)
         self.assertIn("ATLAS generará el enlace de descarga ahora", script)
@@ -1528,6 +1528,43 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(updated["name"], "Despacho editado")
         self.assertEqual(updated["delivery_note"], "Nota editada.")
         self.assertEqual(updated["history"][0]["note"], "Despacho editado.")
+
+    def test_get_dispatch_edit_scheduled_shows_current_date_time(self):
+        channel = self.create_outbound_channel()
+        shipment = self.create_docx_shipment_from_route(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        response = self.client.get(f"/dispatch/{shipment['id']}/edit")
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('id="dispatch_mode_schedule" type="radio" name="mode" value="schedule" checked', body)
+        self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="2099-08-04"', body)
+        self.assertIn('id="scheduled_time" name="scheduled_time" type="time" value="09:45"', body)
+
+    def test_dispatch_index_counts_scheduled_shipments_under_programados(self):
+        channel = self.create_outbound_channel()
+        self.create_docx_shipment_from_route(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        body = self.client.get("/dispatch/").get_data(as_text=True)
+
+        self.assertIn('href="/dispatch/?status=Programado" class="dispatch-filter-chip is-active"', self.client.get("/dispatch/?status=Programado").get_data(as_text=True))
+        filtered_body = self.client.get("/dispatch/?status=Programado").get_data(as_text=True)
+        self.assertIn("Despacho desde formulario", filtered_body)
+        self.assertNotIn(">Enviado<", filtered_body)
 
     def test_post_dispatch_edit_updates_schedule_history_note(self):
         channel = self.create_outbound_channel()

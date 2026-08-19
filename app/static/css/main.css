@@ -639,6 +639,19 @@ h1 {
     display: none;
 }
 
+.field-label-static {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+
+.scheduled-timezone-display {
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 700;
+    margin: 0.1rem 0 0;
+}
+
 .coverage-summary-grid {
     display: grid;
     gap: 0.62rem;
@@ -977,6 +990,36 @@ h1 {
 .dispatch-copy-feedback {
     color: var(--success-text);
     font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.dispatch-download-activity {
+    display: grid;
+    gap: 0.4rem;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.dispatch-download-activity-row {
+    background: #111a24;
+    border: 1px solid rgba(43, 54, 66, 0.82);
+    border-radius: var(--radius-md);
+    padding: 0.42rem 0.55rem;
+}
+
+.dispatch-download-activity-row p {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin: 0.18rem 0 0;
+}
+
+.dispatch-download-activity-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.82rem;
     font-weight: 700;
 }
 

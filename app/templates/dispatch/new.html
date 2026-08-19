@@ -97,13 +97,10 @@
                     <input id="scheduled_time" name="scheduled_time" type="time" value="{{ form_data.scheduled_time or '' }}" {% if (form_data.mode or "draft") != "schedule" %}disabled{% endif %}>
                 </div>
                 <div class="form-field atlas-span-full">
-                    <label for="timezone">Zona horaria</label>
-                    <select id="timezone" name="timezone" data-preserve-timezone="{% if request.method == 'POST' %}true{% else %}false{% endif %}" {% if (form_data.mode or "draft") != "schedule" %}disabled{% endif %}>
-                        {% for timezone in timezone_options %}
-                        <option value="{{ timezone }}" {% if (form_data.timezone or "America/Guayaquil") == timezone %}selected{% endif %}>{{ timezone }}</option>
-                        {% endfor %}
-                    </select>
-                    <small class="field-help">La fecha y hora se interpretarán en la zona seleccionada.</small>
+                    <span class="field-label-static">Zona horaria</span>
+                    <p class="scheduled-timezone-display">{{ timezone_display }}</p>
+                    <input id="timezone" type="hidden" name="timezone" value="{{ form_data.timezone or 'America/Guayaquil' }}">
+                    <small class="field-help">La fecha y hora se interpretan en la zona horaria configurada de ATLAS/DISPATCH.</small>
                 </div>
             </div>
         </section>

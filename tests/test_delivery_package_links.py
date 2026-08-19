@@ -323,6 +323,63 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertEqual(refreshed["download_count"], 1)
         self.assertTrue(refreshed["last_download_at"])
 
+    def test_package_download_creates_activity_event(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        self.client.get(f"/d/{link['token']}/download")
+
+        refreshed = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
+        self.assertEqual(len(refreshed["download_events"]), 1)
+        event = refreshed["download_events"][0]
+        self.assertEqual(event["download_type"], "PACKAGE")
+        self.assertTrue(event["downloaded_at"])
+        self.assertEqual(event["country"], "")
+
+    def test_photo_download_creates_activity_event(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        self.client.get(f"/d/{link['token']}/file/photo-1")
+
+        refreshed = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
+        event = refreshed["download_events"][0]
+        self.assertEqual(event["download_type"], "PHOTO")
+        self.assertEqual(event["filename"], "IMG001.jpg")
+
+    def test_document_download_creates_activity_event(self):
+        shipment, link = self.create_ready_link_shipment()
+        manifest = self.app.extensions["dispatch"]["delivery_package_service"].load_manifest(shipment["id"])
+        docx_item = next(item for item in manifest["files"] if item["type"] == "document")
+
+        self.client.get(f"/d/{link['token']}/file/{docx_item['id']}")
+
+        refreshed = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
+        event = refreshed["download_events"][0]
+        self.assertEqual(event["download_type"], "DOCUMENT")
+        self.assertEqual(event["filename"], docx_item["filename"])
+
+    def test_activity_events_ordered_most_recent_first_and_capped_at_ten_in_ui(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        for _ in range(12):
+            self.client.get(f"/d/{link['token']}/download")
+
+        detail_body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+        self.assertIn("Mostrando las 10 descargas más recientes", detail_body)
+        self.assertEqual(detail_body.count("Descargó: paquete completo"), 10)
+
+        refreshed = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
+        self.assertEqual(len(refreshed["download_events"]), 12)
+        timestamps = [event["downloaded_at"] for event in refreshed["download_events"]]
+        self.assertEqual(timestamps, sorted(timestamps, reverse=True))
+
+    def test_download_activity_falls_back_to_location_unavailable(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        self.client.get(f"/d/{link['token']}/download")
+
+        detail_body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+        self.assertIn("Ubicación no disponible", detail_body)
+
     def test_revoked_and_expired_links_are_rejected_and_regenerate_invalidates_previous(self):
         shipment, link = self.create_ready_link_shipment()
         self.client.post(f"/dispatch/{shipment['id']}/delivery-link/revoke")

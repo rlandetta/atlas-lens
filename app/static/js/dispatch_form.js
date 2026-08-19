@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-    const fallbackTimezone = "America/Guayaquil";
     const scheduledFields = document.querySelector("[data-scheduled-delivery-fields]");
     const modeInputs = document.querySelectorAll('input[name="mode"]');
     const timezoneSelect = document.getElementById("timezone");
@@ -28,30 +27,6 @@ document.addEventListener("DOMContentLoaded", () => {
         return selectedMode ? selectedMode.value : "draft";
     };
 
-    const ensureTimezoneOption = (timeZone) => {
-        if (!timezoneSelect || !timeZone) {
-            return;
-        }
-        const exists = Array.from(timezoneSelect.options).some((option) => option.value === timeZone);
-        if (!exists) {
-            timezoneSelect.add(new Option(timeZone, timeZone));
-        }
-    };
-
-    const detectTimezone = () => {
-        let detected = fallbackTimezone;
-        try {
-            detected = Intl.DateTimeFormat().resolvedOptions().timeZone || fallbackTimezone;
-        } catch (error) {
-            detected = fallbackTimezone;
-        }
-        ensureTimezoneOption(detected);
-        const preserveTimezone = timezoneSelect && timezoneSelect.dataset.preserveTimezone === "true";
-        if (timezoneSelect && !preserveTimezone && (!timezoneSelect.value || timezoneSelect.value === fallbackTimezone)) {
-            timezoneSelect.value = detected;
-        }
-    };
-
     const setElementVisibility = (element, visible) => {
         if (!element) {
             return;
@@ -61,7 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
     };
 
     const setScheduleInputsEnabled = (enabled) => {
-        [scheduledDate, scheduledTime, timezoneSelect].forEach((input) => {
+        [scheduledDate, scheduledTime].forEach((input) => {
             if (input) {
                 input.disabled = !enabled;
             }
@@ -161,16 +136,17 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (nextMode === "schedule") {
-            const hasSchedule = scheduledDate && scheduledDate.value && scheduledTime && scheduledTime.value && timezoneSelect && timezoneSelect.value;
+            const hasSchedule = scheduledDate && scheduledDate.value && scheduledTime && scheduledTime.value;
+            const timezoneLabel = timezoneSelect ? timezoneSelect.value : "America/Guayaquil";
             if (deliveryModeSummary) {
                 deliveryModeSummary.textContent = hasSchedule
-                    ? `Este despacho se programará para el ${scheduledDate.value} a las ${scheduledTime.value}, en la zona ${timezoneSelect.value}.`
-                    : "Seleccione fecha, hora y zona horaria para programar el despacho.";
+                    ? `Este despacho se programará para el ${scheduledDate.value} a las ${scheduledTime.value}, en la zona ${timezoneLabel}.`
+                    : "Seleccione fecha y hora para programar el despacho.";
             }
             if (formSummary) {
                 formSummary.textContent = hasSchedule
-                    ? `Este despacho se programará para el ${scheduledDate.value} a las ${scheduledTime.value}, en la zona ${timezoneSelect.value}.`
-                    : "Seleccione fecha, hora y zona horaria para programar el despacho.";
+                    ? `Este despacho se programará para el ${scheduledDate.value} a las ${scheduledTime.value}, en la zona ${timezoneLabel}.`
+                    : "Seleccione fecha y hora para programar el despacho.";
             }
             if (submitButton) {
                 submitButton.textContent = "Programar envío";
@@ -193,7 +169,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (deliveryMethodSelect) {
         deliveryMethodSelect.addEventListener("change", applyDeliveryModeState);
     }
-    [scheduledDate, scheduledTime, timezoneSelect, docxInput].forEach((input) => {
+    [scheduledDate, scheduledTime, docxInput].forEach((input) => {
         if (input) {
             input.addEventListener("input", applyDeliveryModeState);
             input.addEventListener("change", applyDeliveryModeState);
@@ -287,6 +263,5 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    detectTimezone();
     applyDeliveryModeState();
 });

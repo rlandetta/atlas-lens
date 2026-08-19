@@ -530,6 +530,42 @@ def build_delivery_package_summary(shipment: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+DOWNLOAD_ACTIVITY_LIMIT = 10
+DOWNLOAD_TYPE_LABELS = {
+    "PACKAGE": "paquete completo",
+}
+
+
+def build_download_activity(link: dict[str, Any] | None, timezone_name: str) -> dict[str, Any]:
+    events = list((link or {}).get("download_events") or [])
+    total = len(events)
+    items = []
+    for event in events[:DOWNLOAD_ACTIVITY_LIMIT]:
+        if not isinstance(event, dict):
+            continue
+        country = str(event.get("country", "")).strip()
+        city = str(event.get("city", "")).strip()
+        if country and city:
+            location = f"{country} · {city}"
+        elif country:
+            location = country
+        else:
+            location = "Ubicación no disponible"
+        download_type = str(event.get("download_type", "PACKAGE"))
+        filename = str(event.get("filename", "")).strip()
+        description = DOWNLOAD_TYPE_LABELS.get(download_type, filename or "archivo")
+        items.append({
+            "location": location,
+            "when": format_datetime_es(str(event.get("downloaded_at", "")), timezone_name),
+            "description": description,
+        })
+    return {
+        "events": items,
+        "total": total,
+        "has_more": total > DOWNLOAD_ACTIVITY_LIMIT,
+    }
+
+
 def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
     timezone_name = str(shipment.get("timezone") or DEFAULT_TIMEZONE)
     formatted_history = []
@@ -576,6 +612,7 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
         "delivery_link": current_link,
         "delivery_link_dates": delivery_link_dates,
         "delivery_package_summary": build_delivery_package_summary(shipment),
+        "download_activity": build_download_activity(current_link, timezone_name),
         "coverage_back_url": url_for("web.coverage_detail", coverage_id=coverage_id) if coverage_id else "",
         "delivery_url": delivery_public_url(current_link),
         "delivery_package": shipment.get("delivery_package", {}),

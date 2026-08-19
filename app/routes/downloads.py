@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flask import Blueprint, abort, current_app, render_template, send_file, url_for
+from flask import Blueprint, abort, current_app, render_template, request, send_file, url_for
 
 from app.dispatch.delivery_package import DeliveryPackageError
 from app.dispatch.delivery_previews import DeliveryPreviewError
@@ -148,7 +148,11 @@ def download_zip(token: str):
         path = get_services()["delivery_package_service"].package_zip_path(str(shipment.get("id", "")))
     except DeliveryPackageError:
         abort(404)
-    get_services()["delivery_link_service"].record_download(str(link.get("id", "")))
+    get_services()["delivery_link_service"].record_download(
+        str(link.get("id", "")),
+        download_type="PACKAGE",
+        ip=request.remote_addr or "",
+    )
     return send_file(path, as_attachment=True, download_name=f"{Path(str(shipment.get('name', 'dispatch'))).stem or 'dispatch'}.zip")
 
 
@@ -160,5 +164,11 @@ def download_file(token: str, file_id: str):
         path, item = get_services()["delivery_package_service"].package_file_path(str(shipment.get("id", "")), file_id)
     except DeliveryPackageError:
         abort(404)
-    get_services()["delivery_link_service"].record_download(str(link.get("id", "")))
+    download_type = "DOCUMENT" if str(item.get("type", "")) == "document" else "PHOTO"
+    get_services()["delivery_link_service"].record_download(
+        str(link.get("id", "")),
+        download_type=download_type,
+        filename=str(item.get("filename") or path.name),
+        ip=request.remote_addr or "",
+    )
     return send_file(path, as_attachment=True, download_name=str(item.get("filename") or path.name))

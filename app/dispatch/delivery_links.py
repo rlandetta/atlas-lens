@@ -11,10 +11,15 @@ import os
 import secrets
 import tempfile
 
+from app.dispatch.geolocation import resolve_location
+
 
 class DeliveryLinkError(ValueError):
     pass
 
+
+DOWNLOAD_TYPES = ("PACKAGE", "PHOTO", "DOCUMENT")
+MAX_DOWNLOAD_EVENTS_STORED = 200
 
 EXPIRATION_DAYS = {
     "1": 1,
@@ -50,6 +55,9 @@ def normalize_link(link: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("revoked_at", "")
     normalized["download_count"] = int(normalized.get("download_count") or 0)
     normalized.setdefault("last_download_at", "")
+    normalized["download_events"] = [
+        event for event in normalized.get("download_events") or [] if isinstance(event, dict)
+    ]
     normalized.setdefault("password_hash", "")
     normalized["is_active"] = bool(normalized.get("is_active", True))
     if not normalized["id"] or not normalized["shipment_id"] or not normalized["token"]:
@@ -147,14 +155,32 @@ class DeliveryLinkStore:
     def list_for_shipment(self, shipment_id: str) -> list[dict[str, Any]]:
         return [link for link in self.list_links() if link.get("shipment_id") == shipment_id]
 
-    def record_download(self, link_id: str) -> dict[str, Any]:
+    def record_download(
+        self,
+        link_id: str,
+        *,
+        download_type: str = "PACKAGE",
+        filename: str = "",
+        country: str = "",
+        city: str = "",
+    ) -> dict[str, Any]:
         timestamp = utc_now_iso()
         current = next((link for link in self.list_links() if link.get("id") == link_id), None)
         if current is None:
             raise DeliveryLinkError("No existe el link solicitado.")
+        safe_type = download_type if download_type in DOWNLOAD_TYPES else "PACKAGE"
+        events = [event for event in current.get("download_events") or [] if isinstance(event, dict)]
+        events.insert(0, {
+            "downloaded_at": timestamp,
+            "download_type": safe_type,
+            "filename": str(filename or ""),
+            "country": str(country or ""),
+            "city": str(city or ""),
+        })
         return self.update(link_id, {
             "download_count": int(current.get("download_count") or 0) + 1,
             "last_download_at": timestamp,
+            "download_events": events[:MAX_DOWNLOAD_EVENTS_STORED],
         })
 
     @staticmethod
@@ -211,8 +237,22 @@ class DeliveryLinkService:
         self.revoke_for_shipment(shipment_id)
         return self.create_link(shipment_id, expires_in=expires_in)
 
-    def record_download(self, link_id: str) -> dict[str, Any]:
-        return self.with_url(self.store.record_download(link_id))
+    def record_download(
+        self,
+        link_id: str,
+        *,
+        download_type: str = "PACKAGE",
+        filename: str = "",
+        ip: str = "",
+    ) -> dict[str, Any]:
+        country, city = resolve_location(ip)
+        return self.with_url(self.store.record_download(
+            link_id,
+            download_type=download_type,
+            filename=filename,
+            country=country,
+            city=city,
+        ))
 
     def with_url(self, link: dict[str, Any]) -> dict[str, Any]:
         enriched = deepcopy(link)
