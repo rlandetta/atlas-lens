@@ -58,20 +58,23 @@ def build_html(photos: list[ExportPhoto], coverage_metadata: dict) -> bytes:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(title)}</title>
-<style>
-:root {{
-    --page-bg: #f3f4f6;
-    --card-bg: #ffffff;
-    --text: {TEXT_COLOR};
-    --muted: #606975;
-    --line: #d9dee5;
-    --shadow: 0 14px 34px rgba(25, 31, 40, 0.08);
-    --radius: 18px;
-}}
-* {{ box-sizing: border-box; }}
-html {{ background: var(--page-bg); }}
-body {{
-    margin: 0;
+	<style>
+	:root {{
+	    --page-bg: #0f1720;
+	    --card-bg: #17222e;
+	    --card-bg-soft: #1b2733;
+	    --text: #f4f4f4;
+	    --muted: #aeb9c6;
+	    --line: #2b3a48;
+	    --accent: #6fb7b8;
+	    --shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+	    --radius: 16px;
+	}}
+	* {{ box-sizing: border-box; }}
+	img {{ max-width: 100%; }}
+	html {{ background: var(--page-bg); }}
+	body {{
+	    margin: 0;
     font-family: Arial, Helvetica, sans-serif;
     color: var(--text);
     background: var(--page-bg);
@@ -84,19 +87,19 @@ body {{
 }}
 .report-header {{
     text-align: left;
-    background: var(--card-bg);
-    border: 1px solid rgba(217, 222, 229, 0.9);
+    background: linear-gradient(180deg, var(--card-bg-soft), var(--card-bg));
+    border: 1px solid var(--line);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    padding: 24px 28px;
-    margin-bottom: 28px;
+    padding: 22px 26px;
+    margin-bottom: 24px;
 }}
 .report-header h1 {{
-    margin: 0 0 14px;
+    margin: 0 0 12px;
     color: var(--text);
-    font-size: clamp(1.55rem, 2.4vw, 2.1rem);
+    font-size: 1.72rem;
     line-height: 1.08;
-    letter-spacing: 0.01em;
+    letter-spacing: 0;
 }}
 .report-meta {{
     display: grid;
@@ -107,26 +110,39 @@ body {{
 }}
 .report-meta dt {{
     font-weight: 700;
-    color: var(--text);
+    color: var(--muted);
 }}
 .report-meta dd {{
     margin: 0;
-    color: var(--muted);
+    color: var(--text);
+    overflow-wrap: anywhere;
 }}
-.photo-list {{ display: grid; gap: 22px; }}
+.photo-list {{ display: grid; gap: 18px; }}
 .photo-card {{
     display: grid;
-    grid-template-columns: minmax(180px, 285px) minmax(0, 1fr);
-    gap: 24px;
-    align-items: start;
+    grid-template-columns: minmax(190px, 30%) minmax(0, 1fr);
+    gap: 22px;
+    align-items: stretch;
     background: var(--card-bg);
-    border: 1px solid rgba(217, 222, 229, 0.9);
+    border: 1px solid var(--line);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-    padding: 22px;
+    padding: 18px;
+    overflow: hidden;
 }}
 .photo-card {{ break-inside: avoid; }}
-.photo-media {{ justify-self: start; width: 100%; }}
+.photo-media {{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: stretch;
+    width: 100%;
+    min-height: 170px;
+    border-radius: 12px;
+    background: #111b25;
+    border: 1px solid rgba(174, 185, 198, 0.14);
+    overflow: hidden;
+}}
 .photo-media img {{
     display: block;
     max-width: 100%;
@@ -134,41 +150,48 @@ body {{
     height: auto;
     max-height: 190px;
     object-fit: contain;
-    border-radius: 10px;
+    border-radius: 8px;
 }}
 .photo-placeholder {{
+    width: 100%;
     min-height: 150px;
-    border-radius: 10px;
+    border-radius: 8px;
     border: 1px dashed var(--line);
-    display: grid;
-    place-items: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     color: var(--muted);
-    background: #f8fafc;
+    background: #111b25;
 }}
+.photo-copy {{ min-width: 0; align-self: center; }}
 .filename {{
-    margin: 0 0 12px;
+    margin: 0 0 10px;
     color: var(--text);
     font-weight: 700;
-    font-size: 1rem;
+    font-size: 0.98rem;
+    line-height: 1.32;
+    overflow-wrap: anywhere;
 }}
 .caption {{
     margin: 0;
     color: var(--text);
-    font-size: 1rem;
-    line-height: 1.5;
+    font-size: 0.96rem;
+    line-height: 1.48;
+    overflow-wrap: anywhere;
 }}
 .end-marker {{
     margin: 34px 0 0;
     text-align: center;
-    color: var(--text);
+    color: var(--muted);
     font-weight: 700;
-    font-size: 1.15rem;
+    font-size: 1.02rem;
 }}
 @media (max-width: 640px) {{
     .report-page {{ width: min(100% - 20px, 1120px); padding: 18px 0 28px; }}
     .report-header {{ padding: 20px; margin-bottom: 18px; }}
     .photo-list {{ gap: 16px; }}
     .photo-card {{ grid-template-columns: 1fr; gap: 16px; padding: 18px; }}
+    .photo-media {{ min-height: 140px; }}
     .photo-media img {{ max-height: none; }}
 }}
 </style>

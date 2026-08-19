@@ -13,7 +13,7 @@ from app.export.naming import ExportNames
 from app.export.builders.docx_builder import build_docx
 from app.export.builders.html_builder import build_html
 from app.export.builders.image_sources import load_image_source, resolve_original_path
-from app.export.builders.pdf_builder import build_pdf
+from app.export.builders.pdf_builder import CARD_TEXT_WIDTH, build_pdf, max_chars_for_width
 from app.export.builders.zip_builder import build_zip_archive
 from app.media import ThumbnailService
 from app.export.template_renderer import format_xinhua_location, render_caption
@@ -365,6 +365,16 @@ class DocxExportTest(unittest.TestCase):
         self.assertNotIn("Sin miniatura", html)
         self.assertNotIn(str(media_root), html)
         self.assertNotIn('src="/', html)
+        self.assertIn("--page-bg: #0f1720;", html)
+        self.assertIn("--card-bg: #17222e;", html)
+        self.assertIn("--text: #f4f4f4;", html)
+        self.assertIn("display: flex;", html)
+        self.assertIn("align-items: center;", html)
+        self.assertIn("justify-content: center;", html)
+        self.assertIn("object-fit: contain;", html)
+        self.assertIn("overflow-wrap: anywhere;", html)
+        self.assertIn("@media (max-width: 640px)", html)
+        self.assertIn(".photo-card { grid-template-columns: 1fr;", html)
         self.assertIn("COBERTURA QUITO · ECUADOR", html)
         self.assertIn("<dt>Agencia</dt>", html)
         self.assertIn("<dt>Cobertura</dt>", html)
@@ -403,6 +413,7 @@ class DocxExportTest(unittest.TestCase):
         self.assertEqual(pdf.count(b"/Subtype /Image"), 3)
         for photo in photos:
             self.assertIn(photo.filename.encode("latin-1"), pdf)
+        self.assertIn(b"q 155.00 0 0 103.27", pdf)
         self.assertIn(b"COBERTURA QUITO", pdf)
         self.assertIn(b"Agencia:", pdf)
         self.assertIn(b"Cobertura:", pdf)
@@ -442,6 +453,28 @@ class DocxExportTest(unittest.TestCase):
         self.assertEqual(pdf.count(b"/Subtype /Image"), 12)
         self.assertEqual(pdf_card_count(pdf), 12)
         self.assertLess(len(pdf), 1_500_000)
+
+    def test_pdf_wraps_long_filename_and_caption_inside_card_width(self):
+        long_filename = "CENTRO-HISTORICO-EC-" + ("1269" * 18) + ".jpg"
+        long_caption = (
+            "Caption con una palabra extremadamente larga "
+            + ("supercalifragilistico" * 10)
+            + " y texto adicional para validar varias lineas dentro de la tarjeta."
+        )
+        encoded = base64.b64encode(build_test_jpeg(800, 533)).decode("ascii")
+
+        pdf = build_pdf(
+            [build_photo(filename=long_filename, caption=long_caption, data_url=f"data:image/jpeg;base64,{encoded}")],
+            {**CAPTION_COVERAGE, "coverage_name": "Cobertura Quito"},
+        )
+        filename_limit = max_chars_for_width(CARD_TEXT_WIDTH, 12, bold=True)
+        caption_limit = max_chars_for_width(CARD_TEXT_WIDTH, 10)
+
+        self.assertEqual(pdf_card_count(pdf), 1)
+        self.assertNotIn(long_filename.encode("latin-1"), pdf)
+        self.assertIn(long_filename[:filename_limit].encode("latin-1"), pdf)
+        self.assertTrue(all(len(line) <= filename_limit for line in re.findall(rb"BT /F2 12 Tf .*?\((.*?)\) Tj ET", pdf)))
+        self.assertTrue(all(len(line) <= caption_limit for line in re.findall(rb"BT /F1 10 Tf .*?\((.*?)\) Tj ET", pdf)))
 
     def test_thumbnail_failure_keeps_filename_and_caption_in_html_and_pdf(self):
         photo = build_photo(

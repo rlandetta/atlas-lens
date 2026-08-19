@@ -22,6 +22,9 @@ CARD_IMAGE_HEIGHT = 105
 CARD_TEXT_X = MARGIN_X + CARD_PADDING + CARD_IMAGE_WIDTH + 18
 CARD_RIGHT = PAGE_WIDTH - MARGIN_X
 CARD_WIDTH = CARD_RIGHT - MARGIN_X
+CARD_TEXT_WIDTH = CARD_RIGHT - CARD_TEXT_X - CARD_PADDING
+FILENAME_LEADING = 14
+CAPTION_LEADING = 13
 
 
 @dataclass(frozen=True)
@@ -174,8 +177,20 @@ def build_pdf_image(photo: ExportPhoto, name: str) -> PdfImage | None:
     return None
 
 
-def wrap_text(value: str, max_chars: int) -> list[str]:
-    words = str(value or "").split()
+def max_chars_for_width(max_width: float, size: int, *, bold: bool = False) -> int:
+    average_width = size * (0.56 if bold else 0.52)
+    return max(int(max_width / average_width), 8)
+
+
+def split_long_word(word: str, max_chars: int) -> list[str]:
+    return [word[index:index + max_chars] for index in range(0, len(word), max_chars)] or [""]
+
+
+def wrap_text(value: str, max_width: float, size: int = 11, *, bold: bool = False) -> list[str]:
+    max_chars = max_chars_for_width(max_width, size, bold=bold)
+    words: list[str] = []
+    for word in str(value or "").split():
+        words.extend(split_long_word(word, max_chars) if len(word) > max_chars else [word])
     lines = []
     current = ""
     for word in words:
@@ -261,8 +276,9 @@ def build_pdf(photos: list[ExportPhoto], coverage_metadata: dict) -> bytes:
 
     for index, photo in enumerate(photos, start=1):
         image = images_by_filename.get(photo.filename)
-        caption_lines = wrap_text(photo.caption or "[Sin caption]", 62)
-        text_height = 20 + len(caption_lines) * 14
+        filename_lines = wrap_text(f"{index}. {photo.filename}", CARD_TEXT_WIDTH, 12, bold=True)
+        caption_lines = wrap_text(photo.caption or "[Sin caption]", CARD_TEXT_WIDTH, 10)
+        text_height = len(filename_lines) * FILENAME_LEADING + 8 + len(caption_lines) * CAPTION_LEADING
         block_height = max(CARD_IMAGE_HEIGHT, text_height) + (CARD_PADDING * 2)
         ensure(block_height)
         card_top = y
@@ -276,11 +292,14 @@ def build_pdf(photos: list[ExportPhoto], coverage_metadata: dict) -> bytes:
             pages[-1].extend(image_op(image, image_x, image_y, image_width, image_height))
         else:
             pages[-1].extend(text_op(MARGIN_X + CARD_PADDING + 30, card_bottom + CARD_PADDING + 48, "Sin miniatura", 10, False))
-        pages[-1].extend(text_op(CARD_TEXT_X, card_top - CARD_PADDING - 11, f"{index}. {photo.filename}", 12, True))
-        text_y = card_top - CARD_PADDING - 32
+        text_y = card_top - CARD_PADDING - 11
+        for line in filename_lines:
+            pages[-1].extend(text_op(CARD_TEXT_X, text_y, line, 12, True))
+            text_y -= FILENAME_LEADING
+        text_y -= 8
         for line in caption_lines:
-            pages[-1].extend(text_op(CARD_TEXT_X, text_y, line, 11, False))
-            text_y -= 14
+            pages[-1].extend(text_op(CARD_TEXT_X, text_y, line, 10, False))
+            text_y -= CAPTION_LEADING
         y = card_bottom - CARD_GAP
 
     ensure(80)
