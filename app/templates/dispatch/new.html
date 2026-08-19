@@ -20,40 +20,44 @@
     {% endif %}
 
     <form method="post" action="{{ form_action }}" class="coverage-form">
-        <div class="coverage-form-grid">
-            <div class="form-field">
-                <label for="name">Nombre del despacho</label>
-                <input id="name" name="name" type="text" value="{{ form_data.name or '' }}" required>
+        <div class="coverage-form-grid dispatch-form-grid">
+            <div class="dispatch-form-column">
+                <div class="form-field">
+                    <label for="name">Nombre del despacho</label>
+                    <input id="name" name="name" type="text" value="{{ form_data.name or '' }}" required>
+                </div>
+                <div class="form-field">
+                    <label for="link_expires_in">Expiración del enlace</label>
+                    <select id="link_expires_in" name="link_expires_in">
+                        <option value="1" {% if form_data.link_expires_in == "1" %}selected{% endif %}>1 día</option>
+                        <option value="3" {% if form_data.link_expires_in == "3" %}selected{% endif %}>3 días</option>
+                        <option value="7" {% if (form_data.link_expires_in or "7") == "7" %}selected{% endif %}>7 días</option>
+                        <option value="14" {% if form_data.link_expires_in == "14" %}selected{% endif %}>14 días</option>
+                        <option value="30" {% if form_data.link_expires_in == "30" %}selected{% endif %}>30 días</option>
+                        <option value="none" {% if form_data.link_expires_in == "none" %}selected{% endif %}>Sin expiración</option>
+                    </select>
+                </div>
             </div>
 
-            <div class="form-field">
-                <label for="delivery_method">Método de entrega</label>
-                {% set current_method = form_data.delivery_method or "download_link" %}
-                <select id="delivery_method" name="delivery_method" required>
-                    <option value="download_link" {% if current_method == "download_link" %}selected{% endif %}>Generar enlace de descarga</option>
-                    <option value="download_link_email" {% if current_method == "download_link_email" %}selected{% endif %}>Enviar enlace por correo</option>
-                </select>
-                <p class="field-help" data-link-only-help {% if current_method == "download_link_email" %}hidden aria-hidden="true"{% endif %}>Crea un enlace para compartir. No se envía ningún correo.</p>
-                <p class="field-help" data-smtp-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>Crea el enlace de descarga y ATLAS lo envía a los destinatarios por correo.</p>
-                {% if smtp_channels %}
-                <input type="hidden" name="channel_id" value="{{ form_data.channel_id or smtp_channels[0].id }}" data-smtp-channel-select>
-                <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
-                {% else %}
-                <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
-                <input type="hidden" name="channel_id" value="" data-smtp-channel-select>
-                <p class="field-help" data-settings-mail-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>No hay una cuenta de correo activa en Settings. <a href="{{ url_for('settings.channels') }}">Configurar correo</a></p>
-                {% endif %}
-            </div>
-            <div class="form-field">
-                <label for="link_expires_in">Expiración del enlace</label>
-                <select id="link_expires_in" name="link_expires_in">
-                    <option value="1" {% if form_data.link_expires_in == "1" %}selected{% endif %}>1 día</option>
-                    <option value="3" {% if form_data.link_expires_in == "3" %}selected{% endif %}>3 días</option>
-                    <option value="7" {% if (form_data.link_expires_in or "7") == "7" %}selected{% endif %}>7 días</option>
-                    <option value="14" {% if form_data.link_expires_in == "14" %}selected{% endif %}>14 días</option>
-                    <option value="30" {% if form_data.link_expires_in == "30" %}selected{% endif %}>30 días</option>
-                    <option value="none" {% if form_data.link_expires_in == "none" %}selected{% endif %}>Sin expiración</option>
-                </select>
+            <div class="dispatch-form-column">
+                <div class="form-field">
+                    <label for="delivery_method">Método de entrega</label>
+                    {% set current_method = form_data.delivery_method or "download_link" %}
+                    <select id="delivery_method" name="delivery_method" required>
+                        <option value="download_link" {% if current_method == "download_link" %}selected{% endif %}>Generar enlace de descarga</option>
+                        <option value="download_link_email" {% if current_method == "download_link_email" %}selected{% endif %}>Enviar enlace por correo</option>
+                    </select>
+                    <p class="field-help" data-link-only-help {% if current_method == "download_link_email" %}hidden aria-hidden="true"{% endif %}>Crea un enlace para compartir. No se envía ningún correo.</p>
+                    <p class="field-help" data-smtp-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>Crea el enlace de descarga y ATLAS lo envía a los destinatarios por correo.</p>
+                    {% if smtp_channels %}
+                    <input type="hidden" name="channel_id" value="{{ form_data.channel_id or smtp_channels[0].id }}" data-smtp-channel-select>
+                    <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
+                    {% else %}
+                    <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
+                    <input type="hidden" name="channel_id" value="" data-smtp-channel-select>
+                    <p class="field-help" data-settings-mail-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>No hay una cuenta de correo activa en Settings. <a href="{{ url_for('settings.channels') }}">Configurar correo</a></p>
+                    {% endif %}
+                </div>
             </div>
         </div>
 

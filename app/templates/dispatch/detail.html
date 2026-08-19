@@ -99,30 +99,44 @@
         {% if delivery_link %}
         <dl class="coverage-meta-grid dispatch-compact-meta">
             <div>
-                <dt>Enlace de descarga</dt>
-                <dd>{{ "Activo" if delivery_link.is_active and not delivery_link.revoked_at else "Revocado" }}</dd>
+                <dt>Estado del enlace</dt>
+                <dd>{{ "ACTIVO" if delivery_link.is_active and not delivery_link.revoked_at else "EXPIRADO" }}</dd>
             </div>
             <div>
-                <dt>Descargas</dt>
-                <dd>{{ delivery_link.download_count }}</dd>
+                <dt>Creado</dt>
+                <dd>{{ delivery_link_dates.created_at or "Sin datos" }}</dd>
             </div>
             <div>
                 <dt>Activo hasta</dt>
                 <dd>{{ delivery_link_dates.expires_at or "Sin expiración" }}</dd>
             </div>
-            {% if delivery_link.last_download_at %}
+            <div>
+                <dt>Descargas</dt>
+                <dd>{{ delivery_link.download_count or 0 }}</dd>
+            </div>
             <div>
                 <dt>Última descarga</dt>
-                <dd>{{ delivery_link_dates.last_download_at or delivery_link.last_download_at }}</dd>
+                <dd>{{ delivery_link_dates.last_download_at }}</dd>
+            </div>
+            {% if delivery_package_summary.size_label %}
+            <div>
+                <dt>Tamaño de la entrega</dt>
+                <dd>{{ delivery_package_summary.size_label }}</dd>
+            </div>
+            <div>
+                <dt>Archivos</dt>
+                <dd>{{ delivery_package_summary.file_count }}</dd>
             </div>
             {% endif %}
             <div class="atlas-span-full">
                 <dt>URL</dt>
-                <dd><input class="dispatch-link-field" type="text" value="{{ delivery_url }}" readonly></dd>
+                <dd><input class="dispatch-link-field" type="text" value="{{ delivery_url }}" readonly data-dispatch-link-input></dd>
             </div>
         </dl>
         <div class="dispatch-row-actions">
             <a href="{{ delivery_url }}" target="_blank" rel="noopener">Abrir</a>
+            <button type="button" data-copy-link-button data-copy-link-value="{{ delivery_url }}">Copiar enlace</button>
+            <span class="dispatch-copy-feedback" data-copy-link-feedback hidden>Enlace copiado.</span>
             <form method="post" action="{{ url_for('dispatch.revoke_delivery_link', shipment_id=shipment.id) }}" data-confirm-message="¿Revocar este enlace de descarga?">
                 <button type="submit">Revocar</button>
             </form>
@@ -265,7 +279,12 @@
     {% endif %}
 </details>
 
-<a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>
+<div class="dispatch-detail-footer-actions">
+    {% if coverage_back_url %}
+    <a href="{{ coverage_back_url }}" class="secondary-button compact-action">Volver a cobertura</a>
+    {% endif %}
+    <a href="{{ url_for('dispatch.index') }}" class="back-link">Volver a despachos</a>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -274,6 +293,26 @@ document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
     form.addEventListener("submit", (event) => {
         if (!window.confirm(form.dataset.confirmMessage)) {
             event.preventDefault();
+        }
+    });
+});
+
+document.querySelectorAll("[data-copy-link-button]").forEach((button) => {
+    button.addEventListener("click", async () => {
+        const value = button.dataset.copyLinkValue || "";
+        const feedback = button.parentElement.querySelector("[data-copy-link-feedback]");
+        try {
+            await navigator.clipboard.writeText(value);
+        } catch (error) {
+            const input = document.querySelector("[data-dispatch-link-input]");
+            if (input) {
+                input.select();
+                document.execCommand("copy");
+            }
+        }
+        if (feedback) {
+            feedback.hidden = false;
+            window.setTimeout(() => { feedback.hidden = true; }, 2000);
         }
     });
 });

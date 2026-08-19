@@ -514,6 +514,22 @@ def sort_shipments(shipments: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(shipments, key=key, reverse=True)
 
 
+def build_delivery_package_summary(shipment: dict[str, Any]) -> dict[str, Any]:
+    from app.routes.downloads import format_bytes
+
+    if not has_delivery_services():
+        return {"size_label": "", "file_count": 0}
+    try:
+        manifest = get_dispatch_services()["delivery_package_service"].load_manifest(str(shipment.get("id", "")))
+    except DeliveryPackageError:
+        return {"size_label": "", "file_count": 0}
+    files = manifest.get("files", [])
+    return {
+        "size_label": format_bytes(int(manifest.get("total_bytes") or 0)),
+        "file_count": len(files) if isinstance(files, list) else 0,
+    }
+
+
 def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
     timezone_name = str(shipment.get("timezone") or DEFAULT_TIMEZONE)
     formatted_history = []
@@ -540,9 +556,11 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
     else:
         current_link = None
     delivery_link_dates = {
+        "created_at": format_datetime_es(str((current_link or {}).get("created_at", "")), timezone_name),
         "expires_at": format_datetime_es(str((current_link or {}).get("expires_at", "")), timezone_name),
-        "last_download_at": format_datetime_es(str((current_link or {}).get("last_download_at", "")), timezone_name),
+        "last_download_at": format_datetime_es(str((current_link or {}).get("last_download_at", "")), timezone_name) or "Sin descargas",
     }
+    coverage_id = str(shipment.get("coverage_id", "")).strip()
     return {
         "shipment": shipment,
         "content_summary": content_summary,
@@ -557,6 +575,8 @@ def build_detail_context(shipment: dict[str, Any]) -> dict[str, Any]:
         "delivery_method_display": delivery_method_display(str(shipment.get("delivery_method", ""))),
         "delivery_link": current_link,
         "delivery_link_dates": delivery_link_dates,
+        "delivery_package_summary": build_delivery_package_summary(shipment),
+        "coverage_back_url": url_for("web.coverage_detail", coverage_id=coverage_id) if coverage_id else "",
         "delivery_url": delivery_public_url(current_link),
         "delivery_package": shipment.get("delivery_package", {}),
     }

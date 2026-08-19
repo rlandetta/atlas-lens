@@ -528,9 +528,16 @@ h1 {
     gap: 0.5rem 0.75rem;
 }
 
+.dispatch-form-column {
+    display: grid;
+    align-content: start;
+    gap: 0.5rem;
+}
+
 .form-field {
     display: grid;
     gap: 0.22rem;
+    align-content: start;
 }
 
 .field-help {
@@ -574,20 +581,45 @@ h1 {
     background: #111a24;
     border: 1px solid rgba(43, 54, 66, 0.82);
     border-radius: var(--radius-md);
-    display: inline-flex;
+    display: flex;
     gap: 0.42rem;
+    min-height: 42px;
     padding: 0.42rem 0.52rem;
+    transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.dispatch-schedule-option:hover {
+    border-color: rgba(163, 107, 44, 0.55);
+}
+
+.dispatch-schedule-option:has(input:focus-visible) {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px rgba(163, 107, 44, 0.55);
+}
+
+.dispatch-schedule-option:has(input:checked) {
+    background: #16202b;
+    border-color: var(--accent);
 }
 
 .dispatch-schedule-option label {
     color: var(--text-main);
+    display: flex;
+    align-items: center;
+    flex: 1;
     font-size: 0.88rem;
     font-weight: 600;
+    line-height: 1.2;
 }
 
 .coverage-form .dispatch-schedule-option input {
     margin: 0;
+    flex: 0 0 auto;
     width: auto;
+}
+
+.coverage-form .dispatch-schedule-option input:focus {
+    outline: none;
 }
 
 .dispatch-mode-help {
@@ -940,6 +972,20 @@ h1 {
 
 .dispatch-row-actions .dispatch-danger-link:hover {
     color: #ffd0d0;
+}
+
+.dispatch-copy-feedback {
+    color: var(--success-text);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.dispatch-detail-footer-actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    margin-top: 0.3rem;
 }
 
 .dispatch-status-badge,
@@ -2649,6 +2695,10 @@ h1 {
 @media (min-width: 760px) {
     .coverage-form-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dispatch-form-grid {
+        align-items: start;
     }
 }
 

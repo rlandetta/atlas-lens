@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 import zipfile
+import copy
 from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
@@ -87,6 +88,17 @@ class DeliveryPackageServiceTest(unittest.TestCase):
         self.assertEqual(manifest["coverage_id"], "cov-1")
         self.assertGreater(manifest["total_bytes"], 0)
         self.assertEqual((self.media_root / "coverages" / "cov-1" / "photo-1_IMG001.jpg").read_bytes(), original)
+
+    def test_manifest_total_bytes_excludes_zip_size(self):
+        package = DeliveryPackageService(delivery_root=self.delivery_root, media_root=self.media_root).prepare_package(
+            shipment=self.shipment,
+            coverage=self.coverage,
+        )
+
+        manifest = json.loads(package.manifest_path.read_text(encoding="utf-8"))
+        files_size = sum(item["size"] for item in manifest["files"])
+        self.assertEqual(manifest["total_bytes"], files_size)
+        self.assertNotEqual(manifest["total_bytes"], files_size + manifest["zip"]["size"])
 
     def test_package_rejects_storage_path_traversal(self):
         coverage = json.loads(json.dumps(self.coverage))
@@ -509,6 +521,43 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         detail = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
         self.assertIn("Enlace generado correctamente; el correo no pudo enviarse.", detail)
         self.assertEqual(self.app.extensions["lens"]["coverage_store"].get("cov-1"), original_coverage)
+
+
+    def test_public_landing_shows_delivery_size_label_without_duplicating_zip(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        manifest = self.app.extensions["dispatch"]["delivery_package_service"].load_manifest(shipment["id"])
+        files_size = sum(item["size"] for item in manifest["files"])
+        self.assertEqual(manifest["total_bytes"], files_size)
+
+        body = self.client.get(f"/d/{link['token']}").get_data(as_text=True)
+        self.assertIn("Tamaño de la entrega", body)
+        self.assertNotIn("Tamaño total", body)
+
+    def test_dispatch_detail_shows_copy_link_and_delivery_metrics(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn("Copiar enlace", body)
+        self.assertIn("data-copy-link-button", body)
+        self.assertIn("Tamaño de la entrega", body)
+        self.assertIn("ACTIVO", body)
+        self.assertIn(f'href="/coverages/{shipment["coverage_id"]}"', body)
+        self.assertIn("Volver a cobertura", body)
+
+    def test_dispatch_detail_hides_back_to_coverage_for_historical_shipment_without_coverage_id(self):
+        shipment, _link = self.create_ready_link_shipment()
+        legacy_shipment = copy.deepcopy(shipment)
+        legacy_shipment.pop("coverage_id", None)
+        self.app.extensions["dispatch"]["store"].update(shipment["id"], legacy_shipment)
+
+        response = self.client.get(f"/dispatch/{shipment['id']}")
+        body = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Volver a cobertura", body)
+        self.assertIn("Sin descargas", body)
 
 
 class DeliveryLinkStoreTest(unittest.TestCase):

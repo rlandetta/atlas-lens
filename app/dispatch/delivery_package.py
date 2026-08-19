@@ -9,6 +9,7 @@ import os
 import shutil
 import zipfile
 
+from app import config
 from app.export.models import ExportRequest
 from app.export.service import ExportService
 from app.export.builders.image_sources import resolve_original_path
@@ -72,7 +73,8 @@ class DeliveryPackageService:
         zip_path = package_root / "package.zip"
         self.write_zip(zip_path, package_files, files_dir)
         zip_size = zip_path.stat().st_size
-        total_bytes = sum(item.size for item in package_files) + zip_size
+        # The ZIP is just a packaging of the same files, not additional content.
+        total_bytes = sum(item.size for item in package_files)
         manifest_path = package_root / "manifest.json"
         manifest = {
             "shipment_id": shipment_id,
@@ -161,13 +163,18 @@ class DeliveryPackageService:
             requested_by="DISPATCH",
             destination="dispatch",
         )
-        result = self.export_service.engine.build_export(
-            coverage_id=str(shipment.get("coverage_id", "")),
-            coverage=coverage,
-            photos=photos,
-            request=request,
-            warnings=(),
-        )
+        previous_media_root = config.LENS_MEDIA_ROOT
+        config.LENS_MEDIA_ROOT = str(self.media_root)
+        try:
+            result = self.export_service.engine.build_export(
+                coverage_id=str(shipment.get("coverage_id", "")),
+                coverage=coverage,
+                photos=photos,
+                request=request,
+                warnings=(),
+            )
+        finally:
+            config.LENS_MEDIA_ROOT = previous_media_root
         docx = next((item for item in result.files if item.format == "docx"), None)
         if docx is None:
             raise DeliveryPackageError("No se pudo generar el documento Word.")
