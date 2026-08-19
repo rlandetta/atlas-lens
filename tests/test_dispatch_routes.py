@@ -112,6 +112,20 @@ class DispatchRoutesTest(unittest.TestCase):
         return self.shipment_service.store.update(next_shipment["id"], next_shipment)
 
     def create_docx_shipment_from_route(self, **overrides):
+        if overrides.get("mode") == "schedule" and "delivery_method" not in overrides:
+            service = self.app.extensions["settings"]["settings_service"]
+            smtp_channels = [
+                channel
+                for channel in service.list_active_outbound_channels()
+                if channel.get("channel_type") == "smtp"
+            ]
+            channel = smtp_channels[0] if smtp_channels else self.create_outbound_channel()
+            overrides = {
+                **overrides,
+                "delivery_method": "download_link_email",
+                "channel": "Correo (SMTP)",
+                "channel_id": channel["id"],
+            }
         response = self.post_new(**overrides)
         self.assertEqual(response.status_code, 302)
         return self.shipment_service.list_shipments()[0]
@@ -716,7 +730,19 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Selecciona una cobertura", body)
         self.assertIn('name="recipient_name[]"', body)
         self.assertIn('name="recipient_email[]"', body)
+        self.assertIn("data-recipients-section hidden", body)
+        self.assertNotIn("Canal configurado", body)
+        self.assertIn("Generar enlace de descarga", body)
+        self.assertIn("Enviar enlace por correo", body)
+        self.assertIn("Crea un enlace para compartir. No se envía ningún correo.", body)
+        self.assertIn("Crea el enlace de descarga y ATLAS lo envía a los destinatarios por correo.", body)
+        self.assertNotIn("Enlace de descarga · recomendado", body)
+        self.assertNotIn("Enlace de descarga + correo", body)
+        self.assertNotIn("adjunt", body.lower())
         self.assertIn("Agregar destinatario", body)
+        self.assertIn("Nota de entrega", body)
+        self.assertIn("Expiración del enlace", body)
+        self.assertIn("data-schedule-mode-option hidden", body)
         self.assertNotIn("Nombre | correo@dominio.com", body)
         self.assertIn("Guardar como borrador", body)
         self.assertIn("Enviar ahora", body)
@@ -745,8 +771,8 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         body = response.get_data(as_text=True)
         self.assertIn('id="dispatch_mode_immediate" type="radio" name="mode" value="immediate" checked', body)
-        self.assertIn("Este despacho se preparará para envío inmediato.", body)
-        self.assertIn("Preparar envío ahora", body)
+        self.assertIn("ATLAS generará el enlace de descarga ahora.", body)
+        self.assertIn("Generar enlace ahora", body)
         self.assertNotIn("Cambiar zona horaria", body)
         self.assertIn('data-scheduled-delivery-fields hidden', body)
         self.assertIn('id="scheduled_date" name="scheduled_date" type="date" value="" disabled', body)
@@ -857,8 +883,25 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(shipments[0]["timezone"], "America/Guayaquil")
         self.assertEqual(shipments[0]["requested_delivery_mode"], "draft")
 
-    def test_post_dispatch_new_ignores_empty_recipient_rows(self):
+    def test_post_dispatch_new_link_method_does_not_require_or_store_recipients(self):
         response = self.post_new(
+            **{
+                "recipient_name[]": ["", ""],
+                "recipient_email[]": ["", ""],
+            }
+        )
+
+        self.assertEqual(response.status_code, 302)
+        shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["delivery_method"], "download_link")
+        self.assertEqual(shipment["recipients"], [])
+
+    def test_post_dispatch_new_email_method_keeps_valid_recipients(self):
+        channel = self.create_outbound_channel()
+        response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
             **{
                 "recipient_name[]": ["Mesa Xinhua", ""],
                 "recipient_email[]": ["desk@xinhua.com", ""],
@@ -867,6 +910,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         shipment = self.shipment_service.list_shipments()[0]
+        self.assertEqual(shipment["delivery_method"], "download_link_email")
         self.assertEqual(shipment["recipients"], [{"name": "Mesa Xinhua", "email": "desk@xinhua.com"}])
 
     def test_post_dispatch_new_allows_unchecking_caption_docx_when_photo_is_selected(self):
@@ -887,7 +931,11 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(shipment["export_reference"]["caption_docx"]["photo_scope"], "all_eligible")
 
     def test_post_dispatch_new_valid_schedule_redirects_and_persists(self):
+        channel = self.create_outbound_channel()
         response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
             mode="schedule",
             scheduled_date="2099-08-04",
             scheduled_time="09:45",
@@ -897,12 +945,17 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         shipment = self.shipment_service.list_shipments()[0]
         self.assertEqual(shipment["status"], "Programado")
+        self.assertEqual(shipment["delivery_method"], "download_link_email")
         self.assertEqual(shipment["scheduled_at"], "2099-08-04T14:45:00+00:00")
         self.assertEqual(shipment["timezone"], "America/Guayaquil")
         self.assertEqual(shipment["requested_delivery_mode"], "schedule")
 
     def test_post_dispatch_new_valid_schedule_accepts_browser_timezone_and_stores_utc(self):
+        channel = self.create_outbound_channel()
         response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
             mode="schedule",
             scheduled_date="2099-08-04",
             scheduled_time="09:45",
@@ -914,6 +967,17 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(shipment["timezone"], "Europe/Madrid")
         self.assertEqual(datetime.fromisoformat(shipment["scheduled_at"]).tzinfo, timezone.utc)
         self.assertIn("T07:45:00+00:00", shipment["scheduled_at"])
+
+    def test_post_dispatch_new_link_method_rejects_scheduled_mode(self):
+        response = self.post_new(
+            delivery_method="download_link",
+            mode="schedule",
+            scheduled_date="2099-08-04",
+            scheduled_time="09:45",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Programar envío solo está disponible para enviar enlace por correo.", response.get_data(as_text=True))
 
     def test_post_dispatch_new_immediate_creates_due_programmed_without_marking_sent(self):
         with patch("app.routes.dispatch.datetime") as datetime_mock:
@@ -933,7 +997,11 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual([item["id"] for item in due], [shipment["id"]])
 
     def test_post_dispatch_new_rejects_past_schedule(self):
+        channel = self.create_outbound_channel()
         response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
             mode="schedule",
             scheduled_date="2000-01-01",
             scheduled_time="09:45",
@@ -944,7 +1012,11 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("La fecha y hora de envío no puede estar en el pasado.", response.get_data(as_text=True))
 
     def test_post_dispatch_new_rejects_invalid_timezone(self):
+        channel = self.create_outbound_channel()
         response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
             mode="schedule",
             scheduled_date="2099-08-04",
             scheduled_time="09:45",
@@ -1000,10 +1072,19 @@ class DispatchRoutesTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Agrega al menos un destinatario.", response.get_data(as_text=True))
+        body = response.get_data(as_text=True)
+        self.assertIn("Agrega al menos un destinatario.", body)
+        self.assertIn("data-recipients-section", body)
+        self.assertNotIn("data-recipients-section hidden", body)
 
     def test_post_dispatch_new_rejects_incomplete_recipient_rows(self):
-        response = self.post_new(**{"recipient_name[]": ["Mesa Xinhua"], "recipient_email[]": [""]})
+        channel = self.create_outbound_channel()
+        response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
+            **{"recipient_name[]": ["Mesa Xinhua"], "recipient_email[]": [""]},
+        )
 
         self.assertEqual(response.status_code, 400)
         body = response.get_data(as_text=True)
@@ -1012,7 +1093,13 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn('value="Mesa Xinhua"', body)
 
     def test_post_dispatch_new_rejects_recipient_pipe_character(self):
-        response = self.post_new(**{"recipient_name[]": ["Mesa | Xinhua"], "recipient_email[]": ["desk@xinhua.com"]})
+        channel = self.create_outbound_channel()
+        response = self.post_new(
+            delivery_method="download_link_email",
+            channel="Correo (SMTP)",
+            channel_id=channel["id"],
+            **{"recipient_name[]": ["Mesa | Xinhua"], "recipient_email[]": ["desk@xinhua.com"]},
+        )
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("No use el carácter |. Escriba nombre y correo en campos separados.", response.get_data(as_text=True))
@@ -1026,8 +1113,10 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("renumberRecipients", script)
         self.assertIn('replaceAll("|", "")', script)
         self.assertIn("Intl.DateTimeFormat().resolvedOptions().timeZone", script)
-        self.assertIn("Preparar envío ahora", script)
-        self.assertIn("Este despacho se preparará para envío inmediato", script)
+        self.assertIn("Generar enlace ahora", script)
+        self.assertIn("Enviar enlace ahora", script)
+        self.assertIn("ATLAS generará el enlace de descarga ahora", script)
+        self.assertIn("data-recipients-section", script)
         self.assertIn("applyDeliveryModeState", script)
         self.assertIn("data-scheduled-delivery-fields", script)
         self.assertIn("data-content-summary", script)
@@ -1192,7 +1281,7 @@ class DispatchRoutesTest(unittest.TestCase):
             data=self.valid_form(mode="immediate", name=""),
             follow_redirects=False,
         ).get_data(as_text=True)
-        self.assertIn("Este despacho se preparará para envío inmediato.", form_body)
+        self.assertIn("ATLAS generará el enlace de descarga ahora.", form_body)
 
     def test_dispatch_detail_sent_operational_summary_uses_sent_at(self):
         shipment = self.create_docx_shipment_from_route()
@@ -1441,11 +1530,15 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertEqual(updated["history"][0]["note"], "Despacho editado.")
 
     def test_post_dispatch_edit_updates_schedule_history_note(self):
+        channel = self.create_outbound_channel()
         shipment = self.create_docx_shipment_from_route()
 
         response = self.client.post(
             f"/dispatch/{shipment['id']}/edit",
             data=self.valid_form(
+                delivery_method="download_link_email",
+                channel="Correo (SMTP)",
+                channel_id=channel["id"],
                 mode="schedule",
                 scheduled_date="2099-08-04",
                 scheduled_time="09:45",
@@ -1695,7 +1788,8 @@ class DispatchRoutesTest(unittest.TestCase):
         body = self.client.get("/dispatch/new").get_data(as_text=True)
 
         self.assertIn('value="download_link" selected', body)
-        self.assertIn("Enlace de descarga + correo", body)
+        self.assertIn("Enviar enlace por correo", body)
+        self.assertNotIn("Canal configurado", body)
         self.assertNotIn(">SFTP</option>", body)
         self.assertNotIn("API · Próximamente", body)
         self.assertNotIn("Inactivo", body)
@@ -1711,7 +1805,7 @@ class DispatchRoutesTest(unittest.TestCase):
     def test_dispatch_new_shows_settings_link_when_no_channels_exist(self):
         body = self.client.get("/dispatch/new").get_data(as_text=True)
 
-        self.assertIn("No hay canales SMTP activos", body)
+        self.assertIn("No hay una cuenta de correo activa en Settings.", body)
         self.assertIn('href="/settings/channels"', body)
         self.assertIn('name="channel"', body)
 

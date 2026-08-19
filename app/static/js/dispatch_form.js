@@ -10,6 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const contentSummary = document.querySelector("[data-content-summary]");
     const submitButton = document.querySelector("[data-dispatch-submit-button]");
     const recipientList = document.querySelector("[data-recipient-list]");
+    const recipientsSection = document.querySelector("[data-recipients-section]");
     const addRecipientButton = document.querySelector("[data-recipient-add]");
     const photoInputs = document.querySelectorAll('input[name="photo_ids"]');
     const docxInput = document.getElementById("include_caption_docx");
@@ -18,6 +19,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const deliveryChannelName = document.querySelector("[data-delivery-channel-name]");
     const linkOnlyHelp = document.querySelector("[data-link-only-help]");
     const smtpHelp = document.querySelector("[data-smtp-help]");
+    const settingsMailHelp = document.querySelector("[data-settings-mail-help]");
+    const scheduleModeOption = document.querySelector("[data-schedule-mode-option]");
+    const scheduleModeInput = document.getElementById("dispatch_mode_schedule");
 
     const getSelectedMode = () => {
         const selectedMode = document.querySelector('input[name="mode"]:checked');
@@ -64,6 +68,15 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     };
 
+    const setRecipientInputsEnabled = (enabled) => {
+        if (!recipientsSection) {
+            return;
+        }
+        recipientsSection.querySelectorAll("input, button").forEach((input) => {
+            input.disabled = !enabled;
+        });
+    };
+
     const countRecipients = () => {
         if (!recipientList) {
             return 0;
@@ -99,12 +112,28 @@ document.addEventListener("DOMContentLoaded", () => {
         const isSchedule = mode === "schedule";
         const deliveryMethod = deliveryMethodSelect ? deliveryMethodSelect.value : "download_link";
         const usesSmtp = deliveryMethod === "download_link_email";
-        setElementVisibility(scheduledFields, isSchedule);
+        const canSchedule = usesSmtp;
+        if (!canSchedule && scheduleModeInput && scheduleModeInput.checked) {
+            const draftMode = document.getElementById("dispatch_mode_draft");
+            if (draftMode) {
+                draftMode.checked = true;
+            }
+        }
+        const nextMode = getSelectedMode();
+        const nextIsSchedule = nextMode === "schedule";
+        setElementVisibility(scheduleModeOption, canSchedule);
+        if (scheduleModeInput) {
+            scheduleModeInput.disabled = !canSchedule;
+        }
+        setElementVisibility(scheduledFields, canSchedule && nextIsSchedule);
         setElementVisibility(linkOnlyHelp, !usesSmtp);
         setElementVisibility(smtpHelp, usesSmtp);
-        setScheduleInputsEnabled(isSchedule);
+        setElementVisibility(settingsMailHelp, usesSmtp);
+        setElementVisibility(recipientsSection, usesSmtp);
+        setRecipientInputsEnabled(usesSmtp);
+        setScheduleInputsEnabled(canSchedule && nextIsSchedule);
         if (smtpChannelSelect) {
-            smtpChannelSelect.disabled = !usesSmtp || smtpChannelSelect.tagName === "INPUT";
+            smtpChannelSelect.disabled = smtpChannelSelect.tagName !== "INPUT" && !usesSmtp;
         }
         if (deliveryChannelName) {
             deliveryChannelName.value = usesSmtp ? "Correo (SMTP)" : "Enlace de descarga";
@@ -114,20 +143,24 @@ document.addEventListener("DOMContentLoaded", () => {
             contentSummary.textContent = buildContentText();
         }
 
-        if (mode === "immediate") {
+        if (nextMode === "immediate") {
             if (deliveryModeSummary) {
-                deliveryModeSummary.textContent = "Este despacho se preparará para envío inmediato.";
+                deliveryModeSummary.textContent = usesSmtp
+                    ? "ATLAS enviará por correo el enlace de descarga."
+                    : "ATLAS generará el enlace de descarga ahora.";
             }
             if (formSummary) {
-                formSummary.textContent = "Este despacho se preparará para envío inmediato.";
+                formSummary.textContent = usesSmtp
+                    ? "ATLAS enviará por correo el enlace de descarga."
+                    : "ATLAS generará el enlace de descarga ahora.";
             }
             if (submitButton) {
-                submitButton.textContent = "Preparar envío ahora";
+                submitButton.textContent = usesSmtp ? "Enviar enlace ahora" : "Generar enlace ahora";
             }
             return;
         }
 
-        if (mode === "schedule") {
+        if (nextMode === "schedule") {
             const hasSchedule = scheduledDate && scheduledDate.value && scheduledTime && scheduledTime.value && timezoneSelect && timezoneSelect.value;
             if (deliveryModeSummary) {
                 deliveryModeSummary.textContent = hasSchedule

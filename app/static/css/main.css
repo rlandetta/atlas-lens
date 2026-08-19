@@ -1273,6 +1273,12 @@ h1 {
     color: var(--text-secondary);
 }
 
+.flow-session-row .flow-session-lens-usage {
+    color: #d8a3a3;
+    font-size: 0.82rem;
+    font-weight: 750;
+}
+
 .flow-session-row dl {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1296,6 +1302,59 @@ h1 {
 .flow-coverage-form {
     display: grid;
     gap: 0.9rem;
+}
+
+.flow-session-delete-dialog h3 {
+    margin: 0;
+    color: var(--text-main);
+    font-size: 0.86rem;
+}
+
+.flow-session-delete-confirm {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.48rem;
+    border: 1px solid rgba(176, 108, 108, 0.32);
+    border-radius: var(--radius-md);
+    padding: 0.58rem 0.68rem;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+}
+
+.flow-session-delete-confirm input {
+    margin-top: 0.12rem;
+}
+
+.flow-session-delete-coverages {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.flow-session-delete-coverage {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.7rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 0.58rem 0.68rem;
+    background: #131c27;
+}
+
+.flow-session-delete-coverage div {
+    min-width: 0;
+    display: grid;
+    gap: 0.16rem;
+}
+
+.flow-session-delete-coverage strong,
+.flow-session-delete-coverage span {
+    overflow-wrap: anywhere;
+}
+
+.flow-session-delete-coverage span {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
 }
 
 @media (max-width: 860px) {
@@ -1700,6 +1759,11 @@ h1 {
     border-color: var(--editorial-blue);
 }
 
+.photo-grid-item.has-import-error {
+    border-color: #ff8a8a;
+    background: rgba(120, 28, 28, 0.24);
+}
+
 .photo-thumb-select {
     min-width: 0;
     display: grid;
@@ -1886,6 +1950,19 @@ h1 {
 .photo-grid-size {
     color: var(--text-secondary);
     font-size: 0.72rem;
+}
+
+.photo-import-state {
+    color: var(--text-secondary);
+    display: block;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    white-space: normal;
+}
+
+.photo-import-state[data-status="error"] {
+    color: #ff8a8a;
+    font-weight: 700;
 }
 
 .photo-empty-message {
@@ -2826,6 +2903,10 @@ h1 {
     font-size: 0.78rem;
 }
 
+.export-coverage-return {
+    margin-right: auto;
+}
+
 .export-form,
 .export-history {
     display: grid;
@@ -2905,6 +2986,35 @@ h1 {
 
 .export-message[data-status="error"] {
     color: #ff8a8a;
+}
+
+.export-result-panel,
+.export-history-panel {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: #111a24;
+    padding: 0.9rem;
+}
+
+.export-result-panel[data-status="partial"] {
+    border-color: #d7a84e;
+}
+
+.export-result-panel[data-status="failed"] {
+    border-color: #ff8a8a;
+}
+
+.export-result-filename {
+    font-weight: 700;
+}
+
+.export-result-actions,
+.export-history-list li {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
 }
 
 .export-history-list {

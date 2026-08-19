@@ -18,8 +18,8 @@ dispatch_bp = Blueprint("dispatch", __name__, url_prefix="/dispatch")
 
 CHANNEL_OPTIONS = ("Manual", "Correo", "FTP", "SFTP", "API")
 DELIVERY_METHOD_LABELS = {
-    "download_link": "Enlace de descarga",
-    "download_link_email": "Enlace por correo",
+    "download_link": "Generar enlace de descarga",
+    "download_link_email": "Enviar enlace por correo",
     "sftp": "SFTP",
     "smtp": "Correo (SMTP)",
     "api": "API",
@@ -775,7 +775,7 @@ def validate_form_data(form_data: dict[str, Any], *, locked_coverage_id: str = "
     if delivery_method == "download_link_email":
         active_channel_ids = {channel["id"] for channel in typed_channels}
         if form_data.get("channel_id") not in active_channel_ids:
-            errors.append("Selecciona un canal SMTP activo para enviar el enlace.")
+            errors.append("No hay una cuenta de correo activa en Settings para enviar el enlace.")
         form_data["channel"] = "Correo (SMTP)"
     elif delivery_method in {"sftp", "smtp"}:
         active_channel_ids = {channel["id"] for channel in typed_channels}
@@ -788,13 +788,24 @@ def validate_form_data(form_data: dict[str, Any], *, locked_coverage_id: str = "
         errors.append("Selecciona un canal válido.")
     if str(form_data.get("link_expires_in", "7")) not in DELIVERY_EXPIRATION_OPTIONS:
         errors.append("Selecciona una expiración válida para el enlace.")
-    recipients, recipient_errors = parse_recipient_rows(
-        form_data["recipient_rows"],
-        required=delivery_method == "download_link_email",
-    )
+    recipient_errors = [""] * max(len(form_data["recipient_rows"]), 1)
+    if delivery_method == "download_link_email":
+        recipients, recipient_errors = parse_recipient_rows(
+            form_data["recipient_rows"],
+            required=True,
+        )
+    elif delivery_method == "download_link":
+        complete_rows = [
+            row
+            for row in form_data["recipient_rows"]
+            if str(row.get("name", "")).strip() and str(row.get("email", "")).strip()
+        ]
+        recipients, _ = parse_recipient_rows(complete_rows, required=False)
     form_data["recipient_errors"] = recipient_errors
     if any(recipient_errors):
         errors.append("Corrige los destinatarios marcados.")
+    if delivery_method == "download_link" and str(form_data.get("mode", "draft")) == "schedule":
+        errors.append("Programar envío solo está disponible para enviar enlace por correo.")
     status = "Borrador"
     scheduled_at = ""
     timezone_name = DEFAULT_TIMEZONE
@@ -973,7 +984,7 @@ def build_form_context(
     if selected_method not in DELIVERY_METHODS:
         selected_method = "download_link"
         form_data["delivery_method"] = selected_method
-    if selected_method == "download_link_email" and smtp_channels and not form_data.get("channel_id"):
+    if smtp_channels and not form_data.get("channel_id"):
         typed_default = default_channel if default_channel and channel_type(default_channel) == "smtp" else None
         form_data["channel_id"] = (typed_default or smtp_channels[0])["id"]
     photo_options = get_caption_photo_options(selected_coverage_id)

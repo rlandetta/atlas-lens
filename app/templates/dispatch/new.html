@@ -28,32 +28,20 @@
 
             <div class="form-field">
                 <label for="delivery_method">Método de entrega</label>
-                <select id="delivery_method" name="delivery_method" required>
-                    <option value="download_link" {% if (form_data.delivery_method or "download_link") == "download_link" %}selected{% endif %}>Enlace de descarga · recomendado</option>
-                    <option value="download_link_email" {% if form_data.delivery_method == "download_link_email" %}selected{% endif %}>Enlace de descarga + correo</option>
-                </select>
-                <small class="field-help">El correo envía únicamente el enlace generado. No se adjuntan fotografías ni documentos.</small>
-                {% if not smtp_channels %}
-                <small class="field-help">No hay canales SMTP activos. <a href="{{ url_for('settings.channels') }}">Configurar canales</a></small>
-                {% endif %}
-            </div>
-            <div class="form-field">
-                <label for="channel_id">Canal configurado</label>
                 {% set current_method = form_data.delivery_method or "download_link" %}
-                {% if smtp_channels %}
-                <select id="channel_id" name="channel_id" data-smtp-channel-select {% if current_method != "download_link_email" %}disabled{% endif %}>
-                    {% for channel in smtp_channels %}
-                    <option value="{{ channel.id }}" {% if form_data.channel_id == channel.id %}selected{% endif %}>{{ channel.name }}</option>
-                    {% endfor %}
+                <select id="delivery_method" name="delivery_method" required>
+                    <option value="download_link" {% if current_method == "download_link" %}selected{% endif %}>Generar enlace de descarga</option>
+                    <option value="download_link_email" {% if current_method == "download_link_email" %}selected{% endif %}>Enviar enlace por correo</option>
                 </select>
+                <p class="field-help" data-link-only-help {% if current_method == "download_link_email" %}hidden aria-hidden="true"{% endif %}>Crea un enlace para compartir. No se envía ningún correo.</p>
+                <p class="field-help" data-smtp-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>Crea el enlace de descarga y ATLAS lo envía a los destinatarios por correo.</p>
+                {% if smtp_channels %}
+                <input type="hidden" name="channel_id" value="{{ form_data.channel_id or smtp_channels[0].id }}" data-smtp-channel-select>
                 <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
-                <p class="field-help" data-link-only-help {% if current_method == "download_link_email" %}hidden aria-hidden="true"{% endif %}>No requiere credenciales SMTP. El enlace podrá copiarse desde el detalle.</p>
-                <p class="field-help" data-smtp-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>Se enviará un correo con el enlace generado, sin adjuntos.</p>
                 {% else %}
                 <input type="hidden" name="channel" value="{% if current_method == 'download_link_email' %}Correo (SMTP){% else %}Enlace de descarga{% endif %}" data-delivery-channel-name>
                 <input type="hidden" name="channel_id" value="" data-smtp-channel-select>
-                <p class="field-help" data-link-only-help {% if current_method == "download_link_email" %}hidden aria-hidden="true"{% endif %}>No requiere credenciales SMTP. El enlace podrá copiarse desde el detalle.</p>
-                <p class="field-help" data-smtp-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>No hay canales SMTP activos. <a href="{{ url_for('settings.channels') }}">Configurar canales</a></p>
+                <p class="field-help" data-settings-mail-help {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>No hay una cuenta de correo activa en Settings. <a href="{{ url_for('settings.channels') }}">Configurar correo</a></p>
                 {% endif %}
             </div>
             <div class="form-field">
@@ -81,14 +69,14 @@
                     <input id="dispatch_mode_immediate" type="radio" name="mode" value="immediate" {% if form_data.mode == "immediate" %}checked{% endif %}>
                     <label for="dispatch_mode_immediate">Enviar ahora</label>
                 </div>
-                <div class="dispatch-schedule-option dispatch-mode-card">
-                    <input id="dispatch_mode_schedule" type="radio" name="mode" value="schedule" {% if form_data.mode == "schedule" %}checked{% endif %}>
+                <div class="dispatch-schedule-option dispatch-mode-card" data-schedule-mode-option {% if current_method == "download_link" %}hidden aria-hidden="true"{% endif %}>
+                    <input id="dispatch_mode_schedule" type="radio" name="mode" value="schedule" {% if form_data.mode == "schedule" %}checked{% endif %} {% if current_method == "download_link" %}disabled{% endif %}>
                     <label for="dispatch_mode_schedule">Programar envío</label>
                 </div>
             </fieldset>
             <p class="dispatch-mode-help delivery-mode-summary" data-delivery-mode-summary>
                 {% if form_data.mode == "immediate" %}
-                Este despacho se preparará para envío inmediato.
+                {% if current_method == "download_link_email" %}ATLAS enviará por correo el enlace de descarga.{% else %}ATLAS generará el enlace de descarga ahora.{% endif %}
                 {% elif form_data.mode == "schedule" %}
                 Seleccione fecha, hora y zona horaria para programar el despacho.
                 {% else %}
@@ -187,7 +175,7 @@
             {% endif %}
         </section>
 
-        <section class="ui-card atlas-panel--normal" aria-labelledby="dispatch-new-recipients-title">
+        <section class="ui-card atlas-panel--normal" aria-labelledby="dispatch-new-recipients-title" data-recipients-section {% if current_method != "download_link_email" %}hidden aria-hidden="true"{% endif %}>
             <h2 id="dispatch-new-recipients-title">Destinatarios</h2>
             <div class="dispatch-recipient-list" data-recipient-list>
                 {% for recipient in recipient_rows %}
@@ -224,7 +212,7 @@
             {% elif form_data.mode == "schedule" %}
             Selecciona fecha y hora para programar este despacho.
             {% elif form_data.mode == "immediate" %}
-            Este despacho se preparará para envío inmediato.
+            {% if current_method == "download_link_email" %}ATLAS enviará por correo el enlace de descarga.{% else %}ATLAS generará el enlace de descarga ahora.{% endif %}
             {% else %}
             Este despacho se guardará como borrador.
             {% endif %}
@@ -238,7 +226,7 @@
             {% elif form_data.mode == "schedule" %}
             Programar envío
             {% elif form_data.mode == "immediate" %}
-            Preparar envío ahora
+            {% if current_method == "download_link_email" %}Enviar enlace ahora{% else %}Generar enlace ahora{% endif %}
             {% else %}
             Guardar borrador
             {% endif %}
