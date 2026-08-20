@@ -3464,6 +3464,22 @@ h1 {
     width: auto;
 }
 
+.settings-channel-form-section {
+    display: grid;
+    gap: 0.6rem;
+    border-top: 1px solid var(--border);
+    padding-top: 0.8rem;
+}
+
+.settings-channel-form-section h2 {
+    font-size: 0.92rem;
+    margin: 0;
+}
+
+.settings-channel-form-section[hidden] {
+    display: none;
+}
+
 @media (max-width: 860px) {
     .settings-channel-card {
         align-items: stretch;

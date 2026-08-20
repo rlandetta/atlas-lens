@@ -36,6 +36,8 @@ class SettingsService:
         return None
 
     def create_outbound_channel(self, draft: OutboundChannelDraft) -> dict[str, Any]:
+        if draft.channel_type == "api":
+            raise SettingsValidationError("API todavía no está disponible como canal de entrega.")
         channels = self.store.list_channels()
         channel_id = validate_new_channel_id(draft.id)
         if any(channel.get("id") == channel_id for channel in channels):

@@ -16,31 +16,39 @@
     {% endif %}
 
     <form method="post" action="{{ form_action }}" class="coverage-form">
-        <div class="coverage-form-grid atlas-grid atlas-grid--2">
-            <div class="form-field">
-                <label for="id">Identificador</label>
-                <input id="id" name="id" type="text" value="{{ form_data.id or '' }}" {% if form_mode == "edit" %}readonly{% endif %} required>
-                <small class="field-help">Use letras, números, guiones o guiones bajos. Ejemplo: xinhua</small>
-            </div>
+        <section class="settings-channel-form-section" aria-labelledby="channel-general-title">
+            <h2 id="channel-general-title">Datos del canal</h2>
+            <div class="coverage-form-grid atlas-grid atlas-grid--2">
             <div class="form-field">
                 <label for="name">Nombre del canal</label>
                 <input id="name" name="name" type="text" value="{{ form_data.name or '' }}" required>
+            </div>
+            <div class="form-field">
+                <label for="id">Identificador interno</label>
+                <input id="id" name="id" type="text" value="{{ form_data.id or '' }}" {% if form_mode == "edit" %}readonly{% endif %} required>
+                <small class="field-help">Minúsculas ASCII, números, guiones o guiones bajos. Ejemplo: lavoceria_atlas</small>
             </div>
             <div class="form-field">
                 <label for="display_name">Nombre visible</label>
                 <input id="display_name" name="display_name" type="text" value="{{ form_data.display_name or '' }}">
             </div>
             <div class="form-field">
-                <label for="channel_type">Tipo de canal</label>
+                <label for="channel_type">Tipo de entrega</label>
                 <select id="channel_type" name="channel_type" required>
                     {% for option in channel_types %}
-                    <option value="{{ option }}" {% if (form_data.channel_type or 'smtp') == option %}selected{% endif %}>
-                        {% if option == 'download_link' %}Enlace de descarga{% elif option == 'sftp' %}SFTP{% elif option == 'smtp' %}Correo (SMTP){% else %}API · Próximamente{% endif %}
+                    <option value="{{ option }}" {% if option == 'api' %}disabled{% endif %} {% if (form_data.channel_type or 'smtp') == option %}selected{% endif %}>
+                        {% if option == 'download_link' %}Enlace de descarga{% elif option == 'sftp' %}SFTP{% elif option == 'smtp' %}Correo electrónico (SMTP){% else %}API · Próximamente{% endif %}
                     </option>
                     {% endfor %}
                 </select>
-                <small class="field-help">Los canales antiguos sin tipo se interpretan como SMTP.</small>
+                <small class="field-help">Los canales antiguos sin tipo se interpretan como SMTP. API aún no está disponible.</small>
             </div>
+            </div>
+        </section>
+
+        <section class="settings-channel-form-section" data-channel-section="smtp" aria-labelledby="channel-smtp-title">
+            <h2 id="channel-smtp-title">Configuración SMTP</h2>
+            <div class="coverage-form-grid atlas-grid atlas-grid--2">
             <div class="form-field" data-smtp-field>
                 <label for="sender_email">Correo remitente</label>
                 <input id="sender_email" name="sender_email" type="email" value="{{ form_data.sender_email or '' }}">
@@ -69,11 +77,17 @@
                 <label for="smtp_username">Usuario SMTP</label>
                 <input id="smtp_username" name="smtp_username" type="text" value="{{ form_data.smtp_username or '' }}">
             </div>
-            <div class="form-field">
+            <div class="form-field" data-credential-field>
                 <label for="credential_ref">Referencia de credencial</label>
                 <input id="credential_ref" name="credential_ref" type="text" value="{{ form_data.credential_ref or '' }}">
-                <small class="field-help">Nombre de la variable de entorno que contiene la credencial SMTP. La contraseña no se guarda en ATLAS.</small>
+                <small class="field-help">Nombre de la variable de entorno que contiene la credencial SMTP. La contraseña se administra de forma segura fuera de ATLAS.</small>
             </div>
+            </div>
+        </section>
+
+        <section class="settings-channel-form-section" data-channel-section="sftp" aria-labelledby="channel-sftp-title">
+            <h2 id="channel-sftp-title">Configuración SFTP</h2>
+            <div class="coverage-form-grid atlas-grid atlas-grid--2">
             <div class="form-field" data-sftp-field>
                 <label for="host">Servidor SFTP</label>
                 <input id="host" name="host" type="text" value="{{ form_data.host or '' }}">
@@ -95,12 +109,27 @@
                 <input id="host_key_fingerprint" name="host_key_fingerprint" type="text" value="{{ form_data.host_key_fingerprint or '' }}">
                 <small class="field-help">Opcional en esta fase. No se guardan private keys ni passwords.</small>
             </div>
-        </div>
-        <div class="settings-toggle-row">
-            <label><input type="checkbox" name="is_active" value="1" {% if form_data.is_active %}checked{% endif %}> Activo</label>
-            <label><input type="checkbox" name="is_default" value="1" {% if form_data.is_default %}checked{% endif %}> Predeterminado</label>
-        </div>
-        <button type="submit" class="primary-button compact-action">Guardar canal</button>
+            <div class="form-field" data-credential-field>
+                <label for="credential_ref_sftp">Referencia de credencial</label>
+                <input id="credential_ref_sftp" name="credential_ref" type="text" value="{{ form_data.credential_ref or '' }}">
+                <small class="field-help">Nombre de la variable de entorno que contiene la credencial SFTP. La contraseña se administra de forma segura fuera de ATLAS.</small>
+            </div>
+            </div>
+        </section>
+
+        <section class="settings-channel-form-section" data-channel-section="download_link" aria-labelledby="channel-download-title">
+            <h2 id="channel-download-title">Configuración del enlace</h2>
+            <p class="field-help">Este canal habilita la generación de enlaces de descarga para DISPATCH. La expiración se define en cada despacho.</p>
+        </section>
+
+        <section class="settings-channel-form-section settings-channel-status" aria-labelledby="channel-status-title">
+            <h2 id="channel-status-title">Estado</h2>
+            <div class="settings-toggle-row">
+                <label><input type="checkbox" name="is_active" value="1" {% if form_data.is_active %}checked{% endif %}> Canal activo</label>
+                <label><input type="checkbox" name="is_default" value="1" {% if form_data.is_default %}checked{% endif %}> Usar como predeterminado</label>
+            </div>
+        </section>
+        <button type="submit" class="primary-button compact-action">{% if form_mode == "edit" %}Guardar cambios{% else %}Crear canal{% endif %}</button>
     </form>
 
     <a href="{{ url_for('settings.channels') }}" class="back-link">Volver a canales</a>
@@ -110,22 +139,20 @@
 {% block scripts %}
 <script>
 const channelType = document.getElementById("channel_type");
-const smtpFields = document.querySelectorAll("[data-smtp-field]");
-const sftpFields = document.querySelectorAll("[data-sftp-field]");
+const sections = document.querySelectorAll("[data-channel-section]");
 
-function setChannelFieldVisibility(fields, visible) {
-    fields.forEach((field) => {
-        field.hidden = !visible;
-        field.querySelectorAll("input, select").forEach((input) => {
+function setChannelSectionVisibility(section, visible) {
+    section.hidden = !visible;
+    section.querySelectorAll("input, select").forEach((input) => {
             input.disabled = !visible;
-        });
     });
 }
 
 function syncChannelFields() {
     const type = channelType.value;
-    setChannelFieldVisibility(smtpFields, type === "smtp");
-    setChannelFieldVisibility(sftpFields, type === "sftp");
+    sections.forEach((section) => {
+        setChannelSectionVisibility(section, section.dataset.channelSection === type);
+    });
 }
 
 channelType.addEventListener("change", syncChannelFields);

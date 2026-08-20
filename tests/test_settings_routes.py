@@ -112,11 +112,11 @@ class SettingsRoutesTest(unittest.TestCase):
     def test_smtp_form_hides_sftp_fields_and_keeps_credential_help_secret_safe(self):
         body = self.client.get("/settings/channels/new").get_data(as_text=True)
 
-        self.assertIn('data-smtp-field', body)
-        self.assertIn('data-sftp-field', body)
-        self.assertIn('type === "smtp"', body)
+        self.assertIn('data-channel-section="smtp"', body)
+        self.assertIn('data-channel-section="sftp"', body)
+        self.assertIn('section.dataset.channelSection === type', body)
         self.assertIn('input.disabled = !visible', body)
-        self.assertIn("La contraseña no se guarda en ATLAS.", body)
+        self.assertIn("La contraseña se administra de forma segura fuera de ATLAS.", body)
 
     def test_sftp_form_renders_only_sftp_fields_after_type_selection(self):
         body = self.client.post(
@@ -138,9 +138,45 @@ class SettingsRoutesTest(unittest.TestCase):
             ),
         ).get_data(as_text=True)
 
-        self.assertIn('data-sftp-field', body)
-        self.assertIn('type === "sftp"', body)
+        self.assertIn('data-channel-section="sftp"', body)
+        self.assertIn('data-channel-section="smtp"', body)
+        self.assertIn('section.dataset.channelSection === type', body)
         self.assertNotIn("Servidor SMTP es obligatorio", body)
+
+    def test_download_link_does_not_require_smtp_or_sftp_configuration(self):
+        response = self.client.post(
+            "/settings/channels/new",
+            data=self.valid_form(
+                id="download_link",
+                name="Enlace editorial",
+                channel_type="download_link",
+                sender_email="",
+                reply_to="",
+                smtp_host="",
+                smtp_port="",
+                smtp_security="",
+                smtp_username="",
+                credential_ref="",
+            ),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(response.status_code, 302)
+        channel = self.service.get_outbound_channel("download_link")
+        self.assertEqual(channel["channel_type"], "download_link")
+        self.assertEqual(channel["credential_ref"], "")
+
+    def test_api_is_disabled_in_ui_and_rejected_by_backend(self):
+        body = self.client.get("/settings/channels/new").get_data(as_text=True)
+        self.assertIn('<option value="api" disabled', body)
+
+        response = self.client.post(
+            "/settings/channels/new",
+            data=self.valid_form(channel_type="api"),
+            follow_redirects=False,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("API todavía no está disponible", response.get_data(as_text=True))
 
     def test_validations_reject_invalid_email_port_security_and_missing_credential_ref(self):
         cases = [

@@ -101,7 +101,7 @@ def new_channel() -> str:
             errors=[],
             form_action=url_for("settings.new_channel"),
             form_mode="create",
-            form_data={"channel_type": "smtp", "smtp_port": 465, "smtp_security": "ssl", "port": 22, "is_active": True},
+            form_data={"channel_type": "smtp", "smtp_port": 465, "smtp_security": "ssl", "is_active": True},
             smtp_security_options=SMTP_SECURITY_OPTIONS,
             channel_types=CHANNEL_TYPES,
         )
