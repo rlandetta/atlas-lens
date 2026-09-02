@@ -1,0 +1,11 @@
+services:
+  lens-dev:
+    build: .
+    container_name: ayampi-lens-dev
+    restart: "no"
+    env_file:
+      - .env.dev
+    ports:
+      - "127.0.0.1:5101:5101"
+    volumes:
+      - /home/atlas/ayampi-dev/runtime/lens:/runtime/lens
