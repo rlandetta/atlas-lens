@@ -1,13 +1,19 @@
 const exportSection = document.querySelector("#tab-exportaciones");
 const exportForm = document.querySelector("#export-form");
 const exportMessage = document.querySelector("#export-message");
+const exportResultPanel = document.querySelector("#export-result-panel");
 const exportConfirmWarnings = document.querySelector("#export-confirm-warnings");
 const exportDownloadButton = document.querySelector("#export-download-button");
 const exportDispatchButton = document.querySelector("#export-dispatch-button");
 const exportHistoryList = document.querySelector("#export-history-list");
 const exportHistoryEmpty = document.querySelector("#export-history-empty");
 const exportOutputName = document.querySelector("#export-output-name");
-const exportContentCard = document.querySelector("#export-content-card");
+const partialDispatchDialog = document.querySelector("#export-partial-dispatch-dialog");
+const partialDispatchMessage = document.querySelector("#export-partial-dispatch-message");
+const cancelPartialDispatchButton = document.querySelector("#cancel-partial-dispatch-button");
+const confirmPartialDispatchButton = document.querySelector("#confirm-partial-dispatch-button");
+
+let partialDispatchConfirmed = false;
 
 function normalizeExportSegment(value) {
     return (value || "Exportacion")
@@ -46,25 +52,24 @@ function getSelectedFormats(formData) {
     return formData.getAll("formats").map((format) => String(format).toLowerCase());
 }
 
-function syncZipContentVisibility() {
-    if (!exportForm || !exportContentCard) {
-        return;
+function getWorkspacePhotos() {
+    if (window.ATLAS_LENS_PHOTO_API && typeof window.ATLAS_LENS_PHOTO_API.getPhotos === "function") {
+        return window.ATLAS_LENS_PHOTO_API.getPhotos();
     }
-    const formData = new FormData(exportForm);
-    exportContentCard.hidden = !getSelectedFormats(formData).includes("zip");
+    return [];
 }
 
-function appendHistory(result, destination) {
-    if (!exportHistoryList || !result) {
-        return;
-    }
-    if (exportHistoryEmpty) {
-        exportHistoryEmpty.hidden = true;
-    }
-    const item = document.createElement("li");
-    const formats = (result.formats_generated || []).join("+").toUpperCase();
-    item.textContent = `${new Date().toISOString()} · Navegador · ${destination} · ${formats} · ${result.photo_count || 0} foto(s) · ${result.files?.length || 0} archivo(s)`;
-    exportHistoryList.prepend(item);
+function getFailedWorkspacePhotos() {
+    return getWorkspacePhotos().filter((photo) => photo.importStatus === "Error");
+}
+
+function omittedPhotosFromWorkspace() {
+    return getFailedWorkspacePhotos().map((photo) => ({
+        id: photo.id || "",
+        filename: photo.name || photo.filename || "Fotografía",
+        stage: "import",
+        reason: photo.processingError || "No fue importada a LENS."
+    }));
 }
 
 function base64ToBlob(base64Value, mimetype) {
@@ -87,12 +92,93 @@ function downloadFile(exportFile) {
     URL.revokeObjectURL(link.href);
 }
 
+function formatList(values) {
+    return values.filter(Boolean).map((value) => String(value).toUpperCase()).join(" · ");
+}
+
+function artifactLabel(result) {
+    const files = result?.files || [];
+    if (files.length === 1 && files[0].format === "zip") {
+        return "Descargar paquete";
+    }
+    return "Descargar";
+}
+
+function renderExportResult(result) {
+    if (!exportResultPanel || !result) {
+        return;
+    }
+    const status = result.status || "COMPLETE";
+    const title = {
+        COMPLETE: "Exportación completada",
+        PARTIAL: "Exportación parcial",
+        FAILED: "Exportación fallida"
+    }[status] || "Exportación";
+    const omitted = result.omitted_photos || [];
+    const files = result.files || [];
+    const primaryFilename = result.filename || files.map((file) => file.filename).join(", ");
+    exportResultPanel.hidden = false;
+    exportResultPanel.dataset.status = status.toLowerCase();
+    exportResultPanel.innerHTML = "";
+
+    const heading = document.createElement("h3");
+    heading.textContent = title;
+    const filename = document.createElement("p");
+    filename.className = "export-result-filename";
+    filename.textContent = primaryFilename || "Sin archivo";
+    const counts = document.createElement("p");
+    counts.textContent = `${result.exported_photo_count || 0} de ${result.requested_photo_count || 0} fotografías exportadas`;
+    const captions = document.createElement("p");
+    captions.textContent = `${result.captions_included || 0} captions incluidos`;
+    const formats = document.createElement("p");
+    formats.textContent = `Formatos generados: ${formatList((result.formats_generated || []).filter((format) => format !== "zip")) || "Ninguno"}`;
+    exportResultPanel.append(heading, filename, counts, captions, formats);
+
+    if ((result.formats_generated || []).includes("zip")) {
+        const packageLine = document.createElement("p");
+        packageLine.textContent = "Paquete: ZIP";
+        exportResultPanel.appendChild(packageLine);
+    }
+
+    if (omitted.length) {
+        const summary = document.createElement("p");
+        summary.textContent = `${omitted.length} fotografía${omitted.length === 1 ? "" : "s"} no pudo${omitted.length === 1 ? "" : "ieron"} procesarse`;
+        const list = document.createElement("ul");
+        omitted.forEach((item) => {
+            const row = document.createElement("li");
+            row.textContent = `${item.filename || "Fotografía"} · No incluida · ${item.reason || "Sin motivo registrado."}`;
+            list.appendChild(row);
+        });
+        exportResultPanel.append(summary, list);
+    } else {
+        const ok = document.createElement("p");
+        ok.textContent = "Sin errores";
+        exportResultPanel.appendChild(ok);
+    }
+
+}
+
+function appendHistory(result, destination) {
+    if (!exportHistoryList || !result) {
+        return;
+    }
+    if (exportHistoryEmpty) {
+        exportHistoryEmpty.hidden = true;
+    }
+    const item = document.createElement("li");
+    item.dataset.exportHistoryItem = "true";
+    item.dataset.exportId = result.export_id || result.created_at || "";
+    const formats = formatList(result.formats_generated || []);
+    item.innerHTML = `<div><strong>${new Date().toISOString()}</strong> <span>${exportSection?.dataset.exportCoverage || ""}</span> <span>${formats}</span> <span>${result.exported_photo_count || 0}/${result.requested_photo_count || 0} fotografías</span> <span>${result.status || "COMPLETE"}</span></div>`;
+    exportHistoryList.prepend(item);
+}
+
 function downloadExport(result) {
     const files = result?.files || [];
     files.forEach(downloadFile);
     appendHistory(result, "download");
-    const filenames = files.map((file) => file.filename).join(", ");
-    setExportMessage(`Exportación generada: ${filenames}`, "success");
+    renderExportResult(result);
+    setExportMessage(`${artifactLabel(result)} preparado: ${files.map((file) => file.filename).join(", ")}`, result.status === "PARTIAL" ? "warning" : "success");
 }
 
 function setExportButtonsDisabled(disabled) {
@@ -106,17 +192,60 @@ function setExportButtonsDisabled(disabled) {
 
 function buildExportPayload(formData, submitter) {
     const formats = getSelectedFormats(formData);
-    const usesZip = formats.includes("zip");
+    const photos = getWorkspacePhotos();
     return {
         formats,
-        include_photos: usesZip ? formData.has("include_photos") : false,
-        include_captions: usesZip ? formData.has("include_captions") : false,
-        include_metadata: usesZip ? formData.has("include_metadata") : false,
-        include_manifest: usesZip ? formData.has("include_manifest") : false,
+        include_photos: formData.has("include_photos"),
+        include_captions: formats.length > 0,
+        include_metadata: false,
+        include_manifest: false,
         output_name: formData.get("output_name") || "",
         destination: submitter?.value || "download",
-        confirm_warnings: exportConfirmWarnings?.value === "true"
+        confirm_warnings: exportConfirmWarnings?.value === "true",
+        partial_confirmed: partialDispatchConfirmed,
+        requested_photo_count: photos.length,
+        requested_photos: photos.map((photo) => ({
+            id: photo.id || "",
+            filename: photo.name || photo.filename || "Fotografía"
+        })),
+        omitted_photos: omittedPhotosFromWorkspace()
     };
+}
+
+function confirmPartialDispatch(payload) {
+    if (!partialDispatchDialog || payload.destination !== "dispatch" || !payload.omitted_photos.length || partialDispatchConfirmed) {
+        return Promise.resolve(true);
+    }
+    const exported = Math.max((payload.requested_photo_count || 0) - payload.omitted_photos.length, 0);
+    if (partialDispatchMessage) {
+        partialDispatchMessage.textContent = `Esta exportación está incompleta. Se exportaron ${exported} de ${payload.requested_photo_count || 0} fotografías. ¿Desea enviarla a DISPATCH de todas formas?`;
+    }
+    return new Promise((resolve) => {
+        const cleanup = () => {
+            cancelPartialDispatchButton?.removeEventListener("click", cancel);
+            confirmPartialDispatchButton?.removeEventListener("click", confirm);
+            partialDispatchDialog.removeEventListener("close", close);
+        };
+        const cancel = () => {
+            cleanup();
+            partialDispatchDialog.close("cancel");
+            resolve(false);
+        };
+        const confirm = () => {
+            cleanup();
+            partialDispatchConfirmed = true;
+            partialDispatchDialog.close("confirm");
+            resolve(true);
+        };
+        const close = () => {
+            cleanup();
+            resolve(partialDispatchDialog.returnValue === "confirm");
+        };
+        cancelPartialDispatchButton?.addEventListener("click", cancel, {once: true});
+        confirmPartialDispatchButton?.addEventListener("click", confirm, {once: true});
+        partialDispatchDialog.addEventListener("close", close, {once: true});
+        partialDispatchDialog.showModal();
+    });
 }
 
 async function submitExport(event) {
@@ -126,8 +255,12 @@ async function submitExport(event) {
     }
 
     const payload = buildExportPayload(new FormData(exportForm), event.submitter);
-    if (!payload.formats.length) {
-        setExportMessage("Selecciona al menos un formato.", "error");
+    if (!payload.formats.length && !payload.include_photos) {
+        setExportMessage("Selecciona al menos un formato o incluye fotografías originales.", "error");
+        return;
+    }
+    if (!(await confirmPartialDispatch(payload))) {
+        setExportMessage("Envío parcial cancelado.", "info");
         return;
     }
 
@@ -148,18 +281,26 @@ async function submitExport(event) {
         const data = await response.json();
         if (response.status === 409 && data.requires_confirmation) {
             exportConfirmWarnings.value = "true";
+            if (data.status === "PARTIAL") {
+                partialDispatchConfirmed = true;
+            }
             setExportMessage(`${data.warnings.join(" ")} Vuelve a ejecutar la acción para continuar.`, "warning");
             return;
         }
         if (!response.ok || !data.ok) {
+            if (data.result) {
+                renderExportResult(data.result);
+            }
             setExportMessage(data.error || "No fue posible generar la exportación.", "error");
             return;
         }
 
         exportConfirmWarnings.value = "false";
+        partialDispatchConfirmed = false;
         if (data.destination === "dispatch") {
             appendHistory(data.result, "dispatch");
-            setExportMessage(`Archivos preparados para DISPATCH: ${data.result.files.length} archivo(s).`, "success");
+            renderExportResult(data.result);
+            setExportMessage(`Archivos preparados para DISPATCH: ${data.result.files.length} archivo(s).`, data.result.status === "PARTIAL" ? "warning" : "success");
             return;
         }
         downloadExport(data.result);
@@ -170,14 +311,41 @@ async function submitExport(event) {
     }
 }
 
+async function deleteHistoryItem(button) {
+    const item = button.closest("[data-export-history-item]");
+    const exportId = item?.dataset.exportId;
+    if (!exportSection || !item || !exportId) {
+        return;
+    }
+    if (!window.confirm("¿Eliminar este registro del historial? No se borrarán coberturas, fotografías ni archivos exportados.")) {
+        return;
+    }
+    const url = exportSection.dataset.exportHistoryDeleteUrlTemplate.replace("__EXPORT_ID__", encodeURIComponent(exportId));
+    const response = await fetch(url, {method: "POST"});
+    if (!response.ok) {
+        setExportMessage("No se pudo eliminar el registro del historial.", "error");
+        return;
+    }
+    item.remove();
+    if (exportHistoryEmpty && !exportHistoryList.querySelector("[data-export-history-item]")) {
+        exportHistoryEmpty.hidden = false;
+    }
+    setExportMessage("Registro de historial eliminado. Los archivos exportados se conservaron.", "success");
+}
+
 exportForm?.addEventListener("change", () => {
     if (exportConfirmWarnings) {
         exportConfirmWarnings.value = "false";
     }
-    syncZipContentVisibility();
+    partialDispatchConfirmed = false;
 });
 exportForm?.addEventListener("submit", submitExport);
+exportHistoryList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-export-history-delete]");
+    if (button) {
+        deleteHistoryItem(button);
+    }
+});
 document.getElementById("edit_coverage_name")?.addEventListener("input", syncExportNamePreview);
 document.getElementById("edit_country")?.addEventListener("change", syncExportNamePreview);
 syncExportNamePreview();
-syncZipContentVisibility();

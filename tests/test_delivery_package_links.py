@@ -189,7 +189,7 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
             patch("app.config.LENS_COVERAGE_STORE_PATH", str(self.lens_path)),
             patch("app.config.LENS_MEDIA_ROOT", str(self.media_root)),
             patch("app.config.DELIVERY_ROOT", str(self.delivery_root)),
-            patch("app.config.PUBLIC_BASE_URL", "https://atlas.lavoceria.com"),
+            patch("app.config.PUBLIC_BASE_URL", "https://ayampi.com"),
         ]
         for item in self.patches:
             item.start()
@@ -311,7 +311,8 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
     def test_download_link_token_public_base_url_downloads_and_counter(self):
         shipment, link = self.create_ready_link_shipment()
         self.assertNotIn(shipment["id"], link["token"])
-        self.assertTrue(link["url"].startswith("https://atlas.lavoceria.com/d/"))
+        self.assertTrue(link["url"].startswith("https://ayampi.com/d/"))
+        self.assertTrue(link["public_url"].startswith("https://ayampi.com/d/"))
 
         landing = self.client.get(f"/d/{link['token']}")
         self.assertEqual(landing.status_code, 200)
@@ -322,6 +323,14 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         refreshed = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
         self.assertEqual(refreshed["download_count"], 1)
         self.assertTrue(refreshed["last_download_at"])
+
+    def test_dispatch_detail_shows_official_ayampi_public_url(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
+
+        self.assertIn(f"https://ayampi.com/d/{link['token']}", body)
+        self.assertNotIn(f"https://app.ayampi.com/d/{link['token']}", body)
 
     def test_package_download_creates_activity_event(self):
         shipment, link = self.create_ready_link_shipment()
@@ -334,6 +343,45 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertEqual(event["download_type"], "PACKAGE")
         self.assertTrue(event["downloaded_at"])
         self.assertEqual(event["country"], "")
+        self.assertIn("ip_hash", event)
+
+    def test_package_download_uses_trusted_proxy_ip_geolocation_and_user_agent(self):
+        shipment, link = self.create_ready_link_shipment()
+
+        class FakeGeolocationService:
+            def resolve(self, ip):
+                self.ip = ip
+                return {
+                    "country_code": "EC",
+                    "country": "Ecuador",
+                    "region": "Pichincha",
+                    "city": "Quito",
+                    "latitude": -0.18,
+                    "longitude": -78.47,
+                }
+
+        fake_geo = FakeGeolocationService()
+        self.app.extensions["dispatch"]["delivery_link_service"].geolocation_service = fake_geo
+
+        self.client.get(
+            f"/d/{link['token']}/download",
+            headers={
+                "X-Forwarded-For": "8.8.8.8, 127.0.0.1",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+            },
+        )
+
+        refreshed = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
+        event = refreshed["download_events"][0]
+        self.assertEqual(fake_geo.ip, "8.8.8.8")
+        self.assertEqual(event["country_code"], "EC")
+        self.assertEqual(event["country"], "Ecuador")
+        self.assertEqual(event["region"], "Pichincha")
+        self.assertEqual(event["city"], "Quito")
+        self.assertEqual(event["browser"], "Chrome")
+        self.assertEqual(event["os"], "macOS")
+        self.assertEqual(event["device_category"], "Desktop")
+        self.assertTrue(event["ip_hash"])
 
     def test_photo_download_creates_activity_event(self):
         shipment, link = self.create_ready_link_shipment()
@@ -365,7 +413,7 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
 
         detail_body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
         self.assertIn("Mostrando las 10 descargas más recientes", detail_body)
-        self.assertEqual(detail_body.count("Descargó: paquete completo"), 10)
+        self.assertEqual(detail_body.count("paquete completo"), 10)
 
         refreshed = self.app.extensions["dispatch"]["delivery_link_service"].get_active_for_shipment(shipment["id"])
         self.assertEqual(len(refreshed["download_events"]), 12)
@@ -412,7 +460,8 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertIn("data-delivery-backgrounds='[]'", body)
         self.assertIn("delivery_backgrounds.js", body)
         self.assertIn("Descargar todo", body)
-        self.assertIn("ATLAS DISPATCH", body)
+        self.assertIn("AYAMPI · Digital Asset Delivery", body)
+        self.assertNotIn("ATLAS DISPATCH", body)
         self.assertNotIn("<img", body)
         self.assertEqual(zip_response.status_code, 200)
         self.assertEqual(file_response.status_code, 200)
@@ -421,6 +470,59 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertFalse(any(str(item.get("path", "")).startswith("previews/") for item in manifest["files"]))
         with zipfile.ZipFile(self.delivery_root / shipment["id"] / "package.zip") as archive:
             self.assertFalse(any(name.startswith("previews/") for name in archive.namelist()))
+
+    def test_public_landing_is_isolated_from_internal_navigation_and_branding(self):
+        self.app.extensions["settings"]["settings_service"].save_dispatch_branding(
+            {
+                "enabled": True,
+                "organization_name": "Editorial externa",
+                "footer_text": "Editorial externa",
+                "logo_text": "Editorial externa",
+            }
+        )
+        shipment, link = self.create_ready_link_shipment()
+
+        landing = self.client.get(f"/d/{link['token']}")
+        body = landing.get_data(as_text=True)
+
+        self.assertEqual(landing.status_code, 200)
+        self.assertIn("AYAMPI · Digital Asset Delivery", body)
+        self.assertNotIn("Powered by ATLAS", body)
+        self.assertNotIn("Editorial externa", body)
+        self.assertNotIn("Volver a ATLAS", body)
+        self.assertNotIn("Volver al dashboard", body)
+        self.assertNotIn("Volver a cobertura", body)
+        self.assertNotIn('href="/"', body)
+        self.assertNotIn('href="/lens"', body)
+        self.assertNotIn('href="/coverages/', body)
+        self.assertNotIn('href="/dispatch', body)
+        self.assertNotIn('href="/settings', body)
+        self.assertNotIn(shipment["id"], body)
+        self.assertNotIn(shipment["coverage_id"], body)
+        self.assertIn(f'href="/d/{link["token"]}/download"', body)
+        self.assertIn(f'href="/d/{link["token"]}/file/photo-1"', body)
+        self.assertEqual(self.client.get(f"/d/{link['token']}/download").status_code, 200)
+        self.assertEqual(self.client.get(f"/d/{link['token']}/file/photo-1").status_code, 200)
+
+    def test_public_landing_uses_default_public_email_when_specific_profile_has_none(self):
+        self.app.extensions["settings"]["settings_service"].save_public_profile(
+            {
+                "display_name": "Ricardo Landeta",
+                "role": "Fotografo",
+                "organization": "Xinhua",
+                "location": "Quito, Ecuador",
+                "public_email": "ricardo@example.com",
+                "show_public_email": True,
+                "show_public_profile": True,
+            },
+            "default",
+        )
+        _shipment, link = self.create_ready_link_shipment()
+
+        body = self.client.get(f"/d/{link['token']}").get_data(as_text=True)
+
+        self.assertIn('href="mailto:ricardo@example.com"', body)
+        self.assertIn("ricardo@example.com", body)
 
     def test_public_landing_generates_8_thumbnails_and_4_backgrounds(self):
         photo_ids = self.expand_coverage_photos(8)
@@ -457,7 +559,7 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertEqual(body.count("/preview/background:photo-"), 4)
         payload = self.app.extensions["dispatch"]["delivery_preview_service"].load_previews(shipment["id"])
         self.assertEqual(len(payload["thumbnails"]), 8)
-        self.assertEqual(len(payload["backgrounds"]), 4)
+        self.assertEqual(len(payload["backgrounds"]), 8)
         for index in range(1, 9):
             self.assertEqual(self.client.get(f"/d/{link['token']}/preview/thumbnail:photo-{index}").status_code, 200)
         for preview in payload["backgrounds"]:
@@ -547,7 +649,7 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
         self.assertTrue(shipment["sent_at"])
         self.assertEqual(sent_payload["channel"]["id"], channel["id"])
         self.assertEqual(sent_payload["shipment"]["id"], shipment["id"])
-        self.assertEqual(sent_payload["download_url"], link["url"])
+        self.assertEqual(sent_payload["download_url"], link["public_url"])
 
     def test_download_link_email_error_preserves_link_without_lens_mutation(self):
         channel = self.create_smtp_channel()
@@ -596,9 +698,10 @@ class DeliveryLinksAndRoutesTest(unittest.TestCase):
 
         body = self.client.get(f"/dispatch/{shipment['id']}").get_data(as_text=True)
 
-        self.assertIn("Copiar enlace", body)
+        self.assertIn("Copiar", body)
         self.assertIn("data-copy-link-button", body)
-        self.assertIn("Tamaño de la entrega", body)
+        self.assertIn("URL pública", body)
+        self.assertIn("Tamaño", body)
         self.assertIn("ACTIVO", body)
         self.assertIn(f'href="/coverages/{shipment["coverage_id"]}"', body)
         self.assertIn("Volver a cobertura", body)

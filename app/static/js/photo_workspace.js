@@ -23,6 +23,7 @@ const photoInfoDate = document.getElementById("photo-info-date");
 const photoInfoPhotographer = document.getElementById("photo-info-photographer");
 const photoCaptionPreview = document.getElementById("photo-caption-preview");
 const captionPhotoCounter = document.getElementById("caption-photo-counter");
+const captionPhotoFilename = document.getElementById("caption-photo-filename");
 const captionPhotoStatusIndicator = document.getElementById("caption-photo-status-indicator");
 const captionPrevPhotoButton = document.getElementById("caption-prev-photo-button");
 const captionNextPhotoButton = document.getElementById("caption-next-photo-button");
@@ -163,6 +164,8 @@ const getCoverageCaptionData = () => ({
     city: photoWorkspace.dataset.captionCity || "",
     country: photoWorkspace.dataset.captionCountry || "",
     localityType: photoWorkspace.dataset.captionLocalityType || "auto",
+    adminArea: photoWorkspace.dataset.captionAdminArea || "",
+    adminAreaType: photoWorkspace.dataset.captionAdminAreaType || "",
     date: photoWorkspace.dataset.captionDate || "",
     sendDate: photoWorkspace.dataset.captionSendDate || photoWorkspace.dataset.captionDate || "",
     eventDate: photoWorkspace.dataset.captionEventDate || photoWorkspace.dataset.captionDate || "",
@@ -658,10 +661,41 @@ const normalizeComparisonText = (value) => (
 );
 
 const normalizeLocalityType = (value) => (
-    ["auto", "city", "locality"].includes(value) ? value : "auto"
+    ["auto", "capital", "city", "locality"].includes(value) ? value : "auto"
 );
 
-const resolveLocationPhrase = (city, country, localityType = "auto") => {
+const normalizeAdminAreaType = (value) => (
+    ["province", "state", "department", "region", "district", "other"].includes(value) ? value : ""
+);
+
+const formatAdminArea = (adminArea, adminAreaType) => {
+    const safeAdminArea = (adminArea || "").trim();
+    if (!safeAdminArea) {
+        return "";
+    }
+    const templates = {
+        province: `en la provincia de ${safeAdminArea}`,
+        state: `en el estado de ${safeAdminArea}`,
+        department: `en el departamento de ${safeAdminArea}`,
+        region: `en la región de ${safeAdminArea}`,
+        district: `en el distrito de ${safeAdminArea}`
+    };
+    return templates[normalizeAdminAreaType(adminAreaType)] || `en ${safeAdminArea}`;
+};
+
+const appendUniqueLocationPart = (parts, value) => {
+    const cleanValue = (value || "").trim();
+    if (!cleanValue) {
+        return;
+    }
+    const comparable = normalizeComparisonText(cleanValue);
+    if (parts.some((part) => normalizeComparisonText(part) === comparable)) {
+        return;
+    }
+    parts.push(cleanValue);
+};
+
+const resolveLocationPhrase = (city, country, localityType = "auto", adminArea = "", adminAreaType = "") => {
     const safeCity = (city || "").trim();
     const safeCountry = (country || "").trim();
     const validation = (
@@ -686,6 +720,18 @@ const resolveLocationPhrase = (city, country, localityType = "auto") => {
         text = `en ${safeCity}, capital de ${safeCountry}`;
     } else if (safeCity && safeCountry && normalizeLocalityType(localityType) === "city") {
         text = `en la ciudad de ${safeCity}, en ${safeCountry}`;
+    } else if (safeCity && safeCountry && normalizeLocalityType(localityType) === "locality") {
+        const parts = [`en ${safeCity}`];
+        const safeAdminArea = (adminArea || "").trim();
+        if (
+            safeAdminArea &&
+            normalizeComparisonText(safeAdminArea) !== normalizeComparisonText(safeCity) &&
+            normalizeComparisonText(safeAdminArea) !== normalizeComparisonText(safeCountry)
+        ) {
+            appendUniqueLocationPart(parts, formatAdminArea(adminArea, adminAreaType));
+        }
+        appendUniqueLocationPart(parts, `en ${safeCountry}`);
+        text = parts.join(", ");
     } else if (safeCity && safeCountry) {
         text = `en ${safeCity}, en ${safeCountry}`;
     }
@@ -866,7 +912,13 @@ const captionTemplates = {
             const agency = context.agency || "Xinhua";
             const credit = `${agency}/${context.photographer || "Fotógrafo pendiente"}`;
             const editorInitials = buildEditorInitials(context.editorInitials || context.editor);
-            const location = resolveLocationPhrase(city, country, context.localityType);
+            const location = resolveLocationPhrase(
+                city,
+                country,
+                context.localityType,
+                context.adminArea,
+                context.adminAreaType
+            );
             const usesSameDate = areCoverageDatesEqual(sendDate, eventDate);
 
             return {
@@ -1126,10 +1178,14 @@ const updateCaptionPhotoNavigation = () => {
     const activeIndex = getPhotoIndex(activePhotoId);
     const hasPhotos = selectedPhotos.length > 0;
     const labelIndex = activeIndex === -1 ? 0 : activeIndex + 1;
+    const activePhoto = activePhotoId === null ? null : getPhotoById(activePhotoId);
+    const filename = activePhoto ? activePhoto.name : "";
     const record = activePhotoId === null ? null : getCaptionRecord(activePhotoId);
     const status = record ? record.status : "Sin editar";
 
     captionPhotoCounter.textContent = `Foto ${labelIndex} de ${selectedPhotos.length}`;
+    captionPhotoFilename.textContent = filename;
+    captionPhotoFilename.title = filename;
     captionPhotoStatusIndicator.textContent = status;
     captionPhotoStatusIndicator.dataset.status = status;
     captionFooterStatus.textContent = status;
@@ -1150,6 +1206,8 @@ const bindCoverageCaptionMetadataUpdates = () => {
     const editCityField = document.getElementById("edit_city");
     const editCountryField = document.getElementById("edit_country");
     const editLocalityTypeField = document.getElementById("edit_locality_type");
+    const editAdminAreaField = document.getElementById("edit_admin_area");
+    const editAdminAreaTypeField = document.getElementById("edit_admin_area_type");
 
     const syncCaptionMetadata = () => {
         if (editCityField) {
@@ -1161,12 +1219,20 @@ const bindCoverageCaptionMetadataUpdates = () => {
         if (editLocalityTypeField) {
             photoWorkspace.dataset.captionLocalityType = editLocalityTypeField.value;
         }
+        if (editAdminAreaField) {
+            photoWorkspace.dataset.captionAdminArea = editAdminAreaField.value;
+        }
+        if (editAdminAreaTypeField) {
+            photoWorkspace.dataset.captionAdminAreaType = editAdminAreaTypeField.value;
+        }
         renderCaptionPreview();
     };
 
     editCityField?.addEventListener("input", syncCaptionMetadata);
     editCountryField?.addEventListener("change", syncCaptionMetadata);
     editLocalityTypeField?.addEventListener("change", syncCaptionMetadata);
+    editAdminAreaField?.addEventListener("input", syncCaptionMetadata);
+    editAdminAreaTypeField?.addEventListener("change", syncCaptionMetadata);
 };
 
 const confirmAiNarrationReplacement = () => new Promise((resolve) => {
@@ -1368,6 +1434,7 @@ const createPhotoCard = (item) => {
     card.setAttribute("aria-selected", String(isActive));
     card.dataset.photoId = item.id;
     card.classList.toggle("is-active", isActive);
+    card.classList.toggle("has-import-error", item.importStatus === "Error");
 
     const selectButton = document.createElement("button");
     selectButton.type = "button";
@@ -1429,7 +1496,17 @@ const createPhotoCard = (item) => {
     size.className = "photo-grid-size";
     size.textContent = formatSize(item.size);
 
-    selectButton.append(thumbnailWrap, name, size);
+    const importState = document.createElement("span");
+    importState.className = "photo-import-state";
+    if (item.importStatus === "Error") {
+        importState.textContent = `No importada · ${item.processingError || "No se pudo importar."}`;
+        importState.dataset.status = "error";
+    } else {
+        importState.textContent = item.importStatus || "";
+        importState.dataset.status = item.importStatus === "Lista" ? "saved" : "pending";
+    }
+
+    selectButton.append(thumbnailWrap, name, size, importState);
     selectButton.addEventListener("click", () => {
         selectPhoto(item.id);
     });

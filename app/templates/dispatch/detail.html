@@ -4,6 +4,31 @@
 {% block main_class %}dispatch-detail-page{% endblock %}
 
 {% block content %}
+<svg class="dispatch-icons" aria-hidden="true" focusable="false">
+    <symbol id="dispatch-icon-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"></path></symbol>
+    <symbol id="dispatch-icon-archive" viewBox="0 0 24 24"><path d="M4 7h16v13H4V7Z"></path><path d="M3 4h18v3H3V4Z"></path><path d="M10 11h4"></path></symbol>
+    <symbol id="dispatch-icon-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="m7 7 10 10"></path></symbol>
+    <symbol id="dispatch-icon-calendar" viewBox="0 0 24 24"><path d="M5 5h14v15H5V5Z"></path><path d="M8 3v4"></path><path d="M16 3v4"></path><path d="M5 10h14"></path></symbol>
+    <symbol id="dispatch-icon-camera" viewBox="0 0 24 24"><path d="M4 8h4l1.6-2h4.8L16 8h4v11H4V8Z"></path><circle cx="12" cy="13.5" r="3.3"></circle></symbol>
+    <symbol id="dispatch-icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+    <symbol id="dispatch-icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 8v5l3 2"></path></symbol>
+    <symbol id="dispatch-icon-copy" viewBox="0 0 24 24"><path d="M8 8h11v11H8V8Z"></path><path d="M5 16H4V4h12v1"></path></symbol>
+    <symbol id="dispatch-icon-download" viewBox="0 0 24 24"><path d="M12 3v11"></path><path d="m7.5 10 4.5 4.5L16.5 10"></path><path d="M5 19h14"></path></symbol>
+    <symbol id="dispatch-icon-external" viewBox="0 0 24 24"><path d="M14 5h5v5"></path><path d="m10 14 9-9"></path><path d="M19 14v5H5V5h5"></path></symbol>
+    <symbol id="dispatch-icon-file" viewBox="0 0 24 24"><path d="M7 3h7l4 4v14H7V3Z"></path><path d="M14 3v5h5"></path></symbol>
+    <symbol id="dispatch-icon-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M4 12h16"></path><path d="M12 4a12 12 0 0 1 0 16"></path><path d="M12 4a12 12 0 0 0 0 16"></path></symbol>
+    <symbol id="dispatch-icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"></path><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"></path></symbol>
+    <symbol id="dispatch-icon-map-pin" viewBox="0 0 24 24"><path d="M12 21s6-5.3 6-11a6 6 0 0 0-12 0c0 5.7 6 11 6 11Z"></path><circle cx="12" cy="10" r="2"></circle></symbol>
+    <symbol id="dispatch-icon-message" viewBox="0 0 24 24"><path d="M5 5h14v10H8l-3 3V5Z"></path></symbol>
+    <symbol id="dispatch-icon-monitor" viewBox="0 0 24 24"><path d="M4 5h16v11H4V5Z"></path><path d="M9 20h6"></path><path d="M12 16v4"></path></symbol>
+    <symbol id="dispatch-icon-package" viewBox="0 0 24 24"><path d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3Z"></path><path d="m4.5 7.7 7.5 4.2 7.5-4.2"></path><path d="M12 12v8.5"></path></symbol>
+    <symbol id="dispatch-icon-refresh" viewBox="0 0 24 24"><path d="M20 6v5h-5"></path><path d="M4 18v-5h5"></path><path d="M18 10a6 6 0 0 0-10-3L4 11"></path><path d="M6 14a6 6 0 0 0 10 3l4-4"></path></symbol>
+    <symbol id="dispatch-icon-send" viewBox="0 0 24 24"><path d="m21 3-7 18-4-8-8-4 19-6Z"></path><path d="m10 13 4-4"></path></symbol>
+    <symbol id="dispatch-icon-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"></circle><path d="M5 21a7 7 0 0 1 14 0"></path></symbol>
+    <symbol id="dispatch-icon-users" viewBox="0 0 24 24"><path d="M16 20a5 5 0 0 0-10 0"></path><circle cx="11" cy="8" r="4"></circle><path d="M20 20a4 4 0 0 0-3-3.8"></path><path d="M16.5 4.5a3 3 0 0 1 0 5.7"></path></symbol>
+    <symbol id="dispatch-icon-building" viewBox="0 0 24 24"><path d="M5 21V4h10v17"></path><path d="M15 9h4v12"></path><path d="M8 8h3"></path><path d="M8 12h3"></path><path d="M8 16h3"></path></symbol>
+</svg>
+
 <section class="dispatch-detail-header ui-card atlas-panel--normal">
     <div>
         <p class="coverage-id">DISPATCH</p>
@@ -48,36 +73,36 @@
 
 <div class="dispatch-detail-grid atlas-grid atlas-grid--2">
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-delivery-title">
-        <h2 id="dispatch-delivery-title">Información del envío</h2>
-        <dl class="coverage-meta-grid dispatch-compact-meta">
+        <h2 id="dispatch-delivery-title"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-send"></use></svg>Información del envío</h2>
+        <dl class="dispatch-info-list dispatch-info-list--two">
             <div>
-                <dt>Método</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-send"></use></svg>Método</dt>
                 <dd>{{ delivery_method_display }}</dd>
             </div>
             <div>
-                <dt>Canal</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-link"></use></svg>Canal</dt>
                 <dd>{{ channel_display }}</dd>
             </div>
             {% if formatted.scheduled_at %}
             <div>
-                <dt>{% if shipment.requested_delivery_mode == "immediate" %}Preparado para{% else %}Programado para{% endif %}</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-calendar"></use></svg>{% if shipment.requested_delivery_mode == "immediate" %}Preparado{% else %}Programado para{% endif %}</dt>
                 <dd>{{ formatted.scheduled_at }}</dd>
             </div>
             {% endif %}
             <div>
-                <dt>Zona horaria</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-clock"></use></svg>Zona horaria</dt>
                 <dd>{{ timezone_display }}</dd>
             </div>
             <div>
-                <dt>Documento Word</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-file"></use></svg>Documento Word</dt>
                 <dd>{{ "Sí" if content_summary.docx_included else "No" }}</dd>
             </div>
             <div>
-                <dt>Destinatarios</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-users"></use></svg>Destinatarios</dt>
                 <dd>{{ shipment.recipients | length }}</dd>
             </div>
             <div>
-                <dt>Fotografías</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-camera"></use></svg>Fotografías</dt>
                 <dd>{{ content_summary.photo_count }}</dd>
             </div>
         </dl>
@@ -91,21 +116,43 @@
     </section>
 
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-activity-title">
-        <h2 id="dispatch-activity-title">Actividad de descargas</h2>
+        <h2 id="dispatch-activity-title"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-activity"></use></svg>Actividad de descargas</h2>
         {% if download_activity.events %}
+        <dl class="dispatch-analytics-summary" aria-label="Resumen de descargas">
+            <div><dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-download"></use></svg>Descargas</dt><dd>{{ download_activity.total }}</dd></div>
+            {% if download_activity.country_count %}
+            <div><dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-globe"></use></svg>Países</dt><dd>{{ download_activity.country_count }}</dd></div>
+            {% endif %}
+            {% if download_activity.client_count %}
+            <div><dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-monitor"></use></svg>Clientes</dt><dd>{{ download_activity.client_count }}</dd></div>
+            {% endif %}
+            {% if download_activity.last_download_at %}
+            <div><dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-clock"></use></svg>Última</dt><dd>{{ download_activity.last_download_at }}</dd></div>
+            {% endif %}
+        </dl>
         <ul class="dispatch-download-activity" aria-label="Descargas registradas">
             {% for event in download_activity.events %}
             <li class="dispatch-download-activity-row">
-                <div class="dispatch-download-activity-header">
-                    <span>{{ event.location }}</span>
-                    <span>{{ event.when }}</span>
+                <div class="dispatch-download-activity-place">
+                    <svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-globe"></use></svg>
+                    <div>
+                        <strong>{{ event.location }}</strong>
+                        <span>{{ event.description }}</span>
+                        <small>{{ event.when }}{% if event.client %} · {{ event.client }}{% endif %}</small>
+                    </div>
                 </div>
-                <p>Descargó: {{ event.description }}</p>
             </li>
             {% endfor %}
         </ul>
         {% if download_activity.has_more %}
         <p class="dispatch-muted">Mostrando las 10 descargas más recientes</p>
+        {% endif %}
+        {% if download_activity.map_points %}
+        <details class="dispatch-map-panel">
+            <summary><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-map-pin"></use></svg>Ver mapa de descargas</summary>
+            <div class="dispatch-download-map" data-download-map data-map-points='{{ download_activity.map_points | tojson }}'></div>
+            <p class="dispatch-muted">Ubicaciones aproximadas por ciudad o región.</p>
+        </details>
         {% endif %}
         {% else %}
         <p>No hay descargas registradas todavía.</p>
@@ -114,56 +161,59 @@
 
     {% if shipment.delivery_method in ["download_link", "download_link_email"] %}
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-link-title">
-        <h2 id="dispatch-link-title">Entrega</h2>
+        <h2 id="dispatch-link-title"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-package"></use></svg>Entrega</h2>
         {% if shipment.delivery_method == "download_link_email" and shipment.status == "Error" and shipment.last_error %}
         <p class="dispatch-delivery-warning">Enlace generado correctamente; el correo no pudo enviarse.</p>
         {% endif %}
         {% if delivery_link %}
-        <dl class="coverage-meta-grid dispatch-compact-meta">
+        <dl class="dispatch-info-list dispatch-info-list--two dispatch-delivery-facts">
             <div>
-                <dt>Estado del enlace</dt>
-                <dd>{{ "ACTIVO" if delivery_link.is_active and not delivery_link.revoked_at else "EXPIRADO" }}</dd>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-check"></use></svg>Estado</dt>
+                <dd><span class="dispatch-link-state{% if delivery_link.is_active and not delivery_link.revoked_at %} is-active{% endif %}">{{ "ACTIVO" if delivery_link.is_active and not delivery_link.revoked_at else "EXPIRADO" }}</span></dd>
             </div>
             <div>
-                <dt>Creado</dt>
-                <dd>{{ delivery_link_dates.created_at or "Sin datos" }}</dd>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-download"></use></svg>Última descarga</dt>
+                <dd>{{ delivery_link_dates.last_download_at }}</dd>
             </div>
             <div>
-                <dt>Activo hasta</dt>
-                <dd>{{ delivery_link_dates.expires_at or "Sin expiración" }}</dd>
-            </div>
-            <div>
-                <dt>Descargas</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-activity"></use></svg>Descargas</dt>
                 <dd>{{ delivery_link.download_count or 0 }}</dd>
             </div>
             <div>
-                <dt>Última descarga</dt>
-                <dd>{{ delivery_link_dates.last_download_at }}</dd>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-calendar"></use></svg>Creado</dt>
+                <dd>{{ delivery_link_dates.created_at or "Sin datos" }}</dd>
+            </div>
+            <div>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-clock"></use></svg>Activo hasta</dt>
+                <dd>{{ delivery_link_dates.expires_at or "Sin expiración" }}</dd>
             </div>
             {% if delivery_package_summary.size_label %}
             <div>
-                <dt>Tamaño de la entrega</dt>
-                <dd>{{ delivery_package_summary.size_label }}</dd>
-            </div>
-            <div>
-                <dt>Archivos</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-archive"></use></svg>Archivos</dt>
                 <dd>{{ delivery_package_summary.file_count }}</dd>
             </div>
-            {% endif %}
-            <div class="atlas-span-full">
-                <dt>URL</dt>
-                <dd><input class="dispatch-link-field" type="text" value="{{ delivery_url }}" readonly data-dispatch-link-input></dd>
+            <div>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-package"></use></svg>Tamaño</dt>
+                <dd>{{ delivery_package_summary.size_label }}</dd>
             </div>
+            {% endif %}
         </dl>
-        <div class="dispatch-row-actions">
-            <a href="{{ delivery_url }}" target="_blank" rel="noopener">Abrir</a>
-            <button type="button" data-copy-link-button data-copy-link-value="{{ delivery_url }}">Copiar enlace</button>
+        <div class="dispatch-public-url">
+            <label for="dispatch-public-url"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-link"></use></svg>URL pública</label>
+            <div>
+                <input id="dispatch-public-url" class="dispatch-link-field" type="text" value="{{ delivery_url }}" readonly data-dispatch-link-input>
+                <button type="button" class="dispatch-icon-button" data-copy-link-button data-copy-link-value="{{ delivery_url }}" aria-label="Copiar URL pública"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-copy"></use></svg></button>
+            </div>
+        </div>
+        <div class="dispatch-row-actions dispatch-delivery-actions">
+            <a href="{{ delivery_url }}" target="_blank" rel="noopener"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-external"></use></svg>Abrir</a>
+            <button type="button" data-copy-link-button data-copy-link-value="{{ delivery_url }}"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-copy"></use></svg>Copiar</button>
             <span class="dispatch-copy-feedback" data-copy-link-feedback hidden>Enlace copiado.</span>
             <form method="post" action="{{ url_for('dispatch.revoke_delivery_link', shipment_id=shipment.id) }}" data-confirm-message="¿Revocar este enlace de descarga?">
-                <button type="submit">Revocar</button>
+                <button type="submit" class="dispatch-revoke-action"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-ban"></use></svg>Revocar</button>
             </form>
             <form method="post" action="{{ url_for('dispatch.regenerate_delivery_link', shipment_id=shipment.id) }}" data-confirm-message="¿Regenerar el enlace? El token anterior quedará revocado.">
-                <button type="submit">Regenerar</button>
+                <button type="submit"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-refresh"></use></svg>Regenerar</button>
             </form>
         </div>
         {% else %}
@@ -176,33 +226,33 @@
     {% endif %}
 
     <section class="ui-card atlas-panel--compact" aria-labelledby="dispatch-coverage-title">
-        <h2 id="dispatch-coverage-title">Cobertura</h2>
-        <dl class="coverage-meta-grid dispatch-compact-meta">
+        <h2 id="dispatch-coverage-title"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-camera"></use></svg>Cobertura</h2>
+        <dl class="dispatch-info-list">
             <div>
-                <dt>Nombre</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-camera"></use></svg>Cobertura</dt>
                 <dd>{{ shipment.coverage_snapshot.coverage_name or shipment.coverage_id }}</dd>
             </div>
             {% if shipment.coverage_snapshot.city or shipment.coverage_snapshot.country %}
             <div>
-                <dt>Ciudad</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-map-pin"></use></svg>Lugar</dt>
                 <dd>{{ shipment.coverage_snapshot.city }}{% if shipment.coverage_snapshot.city and shipment.coverage_snapshot.country %}, {% endif %}{{ shipment.coverage_snapshot.country }}</dd>
             </div>
             {% endif %}
             {% if shipment.coverage_snapshot.agency %}
             <div>
-                <dt>Agencia</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-building"></use></svg>Agencia</dt>
                 <dd>{{ shipment.coverage_snapshot.agency }}</dd>
             </div>
             {% endif %}
             {% if shipment.coverage_snapshot.photographer %}
             <div>
-                <dt>Fotógrafo</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-user"></use></svg>Fotógrafo</dt>
                 <dd>{{ shipment.coverage_snapshot.photographer }}</dd>
             </div>
             {% endif %}
             {% if shipment.coverage_snapshot.event_date %}
             <div>
-                <dt>Fecha del evento</dt>
+                <dt><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-calendar"></use></svg>Fecha</dt>
                 <dd>{{ shipment.coverage_snapshot.event_date }}</dd>
             </div>
             {% endif %}
@@ -212,13 +262,13 @@
 
 {% if shipment.delivery_note %}
 <section class="ui-card atlas-panel--compact dispatch-detail-section" aria-labelledby="dispatch-note-title">
-    <h2 id="dispatch-note-title">Nota de entrega</h2>
+    <h2 id="dispatch-note-title"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-message"></use></svg>Nota de entrega</h2>
     <p>{{ shipment.delivery_note }}</p>
 </section>
 {% endif %}
 
 <section class="ui-card atlas-panel--normal dispatch-detail-section" aria-labelledby="dispatch-photos-title">
-    <h2 id="dispatch-photos-title">Fotografías ({{ content_summary.photo_count }})</h2>
+    <h2 id="dispatch-photos-title"><svg class="dispatch-icon" aria-hidden="true"><use href="#dispatch-icon-camera"></use></svg>Fotografías ({{ content_summary.photo_count }})</h2>
     {% if detail_photos %}
     <div class="dispatch-photo-grid">
         {% for photo in detail_photos %}
@@ -310,6 +360,10 @@
 {% endblock %}
 
 {% block scripts %}
+{% if download_activity.map_points %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+{% endif %}
 <script>
 document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
     form.addEventListener("submit", (event) => {
@@ -322,7 +376,8 @@ document.querySelectorAll("form[data-confirm-message]").forEach((form) => {
 document.querySelectorAll("[data-copy-link-button]").forEach((button) => {
     button.addEventListener("click", async () => {
         const value = button.dataset.copyLinkValue || "";
-        const feedback = button.parentElement.querySelector("[data-copy-link-feedback]");
+        const actionGroup = button.closest(".dispatch-delivery-actions") || document;
+        const feedback = actionGroup.querySelector("[data-copy-link-feedback]");
         try {
             await navigator.clipboard.writeText(value);
         } catch (error) {
@@ -335,6 +390,36 @@ document.querySelectorAll("[data-copy-link-button]").forEach((button) => {
         if (feedback) {
             feedback.hidden = false;
             window.setTimeout(() => { feedback.hidden = true; }, 2000);
+        }
+    });
+});
+
+function initDispatchMap(container) {
+    if (!container || container.dataset.mapReady || !window.L) {
+        return;
+    }
+    const points = JSON.parse(container.dataset.mapPoints || "[]");
+    if (!points.length) {
+        return;
+    }
+    const map = L.map(container, { scrollWheelZoom: false });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+        maxZoom: 12
+    }).addTo(map);
+    const markers = points.map((point) => L.marker([point.latitude, point.longitude])
+        .bindPopup(`${point.label} · ${point.count}`)
+        .addTo(map));
+    const group = L.featureGroup(markers);
+    map.fitBounds(group.getBounds().pad(0.25), { maxZoom: 8 });
+    container.dataset.mapReady = "1";
+    window.setTimeout(() => map.invalidateSize(), 100);
+}
+
+document.querySelectorAll(".dispatch-map-panel").forEach((panel) => {
+    panel.addEventListener("toggle", () => {
+        if (panel.open) {
+            window.setTimeout(() => initDispatchMap(panel.querySelector("[data-download-map]")), 100);
         }
     });
 });

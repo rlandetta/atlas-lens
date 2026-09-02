@@ -14,7 +14,7 @@ SUPPORTED_EXPORT_DESTINATIONS = ("download", "dispatch")
 class ExportRequest:
     coverage_id: str
     formats: tuple[str, ...] = ("docx",)
-    include_photos: bool = True
+    include_photos: bool = False
     include_captions: bool = True
     include_metadata: bool = False
     include_manifest: bool = False
@@ -23,6 +23,10 @@ class ExportRequest:
     scope: str = "coverage"
     requested_by: str = "Sistema"
     destination: str = "download"
+    requested_photo_count: int | None = None
+    requested_photos: tuple[dict[str, Any], ...] = ()
+    omitted_photos: tuple[dict[str, Any], ...] = ()
+    partial_confirmed: bool = False
 
 
 ExportOptions = ExportRequest
@@ -71,6 +75,12 @@ class ExportResult:
     warnings: tuple[str, ...] = ()
     duration: float = 0
     photo_count: int = 0
+    requested_photo_count: int = 0
+    persisted_photo_count: int = 0
+    exported_photo_count: int = 0
+    captions_included: int = 0
+    omitted_photos: tuple[dict[str, Any], ...] = ()
+    status: str = "COMPLETE"
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property

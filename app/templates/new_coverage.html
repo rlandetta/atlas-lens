@@ -43,8 +43,24 @@
                 <label for="locality_type">Tipo de localidad</label>
                 <select id="locality_type" name="locality_type">
                     <option value="auto" {% if (form_data.locality_type or 'auto') == 'auto' %}selected{% endif %}>Automático</option>
+                    <option value="capital" {% if form_data.locality_type == 'capital' %}selected{% endif %}>Capital</option>
                     <option value="city" {% if form_data.locality_type == 'city' %}selected{% endif %}>Ciudad</option>
                     <option value="locality" {% if form_data.locality_type == 'locality' %}selected{% endif %}>Localidad</option>
+                </select>
+            </div>
+
+            <div class="form-field admin-area-field" data-admin-area-field>
+                <label for="admin_area">División administrativa</label>
+                <input id="admin_area" name="admin_area" type="text" value="{{ form_data.admin_area or '' }}" spellcheck="true">
+            </div>
+
+            <div class="form-field admin-area-field" data-admin-area-field>
+                <label for="admin_area_type">Tipo de división</label>
+                <select id="admin_area_type" name="admin_area_type">
+                    <option value="" {% if not form_data.admin_area_type %}selected{% endif %}>Sin prefijo</option>
+                    {% for type_value, type_label in admin_area_types %}
+                    <option value="{{ type_value }}" {% if form_data.admin_area_type == type_value %}selected{% endif %}>{{ type_label }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
@@ -98,4 +114,8 @@
 
     <a href="{{ url_for('web.home') }}" class="back-link">Volver a coberturas</a>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/coverage_form.js') }}" defer></script>
 {% endblock %}

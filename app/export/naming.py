@@ -25,6 +25,9 @@ class ExportNamingService:
         return ExportNames(
             base_name=base_name,
             zip_filename=f"{base_name}.zip",
+            docx_filename=f"{base_name}.docx",
+            html_filename=f"{base_name}.html",
+            pdf_filename=f"{base_name}.pdf",
         )
 
     def build_base_name(self, coverage: dict) -> str:

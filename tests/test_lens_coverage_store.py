@@ -65,6 +65,29 @@ class LensCoverageStoreTest(unittest.TestCase):
 
         self.assertEqual(reloaded.get("cov-1")["locality_type"], "locality")
 
+    def test_admin_area_fields_are_structured_and_optional(self):
+        coverage = {
+            **self.coverage(),
+            "locality_type": "locality",
+            "admin_area": "Manabí",
+            "admin_area_type": "province",
+        }
+
+        self.store.set("cov-1", coverage)
+        stored = self.store.get("cov-1")
+
+        self.assertEqual(stored["admin_area"], "Manabí")
+        self.assertEqual(stored["admin_area_type"], "province")
+        self.assertNotEqual(stored["admin_area"], "provincia de Manabí")
+
+    def test_legacy_coverage_without_admin_area_still_loads(self):
+        self.store.set("cov-1", self.coverage())
+
+        stored = self.store.get("cov-1")
+
+        self.assertEqual(stored["admin_area"], "")
+        self.assertEqual(stored["admin_area_type"], "")
+
     def test_persists_relative_photo_path_and_excludes_data_url(self):
         photo_path = self.media_root / "cov-1" / "IMG001.jpg"
         photo_path.parent.mkdir(parents=True)

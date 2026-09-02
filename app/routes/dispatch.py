@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import re
 from typing import Mapping, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from flask import Blueprint, abort, current_app, redirect, render_template, request, url_for
 
+from app.config import PUBLIC_DELIVERY_BASE_URL
 from app.dispatch import DELIVERY_METHODS, DispatchValidationError
 from app.dispatch.service import ACTIVE_DELETE_PROTECTED_STATUSES, HISTORY_DELETE_ELIGIBLE_STATUSES
 from app.dispatch.delivery_package import DeliveryPackageError
@@ -144,7 +146,15 @@ def channel_snapshot(channel_id: str, fallback: str = "") -> str:
 def delivery_public_url(link: dict[str, Any] | None) -> str:
     if not link:
         return ""
-    return str(link.get("url", ""))
+    token = str(link.get("token", "")).strip()
+    if token:
+        public_base_url = (
+            str(getattr(get_dispatch_services().get("delivery_link_service"), "public_delivery_base_url", "") or "")
+            or PUBLIC_DELIVERY_BASE_URL
+            or "https://ayampi.com"
+        ).rstrip("/")
+        return f"{public_base_url}/d/{token}"
+    return str(link.get("public_url") or link.get("url", ""))
 
 
 def get_coverage_provider():
@@ -208,6 +218,19 @@ def truncate_text(value: str, limit: int = 170) -> str:
     return f"{text[:limit].rstrip()}…"
 
 
+def coverage_created_sort_value(coverage_id: str, coverage: dict[str, Any]) -> str:
+    created_at = str(coverage.get("created_at") or "").strip()
+    if created_at:
+        return created_at
+    match = re.match(r"^cov-(\d{14})-", str(coverage_id))
+    if not match:
+        return ""
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%d%H%M%S").isoformat()
+    except ValueError:
+        return ""
+
+
 def list_coverage_options() -> list[dict[str, str]]:
     options = []
     for coverage_id, coverage in read_coverages().items():
@@ -216,8 +239,9 @@ def list_coverage_options() -> list[dict[str, str]]:
             "name": str(coverage.get("coverage_name", "") or coverage_id),
             "city": str(coverage.get("city", "")),
             "country": str(coverage.get("country", "")),
+            "created_at": coverage_created_sort_value(str(coverage_id), coverage),
         })
-    return sorted(options, key=lambda item: item["name"].casefold())
+    return sorted(options, key=lambda item: (item["created_at"], item["id"]), reverse=True)
 
 
 def is_photo_available_for_dispatch(photo: dict[str, Any]) -> bool:
@@ -536,17 +560,52 @@ DOWNLOAD_TYPE_LABELS = {
 }
 
 
+def compact_datetime_es(value: str, timezone_name: str = DEFAULT_TIMEZONE) -> str:
+    formatted = format_datetime_es(value, timezone_name)
+    replacements = {
+        " de enero de ": " ene ",
+        " de febrero de ": " feb ",
+        " de marzo de ": " mar ",
+        " de abril de ": " abr ",
+        " de mayo de ": " may ",
+        " de junio de ": " jun ",
+        " de julio de ": " jul ",
+        " de agosto de ": " ago ",
+        " de septiembre de ": " sep ",
+        " de octubre de ": " oct ",
+        " de noviembre de ": " nov ",
+        " de diciembre de ": " dic ",
+    }
+    for needle, replacement in replacements.items():
+        formatted = formatted.replace(needle, replacement)
+    return formatted.replace(", ", " · ")
+
+
 def build_download_activity(link: dict[str, Any] | None, timezone_name: str) -> dict[str, Any]:
     events = list((link or {}).get("download_events") or [])
     total = len(events)
     items = []
+    countries = {
+        str(event.get("country", "")).strip()
+        for event in events
+        if isinstance(event, dict) and str(event.get("country", "")).strip()
+    }
+    clients = {
+        str(event.get("ip_hash", "")).strip()
+        for event in events
+        if isinstance(event, dict) and str(event.get("ip_hash", "")).strip()
+    }
+    map_points = {}
     for event in events[:DOWNLOAD_ACTIVITY_LIMIT]:
         if not isinstance(event, dict):
             continue
         country = str(event.get("country", "")).strip()
         city = str(event.get("city", "")).strip()
-        if country and city:
-            location = f"{country} · {city}"
+        region = str(event.get("region", "")).strip()
+        if city and country:
+            location = f"{city}, {country}"
+        elif region and country:
+            location = f"{region}, {country}"
         elif country:
             location = country
         else:
@@ -554,14 +613,39 @@ def build_download_activity(link: dict[str, Any] | None, timezone_name: str) -> 
         download_type = str(event.get("download_type", "PACKAGE"))
         filename = str(event.get("filename", "")).strip()
         description = DOWNLOAD_TYPE_LABELS.get(download_type, filename or "archivo")
+        browser = str(event.get("browser", "")).strip()
+        os_name = str(event.get("os", "")).strip()
+        device_category = str(event.get("device_category", "")).strip()
+        client_parts = [part for part in (browser, os_name, device_category) if part]
+        latitude = event.get("latitude")
+        longitude = event.get("longitude")
+        try:
+            lat_lon = (float(latitude), float(longitude))
+        except (TypeError, ValueError):
+            lat_lon = None
+        if lat_lon and location != "Ubicación no disponible":
+            key = f"{location}|{lat_lon[0]:.3f}|{lat_lon[1]:.3f}"
+            point = map_points.setdefault(key, {
+                "label": location,
+                "latitude": lat_lon[0],
+                "longitude": lat_lon[1],
+                "count": 0,
+            })
+            point["count"] += 1
         items.append({
             "location": location,
-            "when": format_datetime_es(str(event.get("downloaded_at", "")), timezone_name),
+            "when": compact_datetime_es(str(event.get("downloaded_at", "")), timezone_name),
             "description": description,
+            "client": " / ".join(client_parts),
+            "user_agent": str(event.get("user_agent", "")).strip(),
         })
     return {
         "events": items,
         "total": total,
+        "country_count": len(countries),
+        "client_count": len(clients),
+        "last_download_at": compact_datetime_es(str((link or {}).get("last_download_at", "")), timezone_name),
+        "map_points": list(map_points.values()),
         "has_more": total > DOWNLOAD_ACTIVITY_LIMIT,
     }
 

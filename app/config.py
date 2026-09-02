@@ -57,6 +57,10 @@ FLOW_EVENTS_ROOT = os.getenv(
     "FLOW_EVENTS_ROOT",
     "/data/FLOW/sftpgo/storage/events",
 )
+FLOW_TRASH_ROOT = os.getenv(
+    "FLOW_TRASH_ROOT",
+    "/data/FLOW/trash",
+)
 DELIVERY_ROOT = os.getenv(
     "DELIVERY_ROOT",
     os.path.join("instance", "deliveries"),
@@ -66,6 +70,14 @@ DELIVERY_LINKS_STORE_PATH = os.getenv(
     os.path.join("instance", "delivery_links.json"),
 )
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "").strip().rstrip("/")
+PUBLIC_DELIVERY_BASE_URL = os.getenv("PUBLIC_DELIVERY_BASE_URL", "https://ayampi.com").strip().rstrip("/")
+DISPATCH_IP_GEOLOCATION_PROVIDER = os.getenv("DISPATCH_IP_GEOLOCATION_PROVIDER", "ipwhois").strip().lower()
+DISPATCH_IP_GEOLOCATION_CACHE_PATH = os.getenv(
+    "DISPATCH_IP_GEOLOCATION_CACHE_PATH",
+    os.path.join("instance", "dispatch_ip_geolocation_cache.json"),
+)
+DISPATCH_IP_GEOLOCATION_CACHE_TTL_DAYS = get_int_env("DISPATCH_IP_GEOLOCATION_CACHE_TTL_DAYS", 30)
+DISPATCH_TRUSTED_PROXY_CIDRS = get_list_env("DISPATCH_TRUSTED_PROXY_CIDRS", ["127.0.0.1/32", "::1/128"])
 DELIVERY_REVOKED_RETENTION_DAYS = get_int_env("DELIVERY_REVOKED_RETENTION_DAYS", 7)
 SETTINGS_STORE_PATH = os.getenv(
     "SETTINGS_STORE_PATH",
@@ -84,3 +96,12 @@ THUMBNAIL_ROOT = os.getenv(
     os.path.join("instance", "thumbnails"),
 )
 LENS_MAX_PHOTO_BYTES = get_int_env("LENS_MAX_PHOTO_BYTES", 25 * 1024 * 1024)
+PROFILE_AVATAR_ROOT = os.getenv(
+    "PROFILE_AVATAR_ROOT",
+    os.path.join("instance", "profile_avatars"),
+)
+PROFILE_MAX_AVATAR_BYTES = get_int_env("PROFILE_MAX_AVATAR_BYTES", 5 * 1024 * 1024)
+PULSE_STORE_PATH = os.getenv(
+    "PULSE_STORE_PATH",
+    os.path.join("instance", "pulse.json"),
+)

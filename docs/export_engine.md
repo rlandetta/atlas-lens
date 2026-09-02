@@ -1,4 +1,4 @@
-# Export Engine v1 de ATLAS LENS
+# Export Engine v2 de ATLAS LENS
 
 El Export Engine genera un paquete editorial ZIP listo para descargar o entregar posteriormente mediante DISPATCH. Esta capa no envía archivos y no contiene lógica de interfaz.
 
@@ -34,6 +34,25 @@ Valores predeterminados:
 - Incluir manifiesto: inactivo.
 
 El ZIP incluye únicamente los elementos seleccionados. No se crean carpetas vacías.
+
+## Conteos, omisiones y persistencia
+
+La pertenencia de una fotografía a una cobertura es independiente del estado de su caption. Guardar captions, cambiar pestañas, exportar o volver a la cobertura no debe eliminar asociaciones de `coverage["photos"]`.
+
+Export Engine v2 diferencia estos conteos:
+
+- `requested_photo_count`: fotografías que el usuario tenía en el workspace al pedir exportación.
+- `persisted_photo_count`: fotografías asociadas a la cobertura persistida recibida por el servidor.
+- `exported_photo_count`: fotografías incluidas en los documentos o paquete generado.
+- `captions_included`: captions no vacíos incluidos.
+
+Cuando la interfaz envía `requested_photos`, el engine puede diagnosticar diferencias entre lo visible en el navegador y lo persistido. Una fotografía omitida se registra en `omitted_photos` con `filename`, `stage` y `reason`, por ejemplo:
+
+- `caption` / `Caption ausente.`
+- `persistence` / `No está asociada a la cobertura persistida.`
+- `export` / `Archivo no disponible para exportación.`
+
+Una exportación parcial con omisiones no debe presentarse como “Sin errores”. “Sin errores” queda reservado para generaciones sin fallos técnicos y sin fotografías omitidas.
 
 ## Estructura del ZIP
 

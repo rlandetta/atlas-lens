@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Branding de entregas | SETTINGS{% endblock %}
+{% block main_class %}settings-page form-page{% endblock %}
+
+{% block content %}
+<section class="form-card ui-card atlas-panel--normal">
+    <h1>Branding de entregas</h1>
+    <p class="subtitle">Identidad publica para paginas de entrega de ATLAS DISPATCH.</p>
+
+    {% if saved %}
+    <p class="form-success" role="status">Branding guardado.</p>
+    {% endif %}
+
+    {% if errors %}
+    <div class="form-error" role="alert">
+        <p>No se pudo guardar el branding:</p>
+        <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('settings.branding') }}" class="coverage-form">
+        <section class="settings-channel-form-section settings-channel-status" aria-labelledby="branding-status-title">
+            <h2 id="branding-status-title">Estado</h2>
+            <div class="settings-toggle-row">
+                <label><input type="checkbox" name="enabled" value="1" {% if form_data.enabled %}checked{% endif %}> Activar branding publico</label>
+            </div>
+        </section>
+
+        <div class="coverage-form-grid atlas-grid atlas-grid--2">
+            <div class="form-field">
+                <label for="organization_name">Organizacion / nombre</label>
+                <input id="organization_name" name="organization_name" type="text" value="{{ form_data.organization_name or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="logo_text">Texto de logo</label>
+                <input id="logo_text" name="logo_text" type="text" value="{{ form_data.logo_text or '' }}">
+            </div>
+            <div class="form-field atlas-span-full">
+                <label for="footer_text">Footer</label>
+                <input id="footer_text" name="footer_text" type="text" value="{{ form_data.footer_text or '' }}">
+            </div>
+        </div>
+
+        <button type="submit" class="primary-button compact-action">Guardar cambios</button>
+    </form>
+
+    <a href="{{ url_for('settings.index') }}" class="back-link">Volver a Settings</a>
+</section>
+{% endblock %}

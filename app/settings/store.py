@@ -10,6 +10,7 @@ import os
 import tempfile
 
 from app.settings.models import SettingsStoreError, empty_settings_payload, normalize_channel
+from app.settings.models import normalize_dispatch_branding, normalize_public_profile, sanitize_profile_key
 
 
 class SettingsStore:
@@ -48,6 +49,16 @@ class SettingsStore:
         normalized = empty_settings_payload()
         normalized["schema_version"] = int(payload.get("schema_version", normalized["schema_version"]) or normalized["schema_version"])
         normalized["outbound_channels"] = [normalize_channel(channel) for channel in channels if isinstance(channel, dict)]
+        raw_profiles = payload.get("public_profiles", {})
+        profiles: dict[str, dict[str, Any]] = {}
+        if isinstance(raw_profiles, dict):
+            for key, profile in raw_profiles.items():
+                if not isinstance(profile, dict):
+                    continue
+                profiles[sanitize_profile_key(str(key))] = normalize_public_profile(profile)
+        normalized["public_profiles"] = profiles
+        raw_branding = payload.get("dispatch_branding", normalized["dispatch_branding"])
+        normalized["dispatch_branding"] = normalize_dispatch_branding(raw_branding if isinstance(raw_branding, dict) else {})
         return normalized
 
     def save(self, payload: dict[str, Any]) -> None:
@@ -60,6 +71,16 @@ class SettingsStore:
         normalized = empty_settings_payload()
         normalized["schema_version"] = int(payload.get("schema_version", normalized["schema_version"]) or normalized["schema_version"])
         normalized["outbound_channels"] = [normalize_channel(channel) for channel in payload["outbound_channels"]]
+        raw_profiles = payload.get("public_profiles", {})
+        profiles: dict[str, dict[str, Any]] = {}
+        if isinstance(raw_profiles, dict):
+            for key, profile in raw_profiles.items():
+                if not isinstance(profile, dict):
+                    continue
+                profiles[sanitize_profile_key(str(key))] = normalize_public_profile(profile)
+        normalized["public_profiles"] = profiles
+        raw_branding = payload.get("dispatch_branding", normalized["dispatch_branding"])
+        normalized["dispatch_branding"] = normalize_dispatch_branding(raw_branding if isinstance(raw_branding, dict) else {})
         self.path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = None
         try:

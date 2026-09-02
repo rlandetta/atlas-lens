@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Perfil publico | SETTINGS{% endblock %}
+{% block main_class %}settings-page form-page{% endblock %}
+
+{% block content %}
+<section class="form-card ui-card atlas-panel--normal">
+    <h1>Perfil publico</h1>
+    <p class="subtitle">Datos visibles en entregas publicas de ATLAS DISPATCH.</p>
+
+    {% if saved %}
+    <p class="form-success" role="status">Perfil guardado.</p>
+    {% endif %}
+
+    {% if errors %}
+    <div class="form-error" role="alert">
+        <p>No se pudo guardar el perfil:</p>
+        <ul>{% for error in errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('settings.profile') }}" enctype="multipart/form-data" class="coverage-form">
+        <input type="hidden" name="profile_key" value="{{ profile_key }}">
+
+        <section class="settings-profile-preview atlas-panel--compact" aria-label="Avatar actual">
+            <div class="settings-profile-avatar-preview">
+                {% if form_data.avatar_filename %}
+                <img src="{{ url_for('settings.profile_avatar_file', avatar_name=form_data.avatar_filename) }}" alt="Avatar actual" loading="lazy">
+                {% else %}
+                <span aria-hidden="true">{{ (form_data.display_name or "A")[:1] | upper }}</span>
+                {% endif %}
+            </div>
+            <div>
+                <strong>{{ form_data.display_name or "Perfil sin nombre" }}</strong>
+                <p>{{ form_data.role or "Cargo o especialidad pendiente" }}</p>
+                {% if form_data.avatar_filename %}
+                <small class="field-help">Avatar actual: {{ form_data.avatar_filename }}</small>
+                {% else %}
+                <small class="field-help">Sin avatar cargado.</small>
+                {% endif %}
+            </div>
+        </section>
+
+        <div class="coverage-form-grid atlas-grid atlas-grid--2">
+            <div class="form-field">
+                <label for="display_name">Nombre visible</label>
+                <input id="display_name" name="display_name" type="text" value="{{ form_data.display_name or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="role">Cargo / especialidad</label>
+                <input id="role" name="role" type="text" value="{{ form_data.role or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="organization">Organizacion / agencia</label>
+                <input id="organization" name="organization" type="text" value="{{ form_data.organization or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="location">Ubicacion</label>
+                <input id="location" name="location" type="text" value="{{ form_data.location or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="public_email">Correo publico</label>
+                <input id="public_email" name="public_email" type="email" value="{{ form_data.public_email or '' }}">
+            </div>
+            <div class="form-field">
+                <label for="avatar_file">Foto / avatar</label>
+                <input id="avatar_file" name="avatar_file" type="file" accept="image/jpeg,image/png,image/webp">
+            </div>
+        </div>
+
+        <section class="settings-channel-form-section settings-channel-status" aria-labelledby="profile-visibility-title">
+            <h2 id="profile-visibility-title">Visibilidad publica</h2>
+            <div class="settings-toggle-row">
+                <label><input type="checkbox" name="show_public_profile" value="1" {% if form_data.show_public_profile %}checked{% endif %}> Mostrar perfil publico</label>
+                <label><input type="checkbox" name="show_public_email" value="1" {% if form_data.show_public_email %}checked{% endif %}> Mostrar correo publico</label>
+            </div>
+        </section>
+
+        <button type="submit" class="primary-button compact-action">Guardar cambios</button>
+    </form>
+
+    <a href="{{ url_for('settings.index') }}" class="back-link">Volver a Settings</a>
+</section>
+{% endblock %}

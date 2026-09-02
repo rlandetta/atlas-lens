@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}PULSE | ATLAS{% endblock %}
+{% block main_class %}pulse-page{% endblock %}
+
+{% block content %}
+<section class="pulse-shell" aria-label="PULSE Radar informativo">
+    <aside class="pulse-sidebar" aria-label="Navegación de PULSE">
+        <div class="pulse-brand">
+            <div class="pulse-brand-mark" aria-hidden="true"></div>
+            <div>
+                <strong>PULSE</strong>
+                <span>Radar informativo</span>
+            </div>
+        </div>
+        <nav class="pulse-nav">
+            <p>PRINCIPAL</p>
+            {% for label in ["Resumen", "Señales", "Eventos", "Monitores", "Fuentes", "Alertas"] %}
+            <a href="{{ url_for('pulse.index') }}" class="{% if loop.first %}is-active{% endif %}">{{ label }}</a>
+            {% endfor %}
+            <p>CONECTORES</p>
+            {% for label in ["X (Twitter)", "RSS / Medios", "Web / Blogs", "Fuentes oficiales", "YouTube", "Telegram", "Otras redes"] %}
+            <a href="{{ url_for('pulse.index') }}">{{ label }}</a>
+            {% endfor %}
+            <p>CONFIGURACIÓN</p>
+            {% for label in ["Reglas", "Palabras clave", "Notificaciones", "Usuarios"] %}
+            <a href="{{ url_for('pulse.index') }}">{{ label }}</a>
+            {% endfor %}
+        </nav>
+        <div class="pulse-user">
+            <span aria-hidden="true">AT</span>
+            <div>
+                <strong>Editor conectado</strong>
+                <small>atlas.local</small>
+            </div>
+        </div>
+    </aside>
+
+    <div class="pulse-main">
+        <header class="pulse-topbar">
+            <div>
+                <h1>Radar informativo</h1>
+                <p>Monitorea, detecta, verifica y prioriza lo que está pasando.</p>
+            </div>
+            <div class="pulse-controls">
+                <label class="pulse-search">
+                    <span aria-hidden="true">⌕</span>
+                    <input type="search" placeholder="Buscar eventos" aria-label="Buscar eventos">
+                </label>
+                <button type="button" class="pulse-icon-button" title="Notificaciones" aria-label="Notificaciones">!</button>
+                <button type="button" class="pulse-filter-button">Filtros</button>
+                <select aria-label="Selector temporal">
+                    <option>Últimas 6 h</option>
+                    <option>Últimas 24 h</option>
+                    <option>Últimos 7 días</option>
+                </select>
+            </div>
+        </header>
+
+        {% if demo_mode %}
+        <p class="pulse-demo-note">Datos demo controlados mientras no hay conectores configurados.</p>
+        {% endif %}
+
+        <section class="pulse-metrics" aria-label="Resumen de PULSE">
+            <article><span>Señales</span><strong>{{ summary.signals }}</strong></article>
+            <article><span>Eventos</span><strong>{{ summary.events }}</strong></article>
+            <article><span>Importantes</span><strong>{{ summary.important }}</strong></article>
+            <article class="is-urgent"><span>Urgentes</span><strong>{{ summary.urgent }}</strong></article>
+        </section>
+
+        <div class="pulse-workgrid">
+            <section class="pulse-event-list" aria-label="Eventos detectados">
+                <div class="pulse-section-heading">
+                    <h2>Eventos</h2>
+                    <span>X: {{ x_budget.state }} · ${{ "%.2f"|format(x_budget.month_total) }} / ${{ "%.2f"|format(x_budget.internal_hard_limit) }}</span>
+                </div>
+                {% for event in events %}
+                <article class="pulse-event-card {% if selected_event and selected_event.id == event.id %}is-selected{% endif %}">
+                    <a href="{{ url_for('pulse.event_detail', event_id=event.id) }}" class="pulse-event-link">
+                        <div class="pulse-event-thumb {% if not event.image_url %}is-empty{% endif %}">
+                            {% if event.image_url %}
+                            <img src="{{ event.image_url }}" alt="" loading="lazy">
+                            {% else %}
+                            <span>{{ event.priority[:1] }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="pulse-event-copy">
+                            <div class="pulse-event-meta">
+                                <span class="pulse-priority pulse-priority--{{ event.priority | lower }}">{{ event.priority }}</span>
+                                <span>{{ event.status }}</span>
+                            </div>
+                            <h3>{{ event.title }}</h3>
+                            <p>{{ event.description }}</p>
+                            <dl>
+                                <div><dt>Ubicación</dt><dd>{{ event.location or "Sin ubicación" }}</dd></div>
+                                <div><dt>Detectado</dt><dd>{{ event.age_label }}</dd></div>
+                                <div><dt>Fuentes</dt><dd>{{ event.source_count }} · {{ event.official_source_count }} oficiales</dd></div>
+                            </dl>
+                        </div>
+                        <div class="pulse-score">
+                            <strong>{{ event.confidence_score }}</strong>
+                            <span>Confidence</span>
+                        </div>
+                    </a>
+                    <div class="pulse-card-actions">
+                        <form method="post" action="{{ url_for('pulse.follow_event', event_id=event.id) }}"><button type="submit">Seguir</button></form>
+                        <form method="post" action="{{ url_for('pulse.review_event', event_id=event.id) }}"><button type="submit">Revisar</button></form>
+                    </div>
+                </article>
+                {% else %}
+                <div class="pulse-empty">
+                    <h2>Sin eventos activos</h2>
+                    <p>Los conectores registrarán señales normalizadas cuando estén configurados.</p>
+                </div>
+                {% endfor %}
+            </section>
+
+            {% if selected_event %}
+            <aside class="pulse-detail" aria-label="Detalle del evento seleccionado">
+                <div class="pulse-detail-head">
+                    <span>{{ selected_event.id }}</span>
+                    <strong class="pulse-priority pulse-priority--{{ selected_event.priority | lower }}">{{ selected_event.priority }}</strong>
+                </div>
+                <h2>{{ selected_event.title }}</h2>
+                <p>{{ selected_event.location }} · {{ selected_event.last_seen_label }}</p>
+                <div class="pulse-tabs" role="tablist" aria-label="Detalle del evento">
+                    {% for label in ["Resumen", "Corroboración", "Fuentes", "Menciones", "Mapa"] %}
+                    <button type="button" class="{% if loop.first %}is-active{% endif %}">{{ label }}</button>
+                    {% endfor %}
+                </div>
+                <section class="pulse-detail-score">
+                    <div><span>Confidence Score</span><strong>{{ selected_event.confidence_score }}</strong></div>
+                    <progress value="{{ selected_event.confidence_score }}" max="100">{{ selected_event.confidence_score }}</progress>
+                </section>
+                <section class="pulse-detail-block">
+                    <h3>Resumen</h3>
+                    <p>{{ selected_event.summary }}</p>
+                </section>
+                <section class="pulse-detail-block">
+                    <h3>Palabras clave</h3>
+                    <div class="pulse-chip-row">{% for keyword in selected_event.keywords %}<span>{{ keyword }}</span>{% endfor %}</div>
+                </section>
+                <section class="pulse-detail-block">
+                    <h3>Cronología</h3>
+                    <ol class="pulse-timeline">{% for item in selected_event.evolution %}<li>{{ item }}</li>{% endfor %}</ol>
+                </section>
+                <section class="pulse-detail-block">
+                    <h3>Fuentes</h3>
+                    <div class="pulse-source-list">
+                        {% for source in selected_event.sources %}
+                        <span>{{ source.name }} · {{ source.type }}</span>
+                        {% else %}
+                        <span>{{ selected_event.source_count }} fuentes detectadas</span>
+                        {% endfor %}
+                    </div>
+                </section>
+                <section class="pulse-detail-block">
+                    <h3>Conclusión de PULSE</h3>
+                    <p>{{ selected_event.pulse_conclusion or "Conclusión pendiente de corroboración." }}</p>
+                    <p>{{ selected_event.information }}</p>
+                </section>
+                <section class="pulse-detail-block">
+                    <h3>Etiquetas</h3>
+                    <div class="pulse-chip-row">{% for tag in selected_event.tags %}<span>{{ tag }}</span>{% endfor %}</div>
+                </section>
+                <div class="pulse-detail-actions">
+                    {% if selected_event.created_coverage_id %}
+                    <a href="{{ url_for('web.coverage_detail', coverage_id=selected_event.created_coverage_id) }}">Abrir cobertura</a>
+                    {% else %}
+                    <form method="post" action="{{ url_for('pulse.create_nexus_coverage', event_id=selected_event.id) }}"><button type="submit">Crear cobertura en NEXUS</button></form>
+                    {% endif %}
+                    <form method="post" action="{{ url_for('pulse.archive_event', event_id=selected_event.id) }}"><button type="submit" class="is-muted">Archivar</button></form>
+                </div>
+            </aside>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endblock %}

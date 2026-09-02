@@ -27,6 +27,12 @@ ATLAS_NAVIGATION = (
         "enabled": True,
     },
     {
+        "label": "PULSE",
+        "endpoint": "pulse.index",
+        "blueprint": "pulse",
+        "enabled": True,
+    },
+    {
         "label": "SETTINGS",
         "endpoint": "settings.index",
         "blueprint": "settings",
@@ -37,6 +43,7 @@ ATLAS_NAVIGATION = (
 
 CANONICAL_ROUTE_ALIASES = (
     ("/flow/", "web.flow_home", ("GET",)),
+    ("/pulse/", "pulse.index", ("GET",)),
     ("/lens/", "web.lens_home", ("GET",)),
     ("/lens/coverages/new", "web.new_coverage", ("GET", "POST")),
     ("/lens/coverages/<coverage_id>", "web.coverage_detail", ("GET",)),
@@ -121,9 +128,13 @@ def create_app():
     from app.config import (
         ATLAS_URL_PREFIX,
         DELIVERY_LINKS_STORE_PATH,
+        DISPATCH_IP_GEOLOCATION_CACHE_PATH,
+        DISPATCH_IP_GEOLOCATION_CACHE_TTL_DAYS,
+        DISPATCH_IP_GEOLOCATION_PROVIDER,
         DELIVERY_ROOT,
         DISPATCH_STORE_PATH,
         FLOW_EVENTS_ROOT,
+        FLOW_TRASH_ROOT,
         INGEST_SESSION_TIMEOUT_MINUTES,
         INGEST_STORE_PATH,
         LENS_COVERAGE_STORE_PATH,
@@ -131,12 +142,18 @@ def create_app():
         SETTINGS_STORE_PATH,
         LENS_MAX_PHOTO_BYTES,
         LENS_MEDIA_ROOT,
+        PROFILE_AVATAR_ROOT,
+        PROFILE_MAX_AVATAR_BYTES,
+        PUBLIC_DELIVERY_BASE_URL,
+        PULSE_STORE_PATH,
         THUMBNAIL_ROOT,
     )
     from app.dispatch import DeliveryLinkService, DeliveryLinkStore, DeliveryPackageService, DeliveryPreviewService, DispatchShipmentStore, ShipmentService, SMTPLinkTransport
+    from app.dispatch.geolocation import build_geolocation_service
     from app.ingest import IngestService, IngestStore
     from app.lens import LensCoverageStore
     from app.media import ThumbnailService
+    from app.pulse import PulseService, PulseStore, pulse_bp
     from app.settings import SettingsService, SettingsStore
     from app.lens_read_service import LensReadService
     from app.routes.dispatch import dispatch_bp
@@ -150,7 +167,9 @@ def create_app():
         app.config["APPLICATION_ROOT"] = ATLAS_URL_PREFIX
         app.wsgi_app = UrlPrefixMiddleware(app.wsgi_app, ATLAS_URL_PREFIX)
     app.config["LENS_MAX_PHOTO_BYTES"] = LENS_MAX_PHOTO_BYTES
+    app.config["PROFILE_MAX_AVATAR_BYTES"] = PROFILE_MAX_AVATAR_BYTES
     app.config["FLOW_EVENTS_ROOT"] = FLOW_EVENTS_ROOT
+    app.config["FLOW_TRASH_ROOT"] = FLOW_TRASH_ROOT
     ingest_store = IngestStore(INGEST_STORE_PATH)
     ingest_service = IngestService(ingest_store, session_timeout_minutes=INGEST_SESSION_TIMEOUT_MINUTES)
     lens_coverage_store = LensCoverageStore(LENS_COVERAGE_STORE_PATH, LENS_MEDIA_ROOT)
@@ -163,11 +182,26 @@ def create_app():
     lens_reader = LensReadService(coverage_provider)
     dispatch_store = DispatchShipmentStore(DISPATCH_STORE_PATH)
     delivery_link_store = DeliveryLinkStore(DELIVERY_LINKS_STORE_PATH)
-    delivery_link_service = DeliveryLinkService(delivery_link_store, PUBLIC_BASE_URL)
+    geolocation_service = build_geolocation_service(
+        provider=DISPATCH_IP_GEOLOCATION_PROVIDER,
+        cache_path=DISPATCH_IP_GEOLOCATION_CACHE_PATH,
+        ttl_days=DISPATCH_IP_GEOLOCATION_CACHE_TTL_DAYS,
+    )
+    delivery_link_service = DeliveryLinkService(
+        delivery_link_store,
+        PUBLIC_BASE_URL,
+        public_delivery_base_url=PUBLIC_DELIVERY_BASE_URL,
+        geolocation_service=geolocation_service,
+    )
     delivery_package_service = DeliveryPackageService(delivery_root=DELIVERY_ROOT, media_root=LENS_MEDIA_ROOT)
     delivery_preview_service = DeliveryPreviewService(delivery_root=DELIVERY_ROOT)
     settings_store = SettingsStore(SETTINGS_STORE_PATH)
     settings_service = SettingsService(settings_store)
+    pulse_store = PulseStore(PULSE_STORE_PATH)
+    pulse_service = PulseService(pulse_store)
+    profile_avatar_root = Path(PROFILE_AVATAR_ROOT)
+    if not profile_avatar_root.is_absolute() and profile_avatar_root.parts[:1] == ("instance",):
+        profile_avatar_root = Path(app.instance_path, *profile_avatar_root.parts[1:])
     smtp_transport = SMTPLinkTransport(settings_service=settings_service)
     app.extensions["ingest"] = {
         "store": ingest_store,
@@ -182,6 +216,11 @@ def create_app():
     app.extensions["settings"] = {
         "store": settings_store,
         "settings_service": settings_service,
+        "profile_avatar_root": profile_avatar_root,
+    }
+    app.extensions["pulse"] = {
+        "store": pulse_store,
+        "service": pulse_service,
     }
     app.extensions["dispatch"] = {
         "coverage_provider": coverage_provider,
@@ -190,6 +229,7 @@ def create_app():
         "settings_service": settings_service,
         "delivery_link_store": delivery_link_store,
         "delivery_link_service": delivery_link_service,
+        "geolocation_service": geolocation_service,
         "delivery_package_service": delivery_package_service,
         "delivery_preview_service": delivery_preview_service,
         "smtp_transport": smtp_transport,
@@ -204,6 +244,7 @@ def create_app():
         return {"atlas_navigation": ATLAS_NAVIGATION}
 
     app.register_blueprint(web_bp)
+    app.register_blueprint(pulse_bp)
     app.register_blueprint(dispatch_bp)
     app.register_blueprint(downloads_bp)
     app.register_blueprint(settings_bp)

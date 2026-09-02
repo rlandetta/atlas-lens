@@ -99,6 +99,8 @@
             data-caption-city="{{ coverage.city }}"
             data-caption-country="{{ coverage.country }}"
             data-caption-locality-type="{{ coverage.locality_type or 'auto' }}"
+            data-caption-admin-area="{{ coverage.admin_area or '' }}"
+            data-caption-admin-area-type="{{ coverage.admin_area_type or '' }}"
             data-caption-date="{{ coverage.event_date }}"
             data-caption-send-date="{{ coverage.submit_date }}"
             data-caption-event-date="{{ coverage.event_date }}"
@@ -144,7 +146,10 @@
 
                 <aside class="photo-info-panel" aria-label="Editor de caption">
                     <div class="caption-photo-nav">
-                        <span id="caption-photo-counter" class="caption-photo-counter">Foto 0 de 0</span>
+                        <span class="caption-photo-current">
+                            <span id="caption-photo-counter" class="caption-photo-counter">Foto 0 de 0</span>
+                            <span id="caption-photo-filename" class="caption-photo-filename" title=""></span>
+                        </span>
                         <span id="caption-photo-status-indicator" class="caption-status-indicator">Sin editar</span>
                         <div class="caption-nav-buttons" aria-label="Navegación de fotografías">
                             <button id="caption-prev-photo-button" type="button" class="caption-nav-button" aria-label="Fotografía anterior">←</button>
@@ -363,6 +368,8 @@
         role="tabpanel"
         data-tab-panel
         data-export-url="{{ url_for('web.create_coverage_export', coverage_id=coverage_id) }}"
+        data-export-history-delete-url-template="{{ url_for('web.delete_export_history_item', coverage_id=coverage_id, export_id='__EXPORT_ID__') }}"
+        data-coverage-url="{{ url_for('web.coverage_detail', coverage_id=coverage_id) }}"
         data-export-date="{{ coverage.submit_date }}"
         data-export-coverage="{{ coverage.coverage_name }}"
         data-export-country="{{ coverage.country }}"
@@ -380,18 +387,14 @@
             <form id="export-form" class="export-form">
                 <fieldset class="export-card export-format-card">
                     <legend>Formatos</legend>
-                    <label><input type="checkbox" name="formats" value="zip"> ZIP</label>
                     <label><input type="checkbox" name="formats" value="docx" checked> DOCX</label>
                     <label><input type="checkbox" name="formats" value="html"> HTML</label>
                     <label><input type="checkbox" name="formats" value="pdf"> PDF</label>
                 </fieldset>
 
-                <fieldset id="export-content-card" class="export-card export-content-card" hidden>
-                    <legend>Contenido del paquete</legend>
-                    <label><input type="checkbox" name="include_photos" checked> Incluir fotografías</label>
-                    <label><input type="checkbox" name="include_captions" checked> Incluir captions</label>
-                    <label><input type="checkbox" name="include_metadata"> Incluir metadatos</label>
-                    <label><input type="checkbox" name="include_manifest"> Incluir manifiesto</label>
+                <fieldset id="export-content-card" class="export-card export-content-card">
+                    <legend>Archivos</legend>
+                    <label><input type="checkbox" name="include_photos"> Incluir fotografías</label>
                 </fieldset>
 
                 <label class="export-card export-filename-card" for="export-output-name">
@@ -401,11 +404,47 @@
 
                 <input id="export-confirm-warnings" type="hidden" value="false">
                 <div id="export-message" class="export-message" role="status" aria-live="polite"></div>
+                <section id="export-result-panel" class="export-result-panel" hidden aria-live="polite"></section>
                 <div class="export-actions export-actions-v2">
                     <button id="export-download-button" type="submit" name="destination" value="download" class="primary-button compact-action">Descargar</button>
+                    <a id="export-coverage-return-link" href="/lens/coverages/{{ coverage_id }}" class="secondary-button compact-action export-coverage-return">Volver a cobertura</a>
                     <button id="export-dispatch-button" type="submit" name="destination" value="dispatch" class="secondary-button compact-action">Enviar a DISPATCH</button>
                 </div>
             </form>
+            <details class="export-history-panel">
+                <summary>Historial</summary>
+                {% if export_history %}
+                <ul id="export-history-list" class="export-history-list">
+                    {% for item in export_history %}
+                    <li data-export-history-item data-export-id="{{ item.export_id }}">
+                        <div>
+                            <strong>{{ item.created_at }}</strong>
+                            <span>{{ item.coverage_name or coverage.coverage_name }}</span>
+                            <span>{{ (item.formats or []) | join(" · ") }}</span>
+                            <span>{{ item.filename }}</span>
+                            <span>{{ item.exported_photo_count }}/{{ item.requested_photo_count }} fotografías</span>
+                            <span>{{ item.status }}</span>
+                        </div>
+                        {% if item.omitted_photos %}
+                        <details>
+                            <summary>Detalles</summary>
+                            <ul>
+                                {% for omitted in item.omitted_photos %}
+                                <li>{{ omitted.filename }} · {{ omitted.stage }} · {{ omitted.reason }}</li>
+                                {% endfor %}
+                            </ul>
+                        </details>
+                        {% endif %}
+                        <button type="button" class="secondary-button compact-action" data-export-history-delete>Eliminar historial</button>
+                    </li>
+                    {% endfor %}
+                </ul>
+                <p id="export-history-empty" hidden>No hay exportaciones registradas.</p>
+                {% else %}
+                <ul id="export-history-list" class="export-history-list"></ul>
+                <p id="export-history-empty">No hay exportaciones registradas.</p>
+                {% endif %}
+            </details>
         </div>
     </section>
 
@@ -457,8 +496,24 @@
                 <label for="edit_locality_type">Tipo de localidad</label>
                 <select id="edit_locality_type" name="locality_type">
                     <option value="auto" {% if (coverage.locality_type or 'auto') == 'auto' %}selected{% endif %}>Automático</option>
+                    <option value="capital" {% if coverage.locality_type == 'capital' %}selected{% endif %}>Capital</option>
                     <option value="city" {% if coverage.locality_type == 'city' %}selected{% endif %}>Ciudad</option>
                     <option value="locality" {% if coverage.locality_type == 'locality' %}selected{% endif %}>Localidad</option>
+                </select>
+            </div>
+
+            <div class="form-field admin-area-field" data-admin-area-field>
+                <label for="edit_admin_area">División administrativa</label>
+                <input id="edit_admin_area" name="admin_area" type="text" value="{{ coverage.admin_area or '' }}" spellcheck="true">
+            </div>
+
+            <div class="form-field admin-area-field" data-admin-area-field>
+                <label for="edit_admin_area_type">Tipo de división</label>
+                <select id="edit_admin_area_type" name="admin_area_type">
+                    <option value="" {% if not coverage.admin_area_type %}selected{% endif %}>Sin prefijo</option>
+                    {% for type_value, type_label in admin_area_types %}
+                    <option value="{{ type_value }}" {% if coverage.admin_area_type == type_value %}selected{% endif %}>{{ type_label }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
@@ -580,11 +635,22 @@
         </div>
     </div>
 </dialog>
+<dialog id="export-partial-dispatch-dialog" class="confirm-dialog">
+    <form method="dialog">
+        <h2>Exportación incompleta</h2>
+        <p id="export-partial-dispatch-message">Esta exportación está incompleta.</p>
+        <div class="dialog-actions">
+            <button id="cancel-partial-dispatch-button" type="button" class="secondary-button">Cancelar</button>
+            <button id="confirm-partial-dispatch-button" type="button" class="danger-button">Enviar exportación parcial</button>
+        </div>
+    </form>
+</dialog>
 <script id="coverage-photos-data" type="application/json">{{ photos | tojson }}</script>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/editorial_reference_data.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/coverage_form.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/photo_workspace.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_edit.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/coverage_tabs.js') }}" defer></script>

@@ -41,12 +41,12 @@ class SettingsRoutesTest(unittest.TestCase):
             "name": "Xinhua",
             "display_name": "Xinhua News Agency",
             "channel_type": "smtp",
-            "sender_email": "atlas@lavoceria.com",
+            "sender_email": "notificaciones@ayampi.com",
             "reply_to": "desk@xinhua.com",
             "smtp_host": "smtp.zoho.com",
             "smtp_port": "465",
             "smtp_security": "ssl",
-            "smtp_username": "atlas@lavoceria.com",
+            "smtp_username": "notificaciones@ayampi.com",
             "credential_ref": "ATLAS_SMTP_CHANNEL_XINHUA",
             "is_active": "1",
             "is_default": "1",
@@ -190,32 +190,32 @@ class SettingsRoutesTest(unittest.TestCase):
             self.assertEqual(response.status_code, 400)
 
     def test_new_channel_id_requires_lowercase_ascii_but_existing_id_is_preserved(self):
-        response = self.client.post("/settings/channels/new", data=self.valid_form(id="La_Vocería"), follow_redirects=False)
+        response = self.client.post("/settings/channels/new", data=self.valid_form(id="AYAMPI_legacy"), follow_redirects=False)
         self.assertEqual(response.status_code, 400)
         self.assertIn("minúsculas ASCII", response.get_data(as_text=True))
 
         legacy_draft = OutboundChannelDraft(
-            id="La_Vocería",
+            id="AYAMPI_legacy",
             name="Legado",
             display_name="Legado",
             channel_type="smtp",
-            sender_email="atlas@lavoceria.com",
+            sender_email="notificaciones@ayampi.com",
             reply_to="",
             smtp_host="smtp.zoho.com",
             smtp_port=465,
             smtp_security="ssl",
-            smtp_username="atlas@lavoceria.com",
+            smtp_username="notificaciones@ayampi.com",
             credential_ref="ATLAS_SMTP_CHANNEL_LEGACY",
         )
         legacy = build_channel(legacy_draft)
         self.service.store.save_channels([legacy])
         response = self.client.post(
-            "/settings/channels/La_Vocería/edit",
-            data=self.valid_form(id="La_Vocería", name="Legado", credential_ref="ATLAS_SMTP_CHANNEL_LEGACY"),
+            "/settings/channels/AYAMPI_legacy/edit",
+            data=self.valid_form(id="AYAMPI_legacy", name="Legado", credential_ref="ATLAS_SMTP_CHANNEL_LEGACY"),
             follow_redirects=False,
         )
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(self.service.get_outbound_channel(legacy["id"])["id"], "La_Vocería")
+        self.assertEqual(self.service.get_outbound_channel(legacy["id"])["id"], "AYAMPI_legacy")
 
     def test_only_one_default_channel(self):
         self.create_channel(id="xinhua", name="Xinhua", credential_ref="ATLAS_SMTP_CHANNEL_XINHUA")
@@ -260,7 +260,7 @@ class SettingsRoutesTest(unittest.TestCase):
         self.assertNotIn("do-not-store", raw_json)
 
     def test_smtp_channel_ignores_legacy_sftp_values(self):
-        channel = self.create_channel(host="smtp.zoho.com", port="465", username="atlas@lavoceria.com", remote_path="/wrong")
+        channel = self.create_channel(host="smtp.zoho.com", port="465", username="notificaciones@ayampi.com", remote_path="/wrong")
 
         self.assertEqual(channel["channel_type"], "smtp")
         self.assertEqual(channel["host"], "")
@@ -300,12 +300,12 @@ class SettingsServiceStoreTest(unittest.TestCase):
             name="Xinhua",
             display_name="Xinhua",
             channel_type="smtp",
-            sender_email="atlas@lavoceria.com",
+            sender_email="notificaciones@ayampi.com",
             reply_to="",
             smtp_host="smtp.zoho.com",
             smtp_port=465,
             smtp_security="ssl",
-            smtp_username="atlas@lavoceria.com",
+            smtp_username="notificaciones@ayampi.com",
             credential_ref="ATLAS_SMTP_CHANNEL_XINHUA",
         )
         self.service.create_outbound_channel(draft)

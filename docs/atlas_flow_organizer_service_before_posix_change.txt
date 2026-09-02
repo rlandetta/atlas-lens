@@ -1,0 +1,15 @@
+# /etc/systemd/system/atlas-flow-organizer.service
+[Unit]
+Description=ATLAS FLOW Organizer
+After=network.target docker.service sftpgo.service
+Wants=network.target
+
+[Service]
+Type=simple
+User=atlas
+ExecStart=/bin/bash -c 'while true; do /data/FLOW/scripts/atlas-flow-organize.sh; sleep 2; done'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

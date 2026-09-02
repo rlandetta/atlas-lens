@@ -137,6 +137,12 @@ class LensCoverageStore:
         normalized["locality_type"] = self.normalize_locality_type(
             normalized.get("locality_type", "auto")
         )
+        normalized["admin_area"] = str(normalized.get("admin_area", "")).strip()
+        normalized["admin_area_type"] = self.normalize_admin_area_type(
+            normalized.get("admin_area_type", "")
+        )
+        if normalized.get("created_at"):
+            normalized["created_at"] = str(normalized.get("created_at"))
         photos = normalized.get("photos", [])
         normalized["photos"] = [
             self.normalize_photo(photo)
@@ -215,7 +221,12 @@ class LensCoverageStore:
     @staticmethod
     def normalize_locality_type(value: Any) -> str:
         normalized = str(value or "auto").strip().lower()
-        return normalized if normalized in {"auto", "city", "locality"} else "auto"
+        return normalized if normalized in {"auto", "city", "locality", "capital"} else "auto"
+
+    @staticmethod
+    def normalize_admin_area_type(value: Any) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized in {"province", "state", "department", "region", "district", "other"} else ""
 
     @staticmethod
     def normalize_storage_path(value: str) -> str:

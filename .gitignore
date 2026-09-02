@@ -8,12 +8,39 @@ __pycache__/
 
 # Environment
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+id_ecdsa*
 
 # macOS
 .DS_Store
 
 # VS Code
 .vscode/
+
 # Runtime instance data
 instance/*
 !instance/.gitkeep
+
+# Runtime data, backups, logs and packaged artifacts
+backups/
+backup/
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+*.zip
+*.tar.gz
+
+# Accidental empty shell-output files
+ENVIADO
+ENVIADO.
+ENVIADO:
+ERROR
+ERROR.
+ERROR:

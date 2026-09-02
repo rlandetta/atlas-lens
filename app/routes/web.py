@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import base64
 import binascii
+import json
 import logging
 import os
 import random
@@ -14,7 +15,7 @@ from flask import Blueprint, abort, current_app, jsonify, redirect, render_templ
 
 from app.ai import AIError, AIService
 from app.ai.context_engine import get_coverage_context_data, normalize_context_payload
-from app.config import AI_ENABLED, FLOW_EVENTS_ROOT
+from app.config import AI_ENABLED, FLOW_EVENTS_ROOT, FLOW_TRASH_ROOT
 from app.media import resolve_legacy_flow_photo_source, resolve_photo_source
 from app.dispatch import DispatchHandoffService
 from app.export.models import ExportRequest, ExportResult
@@ -42,7 +43,16 @@ REQUIRED_COVERAGE_FIELDS = (
     "editor",
 )
 
-LOCALITY_TYPES = {"auto", "city", "locality"}
+LOCALITY_TYPES = {"auto", "city", "locality", "capital"}
+ADMIN_AREA_TYPES = {"province", "state", "department", "region", "district", "other", ""}
+ADMIN_AREA_TYPE_OPTIONS = (
+    ("province", "Provincia"),
+    ("state", "Estado"),
+    ("department", "Departamento"),
+    ("region", "Región"),
+    ("district", "Distrito"),
+    ("other", "Otro"),
+)
 
 COUNTRY_GROUPS = (
     (
@@ -88,6 +98,18 @@ COUNTRY_GROUPS = (
 # Temporary in-memory storage while there is no database.
 coverages = {}
 coverage_store = None
+
+
+class FlowSessionDeleteConflict(RuntimeError):
+    def __init__(self, payload: dict):
+        super().__init__("FLOW session photos are referenced by LENS.")
+        self.payload = payload
+
+
+class FlowSessionFilesystemError(RuntimeError):
+    def __init__(self, payload: dict):
+        super().__init__("FLOW session files could not be moved to trash.")
+        self.payload = payload
 
 
 def configure_coverage_store(store) -> None:
@@ -140,6 +162,8 @@ def collect_coverage_form_data() -> dict[str, str]:
         for field in REQUIRED_COVERAGE_FIELDS
     }
     form_data["locality_type"] = normalize_locality_type(request.form.get("locality_type", "auto"))
+    form_data["admin_area"] = request.form.get("admin_area", "").strip()
+    form_data["admin_area_type"] = normalize_admin_area_type(request.form.get("admin_area_type", ""))
     return form_data
 
 
@@ -152,6 +176,26 @@ def validate_coverage_data(form_data: dict[str, str]) -> str | None:
 def normalize_locality_type(value: str) -> str:
     normalized = str(value or "auto").strip().lower()
     return normalized if normalized in LOCALITY_TYPES else "auto"
+
+
+def normalize_admin_area_type(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    return normalized if normalized in ADMIN_AREA_TYPES else ""
+
+
+def coverage_created_sort_value(coverage_id: str, coverage: dict) -> str:
+    created_at = str(coverage.get("created_at") or "").strip()
+    if created_at:
+        return created_at
+    match = re.match(r"^cov-(\d{14})-", str(coverage_id))
+    if not match:
+        return ""
+    try:
+        return datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(
+            tzinfo=timezone.utc
+        ).isoformat()
+    except ValueError:
+        return ""
 
 
 def normalize_initial_source(value: str) -> str:
@@ -192,6 +236,10 @@ def apply_coverage_edit_fields(coverage: dict, form_data: dict[str, str]) -> dic
         updated[field] = form_data[field]
     updated["locality_type"] = normalize_locality_type(
         form_data.get("locality_type", updated.get("locality_type", "auto"))
+    )
+    updated["admin_area"] = str(form_data.get("admin_area", updated.get("admin_area", ""))).strip()
+    updated["admin_area_type"] = normalize_admin_area_type(
+        form_data.get("admin_area_type", updated.get("admin_area_type", ""))
     )
     attach_editor_metadata(updated)
     return updated
@@ -459,6 +507,10 @@ def flow_events_root() -> str:
     return str(current_app.config.get("FLOW_EVENTS_ROOT") or FLOW_EVENTS_ROOT)
 
 
+def flow_trash_root() -> str:
+    return str(current_app.config.get("FLOW_TRASH_ROOT") or FLOW_TRASH_ROOT)
+
+
 def ensure_media_thumbnail(source_path: Path | None) -> Path | None:
     service = thumbnail_service()
     if source_path is None or service is None:
@@ -595,6 +647,390 @@ def list_ingest_session_photos(session_id: str) -> list[dict]:
     return sorted(photos, key=lambda item: str(item.get("received_at", "")))
 
 
+def validate_flow_session_id(session_id: str) -> str:
+    value = str(session_id or "").strip()
+    if not value or not re.fullmatch(r"[A-Za-z0-9_.:-]+", value):
+        abort(404)
+    return value
+
+
+def flow_lens_coverage_url(coverage_id: str) -> str:
+    application_root = str(current_app.config.get("APPLICATION_ROOT") or "").rstrip("/")
+    if application_root:
+        return url_for("web.coverage_detail", coverage_id=coverage_id)
+    return f"{url_for('web.lens_home').rstrip('/')}/coverages/{coverage_id}"
+
+
+def build_flow_lens_dependency_map(photos: list[dict]) -> dict[str, dict]:
+    session_photo_ids = {str(photo.get("id", "")) for photo in photos if str(photo.get("id", ""))}
+    session_paths = {str(photo.get("path", "")) for photo in photos if str(photo.get("path", ""))}
+    session_ids = {str(photo.get("session_id", "")) for photo in photos if str(photo.get("session_id", ""))}
+    by_coverage: dict[str, dict] = {}
+    used_photo_ids: set[str] = set()
+
+    for coverage_id, coverage in coverages.items():
+        coverage_photo_ids: set[str] = set()
+        for lens_photo in ensure_coverage_photos(coverage):
+            lens_session_id = str(lens_photo.get("flow_session_id", ""))
+            if lens_session_id and lens_session_id not in session_ids:
+                continue
+            flow_photo_id = str(lens_photo.get("flow_photo_id", ""))
+            flow_path = str(lens_photo.get("flow_path", ""))
+            matched_photo_id = ""
+            if flow_photo_id and flow_photo_id in session_photo_ids:
+                matched_photo_id = flow_photo_id
+            elif flow_path and flow_path in session_paths:
+                matched_photo_id = next(
+                    (
+                        str(photo.get("id", ""))
+                        for photo in photos
+                        if str(photo.get("path", "")) == flow_path and str(photo.get("id", ""))
+                    ),
+                    flow_path,
+                )
+            if not matched_photo_id:
+                continue
+            coverage_photo_ids.add(matched_photo_id)
+            used_photo_ids.add(matched_photo_id)
+
+        if coverage_photo_ids:
+            by_coverage[str(coverage_id)] = {
+                "coverage_id": str(coverage_id),
+                "title": str(coverage.get("coverage_name") or coverage_id),
+                "photo_count": len(coverage_photo_ids),
+                "url": flow_lens_coverage_url(str(coverage_id)),
+            }
+
+    return {
+        "used_photo_ids": used_photo_ids,
+        "coverages": sorted(
+            by_coverage.values(),
+            key=lambda item: (str(item["title"]).casefold(), str(item["coverage_id"])),
+        ),
+    }
+
+
+def build_flow_session_delete_check(session_id: str, *, payload: dict | None = None) -> dict:
+    session_id = validate_flow_session_id(session_id)
+    if payload is None:
+        ingest = current_app.extensions.get("ingest", {})
+        service = ingest.get("ingest_service")
+        if service is not None:
+            service.get_active_session()
+        session = find_ingest_session(session_id)
+        photos = list_ingest_session_photos(session_id)
+    else:
+        close_inactive_flow_sessions_in_payload(payload)
+        session = next((item for item in payload.get("sessions", []) if str(item.get("id", "")) == session_id), None)
+        photos = sorted(
+            [photo for photo in payload.get("photos", []) if str(photo.get("session_id", "")) == session_id],
+            key=lambda item: str(item.get("received_at", "")),
+        )
+    if session is None:
+        abort(404)
+    if str(session.get("status", "")) == "active":
+        return {
+            "ok": False,
+            "reason": "session_active",
+            "message": "Esta sesión está recibiendo fotografías. Ciérrela o espere a que deje de recibir antes de eliminarla.",
+            "session_id": session_id,
+            "total_photos": len(photos),
+            "used_photos": 0,
+            "coverages": [],
+        }
+
+    dependencies = build_flow_lens_dependency_map(photos)
+    used_count = len(dependencies["used_photo_ids"])
+    return {
+        "ok": used_count == 0,
+        "reason": "" if used_count == 0 else "photos_in_use",
+        "session_id": session_id,
+        "total_photos": len(photos),
+        "used_photos": used_count,
+        "coverages": dependencies["coverages"],
+    }
+
+
+def build_flow_session_lens_usage_counts(sessions: list[dict], photos: list[dict]) -> dict[str, int]:
+    session_ids = {str(session.get("id", "")) for session in sessions if str(session.get("id", ""))}
+    photo_session_by_id = {
+        str(photo.get("id", "")): str(photo.get("session_id", ""))
+        for photo in photos
+        if str(photo.get("id", "")) and str(photo.get("session_id", "")) in session_ids
+    }
+    photo_session_by_path = {
+        str(photo.get("path", "")): str(photo.get("session_id", ""))
+        for photo in photos
+        if str(photo.get("path", "")) and str(photo.get("session_id", "")) in session_ids
+    }
+    used_by_session: dict[str, set[str]] = {session_id: set() for session_id in session_ids}
+
+    for coverage in coverages.values():
+        for lens_photo in ensure_coverage_photos(coverage):
+            lens_session_id = str(lens_photo.get("flow_session_id", ""))
+            flow_photo_id = str(lens_photo.get("flow_photo_id", ""))
+            flow_path = str(lens_photo.get("flow_path", ""))
+            if lens_session_id:
+                if lens_session_id not in session_ids:
+                    continue
+                if flow_photo_id and photo_session_by_id.get(flow_photo_id) == lens_session_id:
+                    used_by_session.setdefault(lens_session_id, set()).add(flow_photo_id)
+                    continue
+                if flow_path and photo_session_by_path.get(flow_path) == lens_session_id:
+                    used_by_session.setdefault(lens_session_id, set()).add(flow_path)
+                    continue
+                continue
+            session_id = photo_session_by_id.get(flow_photo_id)
+            used_key = flow_photo_id
+            if session_id is None and flow_path:
+                session_id = photo_session_by_path.get(flow_path)
+                used_key = flow_path
+            if session_id is None:
+                continue
+            used_by_session.setdefault(session_id, set()).add(used_key)
+
+    return {session_id: len(used_keys) for session_id, used_keys in used_by_session.items()}
+
+
+def close_inactive_flow_sessions_in_payload(payload: dict) -> None:
+    service = current_app.extensions.get("ingest", {}).get("ingest_service")
+    if service is not None:
+        service.close_inactive_sessions_in_payload(payload, now=datetime.now(timezone.utc))
+
+
+def safe_relative_to(path: Path, root: Path) -> Path | None:
+    try:
+        return path.resolve(strict=True).relative_to(root.resolve(strict=True))
+    except (OSError, ValueError):
+        return None
+
+
+def resolve_ingest_photo_source_from_payload(photo: dict, photos: list[dict]) -> Path | None:
+    source = resolve_photo_source(photo, ingest_photos=photos)
+    if source is not None:
+        return source
+    return resolve_legacy_flow_photo_source(photo, events_root=flow_events_root())
+
+
+def build_flow_trash_batch_root(session_id: str) -> Path:
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return Path(flow_trash_root()) / f"{session_id}-{timestamp}"
+
+
+def flow_watch_roots() -> list[Path]:
+    configured = current_app.config.get("FLOW_WATCH_DIRECTORIES")
+    values = configured if isinstance(configured, list) else []
+    if not values:
+        values = [flow_events_root()]
+    return [Path(str(value)) for value in values]
+
+
+def trash_root_is_observed() -> bool:
+    trash = Path(flow_trash_root()).resolve(strict=False)
+    for watch_root in flow_watch_roots():
+        try:
+            trash.relative_to(watch_root.resolve(strict=False))
+        except ValueError:
+            continue
+        return True
+    return False
+
+
+def build_flow_trash_plan(session_id: str, photos: list[dict]) -> dict:
+    events_root = Path(flow_events_root())
+    trash_root = Path(flow_trash_root())
+    if trash_root_is_observed():
+        raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "trash_observed"))
+
+    try:
+        events_root_resolved = events_root.resolve(strict=True)
+    except OSError:
+        raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "events_root_unavailable"))
+
+    sources: set[Path] = set()
+    moves = []
+    batch_root = build_flow_trash_batch_root(session_id)
+    for photo in photos:
+        source = resolve_ingest_photo_source_from_payload(photo, photos)
+        if source is None:
+            raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "source_unavailable"))
+        try:
+            source_resolved = source.resolve(strict=True)
+        except OSError:
+            raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "source_unavailable"))
+        relative_source = safe_relative_to(source_resolved, events_root_resolved)
+        if relative_source is None:
+            raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "source_outside_flow"))
+        if source_resolved.is_symlink() or not source_resolved.is_file():
+            raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "unsafe_source"))
+        if source_resolved in sources:
+            continue
+        sources.add(source_resolved)
+        destination = batch_root / relative_source
+        moves.append({
+            "source": source_resolved,
+            "destination": destination,
+            "relative_path": str(relative_source),
+            "filename": source_resolved.name,
+        })
+
+    destinations = [move["destination"] for move in moves]
+    if len({str(destination) for destination in destinations}) != len(destinations):
+        raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "trash_collision"))
+    if batch_root.exists():
+        raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "trash_collision"))
+
+    try:
+        trash_root.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "trash_unwritable"))
+    if not trash_root.is_dir() or trash_root.is_symlink() or not os.access(trash_root, os.W_OK):
+        raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "trash_unwritable"))
+
+    for move in moves:
+        source_parent = move["source"].parent
+        if not os.access(source_parent, os.W_OK):
+            raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "source_unmovable"))
+        if move["destination"].exists():
+            raise FlowSessionFilesystemError(flow_filesystem_error_payload(session_id, len(photos), "trash_collision"))
+
+    return {
+        "session_id": session_id,
+        "batch_root": batch_root,
+        "moves": moves,
+    }
+
+
+def flow_filesystem_error_payload(session_id: str, total_photos: int, reason: str) -> dict:
+    return {
+        "ok": False,
+        "reason": "filesystem_error",
+        "error_code": reason,
+        "session_id": session_id,
+        "total_photos": total_photos,
+        "message": "No fue posible eliminar la sesión porque algunos archivos originales no pudieron retirarse de FLOW. No se eliminó ningún registro.",
+    }
+
+
+def write_flow_trash_manifest(plan: dict) -> None:
+    manifest = {
+        "session_id": plan["session_id"],
+        "deleted_at": datetime.now(timezone.utc).isoformat(),
+        "photos": [
+            {
+                "filename": move["filename"],
+                "relative_path": move["relative_path"],
+            }
+            for move in plan["moves"]
+        ],
+    }
+    manifest_path = plan["batch_root"] / "manifest.json"
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=plan["batch_root"],
+        prefix=".manifest.",
+        suffix=".tmp",
+        delete=False,
+    ) as temp_file:
+        temp_path = Path(temp_file.name)
+        json.dump(manifest, temp_file, ensure_ascii=False, indent=2)
+        temp_file.write("\n")
+        temp_file.flush()
+        os.fsync(temp_file.fileno())
+    os.replace(temp_path, manifest_path)
+
+
+def move_flow_photos_to_trash(plan: dict) -> int:
+    moved: list[dict] = []
+    try:
+        plan["batch_root"].mkdir(parents=True, exist_ok=False)
+        for move in plan["moves"]:
+            move["destination"].parent.mkdir(parents=True, exist_ok=True)
+            move["source"].replace(move["destination"])
+            moved.append(move)
+        write_flow_trash_manifest(plan)
+    except OSError:
+        for move in reversed(moved):
+            try:
+                move["destination"].parent.mkdir(parents=True, exist_ok=True)
+                move["destination"].replace(move["source"])
+            except OSError as rollback_error:
+                LOGGER.error("FLOW trash rollback failed for %s: %s", move["filename"], rollback_error)
+        raise FlowSessionFilesystemError(
+            flow_filesystem_error_payload(plan["session_id"], len(plan["moves"]), "move_failed")
+        )
+    return len(moved)
+
+
+def safe_thumbnail_path_for(source_path: Path) -> Path | None:
+    service = thumbnail_service()
+    if service is None:
+        return None
+    thumbnail = service.thumbnail_path_for(source_path)
+    if thumbnail is None:
+        return None
+    try:
+        resolved = thumbnail.resolve(strict=False)
+        resolved.relative_to(service.root.resolve())
+    except (OSError, ValueError):
+        return None
+    return resolved
+
+
+def delete_flow_thumbnails_for_plan(plan: dict) -> int:
+    thumbnails: set[Path] = set()
+    for move in plan["moves"]:
+        thumbnail = safe_thumbnail_path_for(move["destination"])
+        if thumbnail is not None:
+            thumbnails.add(thumbnail)
+
+    deleted_thumbnails = 0
+    for thumbnail in thumbnails:
+        try:
+            if thumbnail.is_file() and not thumbnail.is_symlink():
+                thumbnail.unlink()
+                deleted_thumbnails += 1
+        except OSError as error:
+            LOGGER.warning("No se pudo eliminar thumbnail FLOW %s: %s", thumbnail.name, error)
+    return deleted_thumbnails
+
+
+def delete_flow_session(session_id: str) -> dict:
+    session_id = validate_flow_session_id(session_id)
+    store = ingest_store()
+    if store is None:
+        abort(404)
+
+    def mutation(payload):
+        check = build_flow_session_delete_check(session_id, payload=payload)
+        if not check["ok"]:
+            raise FlowSessionDeleteConflict(check)
+        photos = [photo for photo in payload.get("photos", []) if str(photo.get("session_id", "")) == session_id]
+        plan = build_flow_trash_plan(session_id, photos)
+        moved_to_trash = move_flow_photos_to_trash(plan)
+        payload["sessions"] = [session for session in payload.get("sessions", []) if str(session.get("id", "")) != session_id]
+        payload["photos"] = [photo for photo in payload.get("photos", []) if str(photo.get("session_id", "")) != session_id]
+        return {"check": check, "plan": plan, "moved_to_trash": moved_to_trash}
+
+    result = store.mutate(mutation)
+    deleted_thumbnails = delete_flow_thumbnails_for_plan(result["plan"])
+    LOGGER.info(
+        "FLOW session %s moved %s originals to trash and deleted %s store photos; %s thumbnails removed",
+        session_id,
+        result["moved_to_trash"],
+        result["check"]["total_photos"],
+        deleted_thumbnails,
+    )
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "deleted_photos": result["check"]["total_photos"],
+        "moved_to_trash": result["moved_to_trash"],
+        "deleted_thumbnails": deleted_thumbnails,
+    }
+
+
 def flow_date_value(value: str) -> str:
     if not value:
         return ""
@@ -619,6 +1055,8 @@ def build_flow_coverage_form_data(session: dict) -> dict[str, str]:
         "city": "Por definir",
         "country": "Por definir",
         "locality_type": "auto",
+        "admin_area": "",
+        "admin_area_type": "",
         "photographer": "Por definir",
         "editor": "flow",
     }
@@ -741,6 +1179,7 @@ def create_lens_coverage_from_flow_session(session: dict, form_data: dict[str, s
     coverage_id = build_coverage_id(form_data["coverage_name"])
     coverage = dict(form_data)
     coverage["flow_session_id"] = session_id
+    coverage["created_at"] = utc_now_iso()
     coverage["photos"] = [
         build_lens_photo_from_ingest(photo, session_id, coverage)
         for photo in session_photos
@@ -786,6 +1225,7 @@ def build_flow_summary() -> dict:
     sync_flow_linked_coverages()
     sessions = store.list_sessions()
     photos = store.list_photos()
+    lens_usage_counts = build_flow_session_lens_usage_counts(sessions, photos)
     active_sessions = sorted(
         [session for session in sessions if session.get("status") == "active"],
         key=lambda item: str(item.get("last_received_at") or item.get("started_at") or ""),
@@ -813,6 +1253,9 @@ def build_flow_summary() -> dict:
             "create_url": url_for("web.flow_new_coverage", session_id=str(session.get("id", ""))),
             "open_lens_url": url_for("web.flow_open_lens", session_id=str(session.get("id", ""))),
             "lens_url": url_for("web.coverage_detail", coverage_id=str(session.get("coverage_id", ""))) if str(session.get("coverage_id", "")) in coverages else "",
+            "delete_check_url": url_for("web.flow_session_delete_check", session_id=str(session.get("id", ""))),
+            "delete_url": url_for("web.flow_delete_session", session_id=str(session.get("id", ""))),
+            "lens_used_photo_count": lens_usage_counts.get(str(session.get("id", "")), 0),
         }
         for session in sorted(
             sessions,
@@ -854,7 +1297,7 @@ def list_related_dispatches(coverage_id: str) -> list[dict]:
 
 
 def build_lens_coverage_items() -> list[dict]:
-    return [
+    items = [
         {
             "coverage_id": coverage_id,
             "coverage": coverage,
@@ -865,6 +1308,14 @@ def build_lens_coverage_items() -> list[dict]:
         }
         for coverage_id, coverage in coverages.items()
     ]
+    return sorted(
+        items,
+        key=lambda item: (
+            coverage_created_sort_value(str(item["coverage_id"]), item["coverage"]),
+            str(item["coverage_id"]),
+        ),
+        reverse=True,
+    )
 
 
 def serialize_photos_for_detail(coverage_id: str, photos: list[dict]) -> list[dict]:
@@ -917,12 +1368,37 @@ def build_export_request(payload: dict, coverage_id: str, coverage: dict) -> Exp
     formats = payload.get("formats", ["docx"])
     if isinstance(formats, str):
         formats = [formats]
+    normalized_formats = tuple(str(export_format).lower() for export_format in formats if export_format)
+    document_formats = tuple(export_format for export_format in normalized_formats if export_format in {"docx", "html", "pdf"})
+    legacy_zip_requested = "zip" in normalized_formats
+    include_photos = bool(payload.get("include_photos", False))
+    include_captions = bool(document_formats) or bool(payload.get("include_captions", False))
+    if legacy_zip_requested and include_captions and not document_formats:
+        document_formats = ("docx",)
+    omitted_photos = tuple(
+        item
+        for item in payload.get("omitted_photos", [])
+        if isinstance(item, dict)
+    )
+    requested_photo_count = payload.get("requested_photo_count")
+    try:
+        requested_photo_count = int(requested_photo_count) if requested_photo_count is not None else None
+    except (TypeError, ValueError):
+        requested_photo_count = None
+    requested_photos = tuple(
+        {
+            "id": str(item.get("id", "")),
+            "filename": str(item.get("filename") or item.get("name") or ""),
+        }
+        for item in payload.get("requested_photos", [])
+        if isinstance(item, dict)
+    )
 
     return ExportRequest(
         coverage_id=coverage_id,
-        formats=tuple(str(export_format).lower() for export_format in formats if export_format),
-        include_photos=bool(payload.get("include_photos", True)),
-        include_captions=bool(payload.get("include_captions", True)),
+        formats=document_formats,
+        include_photos=include_photos,
+        include_captions=include_captions,
         include_metadata=bool(payload.get("include_metadata", False)),
         include_manifest=bool(payload.get("include_manifest", False)),
         output_name=str(payload.get("output_name", "")),
@@ -930,6 +1406,10 @@ def build_export_request(payload: dict, coverage_id: str, coverage: dict) -> Exp
         scope="coverage",
         requested_by=str(coverage.get("editor", "Sistema")),
         destination=str(payload.get("destination", "download")),
+        requested_photo_count=requested_photo_count,
+        requested_photos=requested_photos,
+        omitted_photos=omitted_photos,
+        partial_confirmed=bool(payload.get("partial_confirmed", False)),
     )
 
 
@@ -942,6 +1422,12 @@ def serialize_export_result(result: ExportResult) -> dict:
         "zip": result.zip_filename,
         "destination": result.destination,
         "photo_count": result.photo_count,
+        "requested_photo_count": result.requested_photo_count,
+        "persisted_photo_count": result.persisted_photo_count,
+        "exported_photo_count": result.exported_photo_count,
+        "captions_included": result.captions_included,
+        "omitted_photos": list(result.omitted_photos),
+        "status": result.status,
         "total_size": result.total_size,
         "warnings": list(result.warnings),
         "duration": result.duration,
@@ -980,6 +1466,37 @@ def build_export_history(coverage: dict) -> list[dict]:
     history = coverage.setdefault("export_history", [])
     return history if isinstance(history, list) else []
 
+
+def normalize_export_history_item(item: dict, coverage_id: str, coverage: dict) -> dict:
+    normalized = deepcopy(item)
+    normalized.setdefault("export_id", str(item.get("export_id") or item.get("created_at") or random.randint(1000, 9999)))
+    normalized.setdefault("coverage_id", coverage_id)
+    normalized.setdefault("coverage_name", str(coverage.get("coverage_name", "")))
+    normalized.setdefault("destination", str(item.get("destination") or item.get("type") or "download"))
+    normalized.setdefault("formats", item.get("formats") or ([str(item.get("format", ""))] if item.get("format") else []))
+    normalized.setdefault("filename", str(item.get("filename", "")))
+    normalized.setdefault("artifacts", item.get("files") or [])
+    legacy_count = int(item.get("photo_count") or 0)
+    normalized.setdefault("requested_photo_count", int(item.get("requested_photo_count") or legacy_count))
+    normalized.setdefault("persisted_photo_count", int(item.get("persisted_photo_count") or legacy_count))
+    normalized.setdefault("exported_photo_count", int(item.get("exported_photo_count") or legacy_count))
+    normalized.setdefault("captions_included", int(item.get("captions_included") or legacy_count))
+    normalized.setdefault("requested_photos", item.get("requested_photos") or [])
+    normalized.setdefault("exported_photos", item.get("exported_photos") or [])
+    normalized.setdefault("omitted_photos", item.get("omitted_photos") or [])
+    normalized.setdefault("status", str(item.get("status") or ("PARTIAL" if normalized["omitted_photos"] else "COMPLETE")).upper())
+    normalized.setdefault("warnings", item.get("warnings") or [])
+    normalized.setdefault("dispatch_reference", item.get("dispatch_reference") or "")
+    return normalized
+
+
+def build_normalized_export_history(coverage_id: str, coverage: dict) -> list[dict]:
+    return [
+        normalize_export_history_item(item, coverage_id, coverage)
+        for item in build_export_history(coverage)
+        if isinstance(item, dict)
+    ]
+
 def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | None = None, open_edit_dialog: bool = False) -> dict:
     photos = ensure_coverage_photos(coverage)
     attach_default_ai_context(coverage)
@@ -989,12 +1506,13 @@ def build_detail_context(coverage_id: str, coverage: dict, edit_error: str | Non
         "coverage": coverage,
         "title": build_editorial_title(coverage["coverage_name"], coverage["country"]),
         "photos": serialize_photos_for_detail(coverage_id, photos),
-        "export_history": build_export_history(coverage),
+        "export_history": build_normalized_export_history(coverage_id, coverage),
         "export_default_name": ExportNamingService().build_names(coverage).base_name,
         "can_create_dispatch": dispatch_state["can_create_dispatch"],
         "dispatch_eligible_photo_count": dispatch_state["eligible_photo_count"],
         "country_groups": COUNTRY_GROUPS,
         "suggestions": get_all_suggestions(),
+        "admin_area_types": ADMIN_AREA_TYPE_OPTIONS,
         "ai_enabled": AI_ENABLED,
         "edit_error": edit_error,
         "open_edit_dialog": open_edit_dialog,
@@ -1056,6 +1574,7 @@ def flow_new_coverage(session_id: str) -> str:
             error_message=None,
             country_groups=COUNTRY_GROUPS,
             suggestions=get_all_suggestions(),
+            admin_area_types=ADMIN_AREA_TYPE_OPTIONS,
         )
 
     form_data = collect_coverage_form_data()
@@ -1092,6 +1611,21 @@ def flow_open_lens(session_id: str) -> str:
     return redirect(url_for("web.coverage_detail", coverage_id=coverage_id))
 
 
+@web_bp.get("/flow/sessions/<session_id>/delete-check")
+def flow_session_delete_check(session_id: str):
+    return jsonify(build_flow_session_delete_check(session_id))
+
+
+@web_bp.post("/flow/sessions/<session_id>/delete")
+def flow_delete_session(session_id: str):
+    try:
+        return jsonify(delete_flow_session(session_id))
+    except FlowSessionDeleteConflict as conflict:
+        return jsonify(conflict.payload), 409
+    except FlowSessionFilesystemError as error:
+        return jsonify(error.payload), 409
+
+
 @web_bp.route("/coverages/new", methods=["GET", "POST"])
 def new_coverage() -> str:
     if request.method == "GET":
@@ -1101,6 +1635,7 @@ def new_coverage() -> str:
             error_message=None,
             country_groups=COUNTRY_GROUPS,
             suggestions=get_all_suggestions(),
+            admin_area_types=ADMIN_AREA_TYPE_OPTIONS,
         )
 
     form_data = collect_coverage_form_data()
@@ -1113,10 +1648,12 @@ def new_coverage() -> str:
             error_message=error_message,
             country_groups=COUNTRY_GROUPS,
             suggestions=get_all_suggestions(),
+            admin_area_types=ADMIN_AREA_TYPE_OPTIONS,
         )
 
     coverage_id = build_coverage_id(form_data["coverage_name"])
     form_data["photos"] = []
+    form_data["created_at"] = utc_now_iso()
     attach_editor_metadata(form_data)
     attach_default_ai_context(form_data)
     remember_coverage_values(form_data)
@@ -1241,12 +1778,31 @@ def create_coverage_export(coverage_id: str):
             "ok": False,
             "requires_confirmation": True,
             "warnings": warning.warnings,
+            "status": "PARTIAL" if "incompleta" in " ".join(warning.warnings).lower() else "WARNING",
         }), 409
     except ExportValidationError as error:
         return jsonify({
             "ok": False,
             "error": error.message,
         }), error.status_code
+
+    if result.status == "FAILED":
+        persist_coverage(coverage_id)
+        return jsonify({
+            "ok": False,
+            "error": "No fue posible generar una exportación utilizable.",
+            "result": serialize_export_result(result),
+        }), 422
+
+    LOGGER.info(
+        "LENS coverage %s export generated with status %s; persisted=%s exported=%s requested=%s omitted=%s",
+        coverage_id,
+        result.status,
+        result.persisted_photo_count,
+        result.exported_photo_count,
+        result.requested_photo_count,
+        len(result.omitted_photos),
+    )
 
     if export_request.destination == "dispatch":
         dispatch_payload = DispatchHandoffService().prepare(coverage, result)
@@ -1264,6 +1820,25 @@ def create_coverage_export(coverage_id: str):
         "destination": "download",
         "result": serialize_export_download(result),
     })
+
+
+@web_bp.post("/coverages/<coverage_id>/exports/history/<export_id>/delete")
+def delete_export_history_item(coverage_id: str, export_id: str):
+    coverage = coverages.get(coverage_id)
+    if coverage is None:
+        abort(404)
+
+    history = build_export_history(coverage)
+    next_history = [
+        item
+        for item in history
+        if str(item.get("export_id") or item.get("created_at") or "") != export_id
+    ]
+    if len(next_history) == len(history):
+        abort(404)
+    coverage["export_history"] = next_history
+    persist_coverage(coverage_id)
+    return jsonify({"ok": True, "deleted": export_id, "remaining": len(next_history)})
 
 
 @web_bp.post("/coverages/<coverage_id>/photos")
@@ -1286,20 +1861,108 @@ def add_coverage_photo(coverage_id: str):
     try:
         photo = build_persisted_photo(coverage_id, payload)
     except (TypeError, ValueError):
-        return jsonify({"error": "No se pudo guardar la fotografía. Verifica formato, tamaño y contenido."}), 400
+        reason = "No se pudo guardar la fotografía. Verifica formato, tamaño y contenido."
+        LOGGER.warning(
+            "LENS photo import rejected",
+            extra={
+                "coverage_id": coverage_id,
+                "photo_filename": str(payload.get("filename") or payload.get("name") or ""),
+                "declared_size": payload.get("size"),
+                "limit": max_photo_bytes(),
+                "status_code": 400,
+                "reason": reason,
+            },
+        )
+        return jsonify({
+            "error": reason,
+            "filename": str(payload.get("filename") or payload.get("name") or ""),
+            "declared_size": payload.get("size"),
+            "limit": max_photo_bytes(),
+            "status_code": 400,
+            "reason": "invalid_image",
+        }), 400
     except OverflowError:
-        return jsonify({"error": "La fotografía supera el tamaño máximo permitido."}), 413
+        reason = f"supera el límite máximo permitido de {max_photo_bytes() // (1024 * 1024)} MiB."
+        LOGGER.warning(
+            "LENS photo import rejected",
+            extra={
+                "coverage_id": coverage_id,
+                "photo_filename": str(payload.get("filename") or payload.get("name") or ""),
+                "declared_size": payload.get("size"),
+                "limit": max_photo_bytes(),
+                "status_code": 413,
+                "reason": reason,
+            },
+        )
+        return jsonify({
+            "error": f"La fotografía {reason}",
+            "filename": str(payload.get("filename") or payload.get("name") or ""),
+            "declared_size": payload.get("size"),
+            "limit": max_photo_bytes(),
+            "status_code": 413,
+            "reason": "too_large",
+        }), 413
     except OSError:
-        return jsonify({"error": "No se pudo escribir la fotografía en el almacenamiento de ATLAS."}), 500
+        reason = "No se pudo escribir la fotografía en el almacenamiento de ATLAS."
+        LOGGER.warning(
+            "LENS photo import rejected",
+            extra={
+                "coverage_id": coverage_id,
+                "photo_filename": str(payload.get("filename") or payload.get("name") or ""),
+                "declared_size": payload.get("size"),
+                "limit": max_photo_bytes(),
+                "status_code": 500,
+                "reason": reason,
+            },
+        )
+        return jsonify({
+            "error": reason,
+            "filename": str(payload.get("filename") or payload.get("name") or ""),
+            "declared_size": payload.get("size"),
+            "limit": max_photo_bytes(),
+            "status_code": 500,
+            "reason": "storage_error",
+        }), 500
 
-    photos.append(photo)
     try:
-        persist_coverage(coverage_id)
+        if coverage_store is not None:
+            def append_photo(current_coverage: dict) -> dict:
+                current_photos = ensure_coverage_photos(current_coverage)
+                existing_photo = next(
+                    (
+                        existing
+                        for existing in current_photos
+                        if existing.get("id") == photo["id"]
+                    ),
+                    None,
+                )
+                if existing_photo is None:
+                    current_photos.append(photo)
+                return current_coverage
+
+            updated_coverage = coverage_store.mutate(coverage_id, append_photo)
+            if updated_coverage is None:
+                abort(404)
+            coverages[coverage_id] = updated_coverage
+            photo = find_coverage_photo(updated_coverage, photo["id"]) or photo
+            photos = ensure_coverage_photos(updated_coverage)
+        else:
+            photos.append(photo)
     except Exception:
-        photos.remove(photo)
         if coverage_store is not None:
             coverage_store.delete_photo_file(photo.get("storage_path", ""))
         raise
+    LOGGER.info(
+        "LENS photo imported",
+        extra={
+            "coverage_id": coverage_id,
+            "photo_id": str(photo.get("id", "")),
+            "photo_filename": str(photo.get("filename") or photo.get("name") or ""),
+            "action": "import",
+            "previous_status": "",
+            "next_status": str(photo.get("caption_status", "")),
+        },
+    )
     return jsonify({"photo": photo, "total": len(photos)}), 201
 
 
@@ -1363,11 +2026,14 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
     caption_narrative = str(payload.get("caption_narrative", ""))
     caption_status = normalize_caption_status(str(payload.get("caption_status", "Sin editar")))
     is_drone = parse_optional_bool(payload.get("is_drone", False))
+    previous_status = ""
 
     def update_caption(current_coverage: dict) -> dict:
+        nonlocal previous_status
         photo = find_coverage_photo(current_coverage, photo_id)
         if photo is None:
             raise KeyError(photo_id)
+        previous_status = str(photo.get("caption_status", ""))
         photo["caption_narrative"] = caption_narrative
         photo["caption_status"] = caption_status
         photo["is_drone"] = is_drone
@@ -1388,6 +2054,17 @@ def save_coverage_photo_caption(coverage_id: str, photo_id: str):
 
     photo = find_coverage_photo(coverage, photo_id)
     dispatch_state = build_dispatch_state(coverage)
+    LOGGER.info(
+        "LENS photo caption updated",
+        extra={
+            "coverage_id": coverage_id,
+            "photo_id": photo_id,
+            "photo_filename": str(photo.get("filename") or photo.get("name") or ""),
+            "action": "caption_save",
+            "previous_status": previous_status,
+            "next_status": str(photo.get("caption_status", "")),
+        },
+    )
     return jsonify({
         "saved": True,
         "photo_id": photo_id,

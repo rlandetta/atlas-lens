@@ -6,12 +6,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 import fcntl
+import hashlib
 import json
 import os
 import secrets
 import tempfile
 
-from app.dispatch.geolocation import resolve_location
+from app.dispatch.geolocation import empty_location, resolve_geolocation
 
 
 class DeliveryLinkError(ValueError):
@@ -163,6 +164,15 @@ class DeliveryLinkStore:
         filename: str = "",
         country: str = "",
         city: str = "",
+        country_code: str = "",
+        region: str = "",
+        latitude: float | None = None,
+        longitude: float | None = None,
+        ip_hash: str = "",
+        browser: str = "",
+        os_name: str = "",
+        device_category: str = "",
+        user_agent: str = "",
     ) -> dict[str, Any]:
         timestamp = utc_now_iso()
         current = next((link for link in self.list_links() if link.get("id") == link_id), None)
@@ -176,6 +186,15 @@ class DeliveryLinkStore:
             "filename": str(filename or ""),
             "country": str(country or ""),
             "city": str(city or ""),
+            "country_code": str(country_code or ""),
+            "region": str(region or ""),
+            "latitude": latitude,
+            "longitude": longitude,
+            "ip_hash": str(ip_hash or ""),
+            "browser": str(browser or ""),
+            "os": str(os_name or ""),
+            "device_category": str(device_category or ""),
+            "user_agent": str(user_agent or ""),
         })
         return self.update(link_id, {
             "download_count": int(current.get("download_count") or 0) + 1,
@@ -195,9 +214,18 @@ class DeliveryLinkStore:
 
 
 class DeliveryLinkService:
-    def __init__(self, store: DeliveryLinkStore, public_base_url: str = ""):
+    def __init__(
+        self,
+        store: DeliveryLinkStore,
+        public_base_url: str = "",
+        *,
+        public_delivery_base_url: str = "",
+        geolocation_service=None,
+    ):
         self.store = store
         self.public_base_url = public_base_url.rstrip("/")
+        self.public_delivery_base_url = public_delivery_base_url.rstrip("/")
+        self.geolocation_service = geolocation_service
 
     def create_link(self, shipment_id: str, expires_in: str = "7") -> dict[str, Any]:
         duration = EXPIRATION_DAYS.get(str(expires_in), 7)
@@ -244,18 +272,47 @@ class DeliveryLinkService:
         download_type: str = "PACKAGE",
         filename: str = "",
         ip: str = "",
+        browser: str = "",
+        os_name: str = "",
+        device_category: str = "",
+        user_agent: str = "",
     ) -> dict[str, Any]:
-        country, city = resolve_location(ip)
+        location = self.resolve_geolocation(ip)
         return self.with_url(self.store.record_download(
             link_id,
             download_type=download_type,
             filename=filename,
-            country=country,
-            city=city,
+            country=str(location.get("country", "")),
+            city=str(location.get("city", "")),
+            country_code=str(location.get("country_code", "")),
+            region=str(location.get("region", "")),
+            latitude=location.get("latitude"),
+            longitude=location.get("longitude"),
+            ip_hash=hash_ip(ip),
+            browser=browser,
+            os_name=os_name,
+            device_category=device_category,
+            user_agent=user_agent,
         ))
+
+    def resolve_geolocation(self, ip: str) -> dict[str, Any]:
+        if self.geolocation_service is not None:
+            try:
+                return self.geolocation_service.resolve(ip)
+            except Exception:
+                return empty_location()
+        return resolve_geolocation(ip)
 
     def with_url(self, link: dict[str, Any]) -> dict[str, Any]:
         enriched = deepcopy(link)
         path = f"/d/{enriched.get('token', '')}"
         enriched["url"] = f"{self.public_base_url}{path}" if self.public_base_url else path
+        enriched["public_url"] = f"{self.public_delivery_base_url}{path}" if self.public_delivery_base_url else enriched["url"]
         return enriched
+
+
+def hash_ip(ip: str) -> str:
+    safe_ip = str(ip or "").strip()
+    if not safe_ip:
+        return ""
+    return hashlib.sha256(safe_ip.encode("utf-8")).hexdigest()

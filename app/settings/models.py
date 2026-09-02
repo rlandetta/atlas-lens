@@ -9,6 +9,7 @@ import re
 SETTINGS_SCHEMA_VERSION = 1
 SMTP_SECURITY_OPTIONS = ("ssl", "starttls")
 CHANNEL_TYPES = ("download_link", "sftp", "smtp", "api")
+DEFAULT_PROFILE_KEY = "default"
 
 
 class SettingsError(ValueError):
@@ -174,4 +175,46 @@ def empty_settings_payload() -> dict[str, Any]:
     return {
         "schema_version": SETTINGS_SCHEMA_VERSION,
         "outbound_channels": [],
+        "public_profiles": {},
+        "dispatch_branding": {
+            "enabled": True,
+            "organization_name": "AYAMPI",
+            "footer_text": "AYAMPI | Plataforma editorial",
+            "logo_text": "AYAMPI",
+        },
     }
+
+
+def sanitize_profile_key(value: str) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return DEFAULT_PROFILE_KEY
+    safe = "".join(character if character.isalnum() or character in {"-", "_"} else "-" for character in raw)
+    safe = safe.strip("-_")
+    return safe[:48] or DEFAULT_PROFILE_KEY
+
+
+def normalize_public_profile(profile: dict[str, Any]) -> dict[str, Any]:
+    normalized = deepcopy(profile)
+    normalized["display_name"] = str(normalized.get("display_name", "")).strip()
+    normalized["role"] = str(normalized.get("role", "")).strip()
+    normalized["organization"] = str(normalized.get("organization", "")).strip()
+    normalized["location"] = str(normalized.get("location", "")).strip()
+    normalized["public_email"] = str(normalized.get("public_email", "")).strip()
+    if normalized["public_email"]:
+        normalized["public_email"] = validate_email(normalized["public_email"], "Correo publico")
+    normalized["website"] = str(normalized.get("website", "")).strip()
+    normalized["show_public_email"] = bool(normalized.get("show_public_email", False))
+    normalized["show_public_profile"] = bool(normalized.get("show_public_profile", True))
+    normalized["avatar_filename"] = str(normalized.get("avatar_filename", "")).strip()
+    normalized["updated_at"] = str(normalized.get("updated_at", "")).strip() or utc_now_iso()
+    return normalized
+
+
+def normalize_dispatch_branding(payload: dict[str, Any]) -> dict[str, Any]:
+    branding = deepcopy(payload)
+    branding["enabled"] = bool(branding.get("enabled", True))
+    branding["organization_name"] = str(branding.get("organization_name", "AYAMPI")).strip() or "AYAMPI"
+    branding["footer_text"] = str(branding.get("footer_text", "AYAMPI | Plataforma editorial")).strip() or "AYAMPI | Plataforma editorial"
+    branding["logo_text"] = str(branding.get("logo_text", "AYAMPI")).strip() or "AYAMPI"
+    return branding

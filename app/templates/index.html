@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Dashboard | ATLAS{% endblock %}
+{% block title %}Dashboard | AYAMPI{% endblock %}
 {% block main_class %}atlas-dashboard{% endblock %}
 
 {% block content %}
 <section class="atlas-dashboard-hero" aria-labelledby="atlas-dashboard-title">
     <div class="atlas-dashboard-hero__copy">
-        <p class="atlas-dashboard-kicker">BIENVENIDO A ATLAS</p>
+        <p class="atlas-dashboard-kicker">BIENVENIDO A AYAMPI</p>
         <h1 id="atlas-dashboard-title">Centro editorial</h1>
         <p>Acceso principal a los módulos activos de producción, distribución y configuración.</p>
     </div>
@@ -22,7 +22,7 @@
     <div class="atlas-dashboard-section__header">
         <p class="atlas-dashboard-section-label">MÓDULOS ACTIVOS</p>
     </div>
-    <div class="atlas-module-grid" aria-label="Módulos activos de ATLAS">
+    <div class="atlas-module-grid" aria-label="Módulos activos de AYAMPI">
         <article class="atlas-module-card atlas-module-card--flow" aria-labelledby="atlas-module-flow">
             <div class="atlas-module-card__top">
                 <span class="atlas-module-card__icon" aria-hidden="true">
@@ -111,6 +111,21 @@
             <a class="atlas-module-card__cta" href="{{ url_for('dispatch.index') }}">Abrir DISPATCH <span aria-hidden="true">→</span></a>
         </article>
 
+        <article class="atlas-module-card atlas-module-card--tools" aria-labelledby="atlas-module-tools">
+            <div class="atlas-module-card__top">
+                <span class="atlas-module-card__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M14.7 6.2a5 5 0 0 0-6.5 6.5L3.7 17.2a2 2 0 1 0 2.8 2.8l4.5-4.5a5 5 0 0 0 6.5-6.5l-3 3-2.8-.7-.7-2.8 3-3Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </span>
+                <div>
+                    <h2 id="atlas-module-tools">TOOLS</h2>
+                    <p>Herramientas de procesamiento y optimización de imágenes.</p>
+                </div>
+            </div>
+            <a class="atlas-module-card__cta" href="/tools/">Abrir TOOLS <span aria-hidden="true">→</span></a>
+        </article>
+
     </div>
 </section>
 
@@ -118,7 +133,7 @@
     <div class="atlas-dashboard-section__header">
         <p id="atlas-upcoming-modules-title" class="atlas-dashboard-section-label">PRÓXIMOS MÓDULOS</p>
     </div>
-    <div class="atlas-upcoming-grid" aria-label="Próximos módulos de ATLAS">
+    <div class="atlas-upcoming-grid" aria-label="Próximos módulos de AYAMPI">
         <article class="atlas-upcoming-card">
             <span class="atlas-upcoming-card__icon" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none">
@@ -161,17 +176,15 @@
     </div>
 </section>
 
-<footer class="atlas-dashboard-footer" aria-label="Información de ATLAS">
+<footer class="atlas-dashboard-footer" aria-label="Información de AYAMPI">
     <div>
-        <strong>ATLAS</strong>
+        <strong>AYAMPI</strong>
+        <span aria-hidden="true">|</span>
         <span>Plataforma editorial</span>
-        <span>© 2026 ATLAS</span>
+        <span aria-hidden="true">|</span>
+        <span>© 2026 AYAMPI</span>
     </div>
     <dl>
-        <div>
-            <dt>Servidor</dt>
-            <dd>atlas.lavoceria.com</dd>
-        </div>
         <div>
             <dt>Versión</dt>
             <dd>1.0.0</dd>

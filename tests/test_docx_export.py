@@ -161,6 +161,106 @@ class DocxExportTest(unittest.TestCase):
                     expected,
                 )
 
+    def test_format_xinhua_location_uses_structured_admin_area_for_localities(self):
+        cases = (
+            (
+                "Puerto López",
+                "Ecuador",
+                "locality",
+                "Manabí",
+                "province",
+                "en Puerto López, en la provincia de Manabí, en Ecuador",
+            ),
+            (
+                "Medellín",
+                "Colombia",
+                "locality",
+                "Antioquia",
+                "department",
+                "en Medellín, en el departamento de Antioquia, en Colombia",
+            ),
+            (
+                "Austin",
+                "Estados Unidos",
+                "locality",
+                "Texas",
+                "state",
+                "en Austin, en el estado de Texas, en Estados Unidos",
+            ),
+            (
+                "Temuco",
+                "Chile",
+                "locality",
+                "Araucanía",
+                "region",
+                "en Temuco, en la región de Araucanía, en Chile",
+            ),
+            (
+                "Aysén",
+                "Chile",
+                "locality",
+                "Aysén",
+                "region",
+                "en Aysén, en Chile",
+            ),
+            (
+                "Mindo",
+                "Ecuador",
+                "locality",
+                "",
+                "",
+                "en Mindo, en Ecuador",
+            ),
+        )
+
+        for city, country, locality_type, admin_area, admin_area_type, expected in cases:
+            with self.subTest(city=city, admin_area_type=admin_area_type):
+                self.assertEqual(
+                    format_xinhua_location(city, country, locality_type, admin_area, admin_area_type),
+                    expected,
+                )
+
+    def test_xinhua_admin_area_caption_avoids_duplicate_location_levels(self):
+        caption = render_caption(
+            "xinhua",
+            {
+                **CAPTION_COVERAGE,
+                "city": "Puerto López",
+                "locality_type": "locality",
+                "admin_area": "Manabí",
+                "admin_area_type": "province",
+                "country": "Ecuador",
+                "event_date": "2026-08-16",
+            },
+            {"caption_narrative": "Turistas observan ballenas"},
+        )
+
+        self.assertIn(
+            "Turistas observan ballenas, en Puerto López, en la provincia de Manabí, en Ecuador, el 16 de agosto de 2026.",
+            caption,
+        )
+        self.assertEqual(caption.count("Puerto López"), 1)
+        self.assertEqual(caption.count("Manabí"), 1)
+        self.assertEqual(caption.count("Ecuador"), 1)
+
+    def test_xinhua_capital_rule_ignores_admin_area(self):
+        caption = render_caption(
+            "xinhua",
+            {
+                **CAPTION_COVERAGE,
+                "city": "Quito",
+                "locality_type": "capital",
+                "admin_area": "Pichincha",
+                "admin_area_type": "province",
+                "country": "Ecuador",
+                "event_date": "2026-08-16",
+            },
+            {"caption_narrative": "Personas caminan por el centro"},
+        )
+
+        self.assertIn("en Quito, capital de Ecuador", caption)
+        self.assertNotIn("provincia de Pichincha", caption)
+
     def test_xinhua_normal_caption_different_dates_keeps_existing_prefix(self):
         caption = render_caption(
             "xinhua",

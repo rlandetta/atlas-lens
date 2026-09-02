@@ -5,11 +5,15 @@ from typing import Any
 import os
 
 from app.settings.models import (
+    DEFAULT_PROFILE_KEY,
     OutboundChannelDraft,
     SettingsSecretError,
     SettingsValidationError,
     build_channel,
+    normalize_dispatch_branding,
+    normalize_public_profile,
     normalize_channel,
+    sanitize_profile_key,
     utc_now_iso,
     validate_new_channel_id,
 )
@@ -84,6 +88,36 @@ class SettingsService:
         if not secret:
             raise SettingsSecretError("Credencial SMTP no configurada.")
         return secret
+
+    def get_public_profile(self, profile_key: str = DEFAULT_PROFILE_KEY) -> dict[str, Any]:
+        payload = self.store.load()
+        profiles = payload.get("public_profiles", {})
+        key = sanitize_profile_key(profile_key)
+        profile = profiles.get(key)
+        if isinstance(profile, dict):
+            return normalize_public_profile(profile)
+        return normalize_public_profile({})
+
+    def save_public_profile(self, profile: dict[str, Any], profile_key: str = DEFAULT_PROFILE_KEY) -> dict[str, Any]:
+        payload = self.store.load()
+        profiles = payload.setdefault("public_profiles", {})
+        key = sanitize_profile_key(profile_key)
+        next_profile = normalize_public_profile(profile)
+        next_profile["updated_at"] = utc_now_iso()
+        profiles[key] = next_profile
+        self.store.save(payload)
+        return next_profile
+
+    def get_dispatch_branding(self) -> dict[str, Any]:
+        payload = self.store.load()
+        return normalize_dispatch_branding(payload.get("dispatch_branding", {}))
+
+    def save_dispatch_branding(self, branding: dict[str, Any]) -> dict[str, Any]:
+        payload = self.store.load()
+        normalized = normalize_dispatch_branding(branding)
+        payload["dispatch_branding"] = normalized
+        self.store.save(payload)
+        return normalized
 
     @staticmethod
     def _normalize_default(channels: list[dict[str, Any]], default_channel_id: str) -> list[dict[str, Any]]:

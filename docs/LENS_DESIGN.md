@@ -36,6 +36,9 @@ Texto secundario:
     - Exportaciones
     - Entregas
 - Panel lateral para editar información.
+- Las coberturas se listan por hora real de creación descendente; si falta `created_at`, se usa el timestamp del identificador `cov-...` como fallback estable.
+- El editor individual de captions muestra el contador de fotografía y el nombre de archivo activo, usando tipografía secundaria y truncado visual cuando corresponde.
+- Las captions admiten `admin_area` y `admin_area_type` para localidades no capitales, de modo que el motor pueda generar frases como provincia, estado, departamento, región o distrito sin duplicar localidad ni país.
 - Diseño totalmente responsivo.
 
 ## Filosofía

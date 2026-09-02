@@ -1,4 +1,5 @@
 import base64
+from copy import deepcopy
 import tempfile
 import unittest
 from pathlib import Path
@@ -144,6 +145,25 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertIn('href="/lens" class="back-link compact-link">Volver a coberturas</a>', body)
         self.assertNotIn('href="/">Coberturas</a>', body)
 
+    def test_export_return_link_is_always_visible_and_include_photos_unchecked(self):
+        coverage_id = self.create_coverage()
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn(
+            f'<a id="export-coverage-return-link" href="/lens/coverages/{coverage_id}"',
+            body,
+        )
+        self.assertEqual(body.count(">Volver a cobertura</a>"), 1)
+        result_panel_start = body.index('<section id="export-result-panel"')
+        result_panel_end = body.index("</section>", result_panel_start)
+        self.assertNotIn("Volver a cobertura", body[result_panel_start:result_panel_end])
+        self.assertIn(
+            '<label><input type="checkbox" name="include_photos"> Incluir fotografías</label>',
+            body,
+        )
+        self.assertNotIn('name="include_photos" checked', body)
+
     def test_coverage_tab_respects_url_prefix(self):
         with patch("app.config.ATLAS_URL_PREFIX", "/atlas"):
             prefixed_app = create_app()
@@ -178,13 +198,22 @@ class LensPersistenceRoutesTest(unittest.TestCase):
 
         created = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
         self.assertEqual(created["locality_type"], "auto")
+        self.assertIn("created_at", created)
 
-        response = self.edit_coverage(coverage_id, city="Mindo", locality_type="locality")
+        response = self.edit_coverage(
+            coverage_id,
+            city="Mindo",
+            locality_type="locality",
+            admin_area="Pichincha",
+            admin_area_type="province",
+        )
 
         self.assertEqual(response.status_code, 302)
         updated = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
         self.assertEqual(updated["city"], "Mindo")
         self.assertEqual(updated["locality_type"], "locality")
+        self.assertEqual(updated["admin_area"], "Pichincha")
+        self.assertEqual(updated["admin_area_type"], "province")
 
     def test_locality_type_selector_is_visible_in_lens_forms(self):
         coverage_id = self.create_coverage()
@@ -194,8 +223,75 @@ class LensPersistenceRoutesTest(unittest.TestCase):
 
         self.assertIn('label for="locality_type">Tipo de localidad</label>', new_body)
         self.assertIn('name="locality_type"', new_body)
+        self.assertIn('label for="admin_area">División administrativa</label>', new_body)
+        self.assertIn('label for="admin_area_type">Tipo de división</label>', new_body)
+        self.assertIn('<option value="province"', new_body)
         self.assertIn('label for="edit_locality_type">Tipo de localidad</label>', detail_body)
+        self.assertIn('label for="edit_admin_area">División administrativa</label>', detail_body)
+        self.assertIn('label for="edit_admin_area_type">Tipo de división</label>', detail_body)
         self.assertIn('data-caption-locality-type="auto"', detail_body)
+        self.assertIn('data-caption-admin-area=""', detail_body)
+        self.assertIn('js/coverage_form.js', new_body)
+        self.assertIn('js/coverage_form.js', detail_body)
+
+    def test_caption_preview_uses_admin_area_metadata_fields(self):
+        script = self.client.get("/static/js/photo_workspace.js").get_data(as_text=True)
+
+        self.assertIn("adminArea: photoWorkspace.dataset.captionAdminArea", script)
+        self.assertIn("adminAreaType: photoWorkspace.dataset.captionAdminAreaType", script)
+        self.assertIn("formatAdminArea(adminArea, adminAreaType)", script)
+        self.assertIn("photoWorkspace.dataset.captionAdminArea = editAdminAreaField.value", script)
+        self.assertIn("photoWorkspace.dataset.captionAdminAreaType = editAdminAreaTypeField.value", script)
+
+    def test_lens_coverages_are_sorted_newest_created_at_first(self):
+        web.coverages.clear()
+        web.coverages.update({
+            "cov-20260801000000-0001": {
+                "coverage_name": "Antigua",
+                "city": "Quito",
+                "country": "Ecuador",
+                "agency": "Xinhua",
+                "photographer": "Uno",
+                "event_date": "2026-08-01",
+                "submit_date": "2026-08-01",
+                "created_at": "2026-08-01T10:00:00+00:00",
+                "photos": [],
+            },
+            "cov-20260803000000-0003": {
+                "coverage_name": "Reciente",
+                "city": "Quito",
+                "country": "Ecuador",
+                "agency": "Xinhua",
+                "photographer": "Tres",
+                "event_date": "2026-08-03",
+                "submit_date": "2026-08-03",
+                "created_at": "2026-08-03T10:00:00+00:00",
+                "photos": [],
+            },
+            "cov-20260802000000-0002": {
+                "coverage_name": "Intermedia",
+                "city": "Quito",
+                "country": "Ecuador",
+                "agency": "Xinhua",
+                "photographer": "Dos",
+                "event_date": "2026-08-02",
+                "submit_date": "2026-08-02",
+                "created_at": "2026-08-02T10:00:00+00:00",
+                "photos": [],
+            },
+        })
+
+        with self.app.app_context():
+            items = web.build_lens_coverage_items()
+
+        self.assertEqual(
+            [item["coverage_id"] for item in items],
+            [
+                "cov-20260803000000-0003",
+                "cov-20260802000000-0002",
+                "cov-20260801000000-0001",
+            ],
+        )
 
     def test_photo_upload_persists_file_relative_path_and_excludes_data_url(self):
         coverage_id = self.create_coverage()
@@ -239,7 +335,40 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 413)
+        payload = response.get_json()
+        self.assertEqual(payload["filename"], "large.jpg")
+        self.assertEqual(payload["reason"], "too_large")
+        self.assertEqual(payload["limit"], 4)
+        self.assertEqual(payload["status_code"], 413)
+        self.assertIn("supera el límite máximo permitido", payload["error"])
         self.assertEqual(self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"], [])
+
+    def test_photo_import_error_ui_is_visible_and_not_marked_ready(self):
+        body = self.client.get("/static/js/photo_workspace.js").get_data(as_text=True)
+
+        self.assertIn("has-import-error", body)
+        self.assertIn("No importada", body)
+        self.assertIn("processingError", body)
+
+    def test_caption_editor_shows_active_photo_filename_from_record(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id, id="photo-1", name="WHALE-PTO-LOPEZ-0450.jpg")
+        self.add_photo(coverage_id, id="photo-2", name="WHALE-PTO-LOPEZ-2018.jpg")
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+        script = self.client.get("/static/js/photo_workspace.js").get_data(as_text=True)
+
+        self.assertIn('id="caption-photo-filename"', body)
+        self.assertIn('class="caption-photo-filename"', body)
+        self.assertIn("const captionPhotoFilename = document.getElementById(\"caption-photo-filename\")", script)
+        self.assertIn("const activePhoto = activePhotoId === null ? null : getPhotoById(activePhotoId)", script)
+        self.assertIn("const filename = activePhoto ? activePhoto.name : \"\"", script)
+        self.assertIn("captionPhotoFilename.textContent = filename", script)
+        self.assertIn("captionPhotoFilename.title = filename", script)
+        self.assertIn("captionPrevPhotoButton.addEventListener(\"click\", () => moveActivePhoto(-1))", script)
+        self.assertIn("captionNextPhotoButton.addEventListener(\"click\", () => moveActivePhoto(1))", script)
+        self.assertIn("selectPhoto(selectedPhotos[nextIndex].id)", script)
+        self.assertIn("renderCaptionEditor(photo)", script)
 
     def test_unsupported_photo_format_is_rejected(self):
         coverage_id = self.create_coverage()
@@ -445,12 +574,346 @@ class LensPersistenceRoutesTest(unittest.TestCase):
                 "include_captions": True,
                 "include_photos": False,
                 "destination": "download",
+                "confirm_warnings": True,
             },
         )
 
         self.assertEqual(response.status_code, 200)
         stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
         self.assertEqual(stored["export_history"][0]["format"], "HTML")
+        self.assertEqual(stored["export_history"][0]["status"], "COMPLETE")
+        self.assertEqual(stored["export_history"][0]["requested_photo_count"], 1)
+        self.assertEqual(stored["export_history"][0]["exported_photo_count"], 1)
+
+    def test_export_complete_counts_and_direct_docx(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        self.client.post(
+            f"/coverages/{coverage_id}/photos/photo-1/caption",
+            json={"caption_narrative": "Caption listo.", "caption_status": "Aprobado"},
+        )
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": ["docx"],
+                "include_photos": False,
+                "requested_photo_count": 1,
+                "destination": "download",
+                "confirm_warnings": True,
+            },
+        )
+
+        payload = response.get_json()
+        result = payload["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result["status"], "COMPLETE")
+        self.assertEqual(result["requested_photo_count"], 1)
+        self.assertEqual(result["exported_photo_count"], 1)
+        self.assertEqual(result["captions_included"], 1)
+        self.assertEqual(result["files"][0]["format"], "docx")
+        self.assertTrue(result["files"][0]["filename"].endswith(".docx"))
+        self.assertNotEqual(result["files"][0]["format"], "zip")
+
+    def test_export_single_pdf_and_html_download_directly(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        for export_format in ("pdf", "html"):
+            with self.subTest(export_format=export_format):
+                response = self.client.post(
+                    f"/coverages/{coverage_id}/exports",
+                    json={
+                        "formats": [export_format],
+                        "include_photos": False,
+                        "requested_photo_count": 1,
+                        "destination": "download",
+                        "confirm_warnings": True,
+                    },
+                )
+                result = response.get_json()["result"]
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(result["files"][0]["format"], export_format)
+                self.assertTrue(result["files"][0]["filename"].endswith(f".{export_format}"))
+
+    def test_multiple_formats_generate_automatic_zip(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": ["docx", "pdf"],
+                "include_photos": False,
+                "requested_photo_count": 1,
+                "destination": "download",
+                "confirm_warnings": True,
+            },
+        )
+
+        result = response.get_json()["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result["files"][0]["format"], "zip")
+        self.assertIn("docx", result["formats_generated"])
+        self.assertIn("pdf", result["formats_generated"])
+        self.assertIn("zip", result["formats_generated"])
+        self.assertTrue(result["files"][0]["filename"].endswith(".zip"))
+
+    def test_including_originals_generates_automatic_zip(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": ["docx"],
+                "include_photos": True,
+                "requested_photo_count": 1,
+                "destination": "download",
+                "confirm_warnings": True,
+            },
+        )
+
+        result = response.get_json()["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result["files"][0]["format"], "zip")
+        self.assertTrue(result["files"][0]["filename"].endswith(".zip"))
+        self.assertIn("zip", result["formats_generated"])
+
+    def test_originals_only_generates_zip(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": [],
+                "include_photos": True,
+                "requested_photo_count": 1,
+                "destination": "download",
+                "confirm_warnings": True,
+            },
+        )
+
+        result = response.get_json()["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result["files"][0]["format"], "zip")
+
+    def test_export_partial_preserves_omitted_photo_and_history(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": ["docx"],
+                "include_photos": False,
+                "requested_photo_count": 2,
+                "omitted_photos": [{
+                    "id": "failed-photo",
+                    "filename": "CAMPAMENTO-SIYUAN-6623(1).jpg",
+                    "stage": "import",
+                    "reason": "supera el límite máximo permitido de 25 MiB.",
+                }],
+                "destination": "download",
+                "confirm_warnings": True,
+            },
+        )
+
+        result = response.get_json()["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result["status"], "PARTIAL")
+        self.assertEqual(result["requested_photo_count"], 2)
+        self.assertEqual(result["exported_photo_count"], 1)
+        self.assertEqual(result["omitted_photos"][0]["filename"], "CAMPAMENTO-SIYUAN-6623(1).jpg")
+        stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertEqual(stored["export_history"][0]["status"], "PARTIAL")
+        self.assertEqual(stored["export_history"][0]["omitted_photos"][0]["stage"], "import")
+
+    def test_photo_import_merges_with_persisted_coverage_when_memory_is_stale(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id, id="photo-1", name="IMG001.jpg")
+        stale_coverage = deepcopy(web.coverages[coverage_id])
+        stale_coverage["photos"] = []
+        web.coverages[coverage_id] = stale_coverage
+
+        self.add_photo(coverage_id, id="photo-2", name="IMG002.jpg")
+
+        stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertEqual(len(stored["photos"]), 2)
+        self.assertEqual(
+            {photo["filename"] for photo in stored["photos"]},
+            {"IMG001.jpg", "IMG002.jpg"},
+        )
+        self.assertEqual(len(web.coverages[coverage_id]["photos"]), 2)
+
+    def test_export_omits_missing_captions_without_removing_photo_associations(self):
+        coverage_id = self.create_coverage()
+        requested_photos = []
+        for index in range(1, 14):
+            photo_id = f"photo-{index:02}"
+            filename = f"WHALE-PTO-LOPEZ-{index:04}.jpg"
+            self.add_photo(coverage_id, id=photo_id, name=filename)
+            requested_photos.append({"id": photo_id, "filename": filename})
+            if index <= 9:
+                self.client.post(
+                    f"/coverages/{coverage_id}/photos/{photo_id}/caption",
+                    json={
+                        "caption_narrative": f"Caption {index}.",
+                        "caption_status": "Aprobado",
+                    },
+                )
+
+        self.assertEqual(len(self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"]), 13)
+        self.client.get(f"/coverages/{coverage_id}")
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": ["docx"],
+                "include_photos": False,
+                "requested_photo_count": 13,
+                "requested_photos": requested_photos,
+                "destination": "download",
+                "confirm_warnings": True,
+            },
+        )
+
+        result = response.get_json()["result"]
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result["status"], "PARTIAL")
+        self.assertEqual(result["requested_photo_count"], 13)
+        self.assertEqual(result["persisted_photo_count"], 13)
+        self.assertEqual(result["exported_photo_count"], 9)
+        self.assertEqual(len(result["omitted_photos"]), 4)
+        self.assertEqual({item["stage"] for item in result["omitted_photos"]}, {"caption"})
+        self.assertEqual({item["reason"] for item in result["omitted_photos"]}, {"Caption ausente."})
+
+        self.client.get(f"/coverages/{coverage_id}")
+        stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertEqual(len(stored["photos"]), 13)
+        self.assertEqual(len(web.coverages[coverage_id]["photos"]), 13)
+        self.assertEqual(len(stored["export_history"][0]["omitted_photos"]), 4)
+
+    def test_export_photo_counts_have_no_accidental_limit(self):
+        for count in (1, 9, 13, 20, 50):
+            with self.subTest(count=count):
+                coverage_id = self.create_coverage()
+                requested_photos = []
+                for index in range(1, count + 1):
+                    photo_id = f"limit-{count}-{index:02}"
+                    filename = f"LIMIT-{count}-{index:02}.jpg"
+                    self.add_photo(coverage_id, id=photo_id, name=filename)
+                    requested_photos.append({"id": photo_id, "filename": filename})
+                    self.client.post(
+                        f"/coverages/{coverage_id}/photos/{photo_id}/caption",
+                        json={
+                            "caption_narrative": f"Caption {index}.",
+                            "caption_status": "Aprobado",
+                        },
+                    )
+
+                response = self.client.post(
+                    f"/coverages/{coverage_id}/exports",
+                    json={
+                        "formats": ["docx"],
+                        "include_photos": False,
+                        "requested_photo_count": count,
+                        "requested_photos": requested_photos,
+                        "destination": "download",
+                        "confirm_warnings": True,
+                    },
+                )
+
+                result = response.get_json()["result"]
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(result["status"], "COMPLETE")
+                self.assertEqual(result["requested_photo_count"], count)
+                self.assertEqual(result["persisted_photo_count"], count)
+                self.assertEqual(result["exported_photo_count"], count)
+                self.assertEqual(len(self.app.extensions["lens"]["coverage_store"].get(coverage_id)["photos"]), count)
+
+    def test_export_failed_when_no_photo_can_be_processed(self):
+        coverage_id = self.create_coverage()
+        web.coverages[coverage_id]["photos"].append({
+            "id": "missing-photo",
+            "name": "missing.jpg",
+            "filename": "missing.jpg",
+            "storage_path": "coverages/missing/missing.jpg",
+            "caption_narrative": "Caption perdido.",
+            "caption_status": "Aprobado",
+            "available_on_disk": False,
+        })
+        web.persist_coverage(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": ["docx"],
+                "include_photos": False,
+                "requested_photo_count": 1,
+                "destination": "download",
+                "confirm_warnings": True,
+            },
+        )
+
+        result = response.get_json()["result"]
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["exported_photo_count"], 0)
+
+    def test_delete_export_history_only_removes_record(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+        self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={"formats": ["docx"], "include_photos": False, "requested_photo_count": 1, "confirm_warnings": True},
+        )
+        stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        export_id = stored["export_history"][0]["export_id"]
+        photo_path = self.media_root / stored["photos"][0]["storage_path"]
+
+        response = self.client.post(f"/coverages/{coverage_id}/exports/history/{export_id}/delete")
+
+        self.assertEqual(response.status_code, 200)
+        updated = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
+        self.assertEqual(updated["export_history"], [])
+        self.assertTrue(updated["photos"])
+        self.assertTrue(photo_path.is_file())
+
+    def test_old_export_history_records_remain_renderable(self):
+        coverage_id = self.create_coverage()
+        web.coverages[coverage_id]["export_history"] = [{
+            "format": "DOCX",
+            "created_at": "2026-08-18T16:56:25+00:00",
+            "photo_count": 8,
+            "filename": "legacy.docx",
+        }]
+        web.persist_coverage(coverage_id)
+
+        body = self.client.get(f"/coverages/{coverage_id}").get_data(as_text=True)
+
+        self.assertIn("legacy.docx", body)
+        self.assertIn("8/8 fotografías", body)
+        self.assertIn("COMPLETE", body)
+
+    def test_partial_dispatch_requires_confirmation(self):
+        coverage_id = self.create_coverage()
+        self.add_photo(coverage_id)
+
+        response = self.client.post(
+            f"/coverages/{coverage_id}/exports",
+            json={
+                "formats": ["docx"],
+                "include_photos": False,
+                "requested_photo_count": 2,
+                "omitted_photos": [{"filename": "faltante.jpg", "stage": "import", "reason": "No importada."}],
+                "destination": "dispatch",
+                "confirm_warnings": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["status"], "PARTIAL")
 
     def test_edit_coverage_preserves_photos_storage_caption_history_and_ai_context(self):
         coverage_id = self.create_coverage()
@@ -468,7 +931,13 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         before = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
         before_photo = before["photos"][0]
 
-        response = self.edit_coverage(coverage_id)
+        response = self.edit_coverage(
+            coverage_id,
+            city="Puerto López",
+            locality_type="locality",
+            admin_area="Manabí",
+            admin_area_type="province",
+        )
 
         self.assertEqual(response.status_code, 302)
         stored = self.app.extensions["lens"]["coverage_store"].get(coverage_id)
@@ -476,6 +945,10 @@ class LensPersistenceRoutesTest(unittest.TestCase):
         self.assertEqual(stored["agency"], "AFP")
         self.assertEqual(stored["photographer"], "Nuevo Fotógrafo")
         self.assertEqual(stored["editor"], "ab")
+        self.assertEqual(stored["city"], "Puerto López")
+        self.assertEqual(stored["locality_type"], "locality")
+        self.assertEqual(stored["admin_area"], "Manabí")
+        self.assertEqual(stored["admin_area_type"], "province")
         self.assertEqual(photo["id"], before_photo["id"])
         self.assertEqual(photo["storage_path"], before_photo["storage_path"])
         self.assertEqual(photo["available_on_disk"], before_photo["available_on_disk"])

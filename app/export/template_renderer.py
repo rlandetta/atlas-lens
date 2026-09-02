@@ -47,7 +47,14 @@ XINHUA_CAPITALS = {
 
 # Alias kept for callers/tests that imported the previous table name.
 CAPITALS = XINHUA_CAPITALS
-LOCALITY_TYPES = {"auto", "city", "locality"}
+LOCALITY_TYPES = {"auto", "city", "locality", "capital"}
+ADMIN_AREA_TYPES = {
+    "province": "en la provincia de {admin_area}",
+    "state": "en el estado de {admin_area}",
+    "department": "en el departamento de {admin_area}",
+    "region": "en la región de {admin_area}",
+    "district": "en el distrito de {admin_area}",
+}
 
 CAPITALS_BY_COUNTRY_KEY: dict[str, str] = {}
 
@@ -134,11 +141,42 @@ def normalize_locality_type(value: str) -> str:
     return normalized if normalized in LOCALITY_TYPES else "auto"
 
 
+def normalize_admin_area_type(value: str) -> str:
+    normalized = normalize_text(value).casefold()
+    return normalized if normalized in set(ADMIN_AREA_TYPES) | {"other"} else ""
+
+
 def same_city(left: str, right: str) -> bool:
     return normalize_comparison_text(left) == normalize_comparison_text(right)
 
 
-def format_xinhua_location(city: str, country: str, locality_type: str = "auto") -> str:
+def format_admin_area(admin_area: str, admin_area_type: str) -> str:
+    admin_area = normalize_text(admin_area)
+    if not admin_area:
+        return ""
+    template = ADMIN_AREA_TYPES.get(normalize_admin_area_type(admin_area_type))
+    if not template:
+        return f"en {admin_area}"
+    return template.format(admin_area=admin_area)
+
+
+def append_unique_location_part(parts: list[str], value: str) -> None:
+    clean_value = normalize_text(value)
+    if not clean_value:
+        return
+    comparable = normalize_comparison_text(clean_value)
+    if any(comparable == normalize_comparison_text(existing) for existing in parts):
+        return
+    parts.append(clean_value)
+
+
+def format_xinhua_location(
+    city: str,
+    country: str,
+    locality_type: str = "auto",
+    admin_area: str = "",
+    admin_area_type: str = "",
+) -> str:
     city = normalize_text(city)
     country = normalize_text(country)
     locality_type = normalize_locality_type(locality_type)
@@ -153,7 +191,18 @@ def format_xinhua_location(city: str, country: str, locality_type: str = "auto")
         return f"en {city}, capital de {country}"
     if locality_type == "city":
         return f"en la ciudad de {city}, en {country}"
-    return f"en {city}, en {country}"
+    parts = [f"en {city}"]
+    admin_phrase = ""
+    if (
+        locality_type == "locality"
+        and admin_area
+        and not same_city(admin_area, city)
+        and not same_city(admin_area, country)
+    ):
+        admin_phrase = format_admin_area(admin_area, admin_area_type)
+    append_unique_location_part(parts, admin_phrase)
+    append_unique_location_part(parts, f"en {country}")
+    return ", ".join(parts)
 
 
 def build_location_phrase(city: str, country: str) -> str:
@@ -193,12 +242,14 @@ def render_xinhua_caption(coverage: dict, photo: dict) -> str:
     city = normalize_text(coverage.get("city", ""))
     country = normalize_text(coverage.get("country", ""))
     locality_type = normalize_locality_type(coverage.get("locality_type", "auto"))
+    admin_area = normalize_text(coverage.get("admin_area", ""))
+    admin_area_type = normalize_admin_area_type(coverage.get("admin_area_type", ""))
     agency = normalize_text(coverage.get("agency", "Xinhua")) or "Xinhua"
     photographer = normalize_text(coverage.get("photographer", ""))
     editor = normalize_text(coverage.get("editor_initials", "")) or normalize_text(coverage.get("editor", ""))
 
     header = f"({format_dateline_code(send_date)}) -- {city.upper()}, {format_header_date(send_date)} ({agency}) --"
-    location = format_xinhua_location(city, country, locality_type)
+    location = format_xinhua_location(city, country, locality_type, admin_area, admin_area_type)
     credit = f"({agency}/{photographer})" if photographer else f"({agency})"
     editor_credit = f" ({editor})" if editor else ""
 

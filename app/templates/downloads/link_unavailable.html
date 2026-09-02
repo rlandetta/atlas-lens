@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Enlace no disponible | AYAMPI Digital Asset Delivery</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body class="public-delivery-page">
+    <main class="public-delivery-shell" aria-labelledby="link-unavailable-title">
+        <section class="public-delivery-info public-delivery-unavailable">
+            <h1 id="link-unavailable-title">Enlace no disponible</h1>
+            {% if reason == "expired" %}
+            <p>Este enlace de descarga expiro o fue revocado.</p>
+            {% else %}
+            <p>Este enlace de descarga no es valido.</p>
+            {% endif %}
+        </section>
+    </main>
+    <footer class="public-delivery-footer">
+        <span>AYAMPI · Digital Asset Delivery</span>
+    </footer>
+</body>
+</html>

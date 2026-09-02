@@ -110,6 +110,9 @@
                 {% if session.lens_url %}
                 <p>Cobertura: {{ session.coverage_name }}</p>
                 {% endif %}
+                {% if session.lens_used_photo_count %}
+                <p class="flow-session-lens-usage">{{ session.lens_used_photo_count }} {% if session.lens_used_photo_count == 1 %}fotografía usada{% else %}fotografías usadas{% endif %} en LENS</p>
+                {% endif %}
             </div>
             <dl>
                 <div>
@@ -130,6 +133,14 @@
                 </form>
                 <a class="secondary-button compact-action" href="{{ session.create_url }}">Completar datos</a>
                 {% endif %}
+                <button
+                    type="button"
+                    class="danger-button compact-action flow-session-delete-button"
+                    data-session-id="{{ session.id }}"
+                    data-photo-count="{{ session.photo_count }}"
+                    data-delete-check-url="{{ session.delete_check_url }}"
+                    data-delete-url="{{ session.delete_url }}"
+                >Eliminar sesión</button>
             </div>
         </article>
         {% endfor %}
@@ -138,4 +149,38 @@
     <p class="dispatch-muted">Todavía no hay sesiones de ingreso registradas.</p>
     {% endif %}
 </section>
+
+<dialog id="flow-session-delete-dialog" class="delete-dialog flow-session-delete-dialog" aria-labelledby="flow-session-delete-title">
+    <form method="dialog" class="delete-dialog-form flow-session-delete-content">
+        <h2 id="flow-session-delete-title">Eliminar sesión de FLOW</h2>
+        <div data-flow-delete-loading>
+            <p>Revisando dependencias de LENS...</p>
+        </div>
+        <div data-flow-delete-free hidden>
+            <p data-flow-delete-free-summary></p>
+            <p>Esta acción no se puede deshacer.</p>
+            <label class="flow-session-delete-confirm">
+                <input type="checkbox" data-flow-delete-confirm-checkbox>
+                <span>Entiendo que las fotografías originales de esta sesión serán eliminadas de FLOW.</span>
+            </label>
+        </div>
+        <div data-flow-delete-blocked hidden>
+            <p data-flow-delete-blocked-summary></p>
+            <div data-flow-delete-coverages-panel hidden>
+                <h3>Coberturas relacionadas</h3>
+                <div class="flow-session-delete-coverages" data-flow-delete-coverages></div>
+                <p>Para eliminar esta sesión primero debe retirar esas fotografías de las coberturas relacionadas.</p>
+            </div>
+        </div>
+        <p class="form-error" data-flow-delete-error hidden></p>
+        <div class="dialog-actions">
+            <button type="submit" class="secondary-button compact-action" data-flow-delete-cancel>Cerrar</button>
+            <button type="button" class="danger-button compact-action danger-confirm-button" data-flow-delete-submit hidden disabled>Eliminar sesión</button>
+        </div>
+    </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/flow_session_delete.js') }}" defer></script>
 {% endblock %}

@@ -3,89 +3,230 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Descarga editorial | ATLAS</title>
+    <title>{{ shipment.coverage_snapshot.coverage_name or shipment.name }} | AYAMPI Digital Asset Delivery</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
 </head>
-<body class="delivery-public-page{% if backgrounds %} has-delivery-backgrounds{% endif %}" data-delivery-backgrounds='{{ backgrounds | tojson }}'>
-    <div class="delivery-background" aria-hidden="true">
-        <div class="delivery-background-layer" data-delivery-background-layer></div>
-        <div class="delivery-background-layer" data-delivery-background-layer></div>
-        <div class="delivery-background-overlay"></div>
-    </div>
-    <main class="delivery-public-shell" aria-labelledby="delivery-title">
-        <header class="delivery-hero">
-            <div class="delivery-hero-copy">
-                <p class="coverage-id">ATLAS DISPATCH</p>
-                <h1 id="delivery-title">{{ shipment.coverage_snapshot.coverage_name or shipment.name }}</h1>
-                <p class="subtitle">{{ photo_count }} fotografía{% if photo_count != 1 %}s{% endif %}{% if docx_included %} · Documento Word incluido{% endif %}</p>
-                <p class="delivery-expiration">Disponible hasta {{ expires_at_display }}</p>
-            </div>
-            <a class="primary-button compact-action delivery-download-all" href="{{ url_for('downloads.download_zip', token=token) }}">Descargar todo</a>
-        </header>
+<body class="public-delivery-page" data-delivery-backgrounds='{{ backgrounds | tojson }}'>
+    <svg class="public-delivery-icons" aria-hidden="true" focusable="false">
+        <symbol id="public-icon-ayampi" viewBox="0 0 24 24">
+            <path d="M12 3 3 20h18L12 3Z"></path>
+            <path d="M9.2 15h5.6"></path>
+            <path d="m10.4 12 1.6-3 1.6 3"></path>
+        </symbol>
+        <symbol id="public-icon-camera" viewBox="0 0 24 24">
+            <path d="M4 8h4l1.6-2h4.8L16 8h4v11H4V8Z"></path>
+            <circle cx="12" cy="13.5" r="3.3"></circle>
+        </symbol>
+        <symbol id="public-icon-document" viewBox="0 0 24 24">
+            <path d="M7 3h7l4 4v14H7V3Z"></path>
+            <path d="M14 3v5h5"></path>
+            <path d="M9.5 13h5"></path>
+            <path d="M9.5 16h4"></path>
+        </symbol>
+        <symbol id="public-icon-archive" viewBox="0 0 24 24">
+            <path d="M4 7h16v13H4V7Z"></path>
+            <path d="M3 4h18v3H3V4Z"></path>
+            <path d="M10 11h4"></path>
+        </symbol>
+        <symbol id="public-icon-download" viewBox="0 0 24 24">
+            <path d="M12 3v11"></path>
+            <path d="m7.5 10 4.5 4.5L16.5 10"></path>
+            <path d="M5 19h14"></path>
+        </symbol>
+        <symbol id="public-icon-building" viewBox="0 0 24 24">
+            <path d="M5 21V4h10v17"></path>
+            <path d="M15 9h4v12"></path>
+            <path d="M8 8h3"></path>
+            <path d="M8 12h3"></path>
+            <path d="M8 16h3"></path>
+        </symbol>
+        <symbol id="public-icon-location" viewBox="0 0 24 24">
+            <path d="M12 21s6-5.3 6-11a6 6 0 0 0-12 0c0 5.7 6 11 6 11Z"></path>
+            <circle cx="12" cy="10" r="2"></circle>
+        </symbol>
+        <symbol id="public-icon-mail" viewBox="0 0 24 24">
+            <path d="M4 6h16v12H4V6Z"></path>
+            <path d="m4 7 8 6 8-6"></path>
+        </symbol>
+        <symbol id="public-icon-calendar" viewBox="0 0 24 24">
+            <path d="M5 5h14v15H5V5Z"></path>
+            <path d="M8 3v4"></path>
+            <path d="M16 3v4"></path>
+            <path d="M5 10h14"></path>
+        </symbol>
+        <symbol id="public-icon-clock" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="8"></circle>
+            <path d="M12 8v5l3 2"></path>
+        </symbol>
+        <symbol id="public-icon-id" viewBox="0 0 24 24">
+            <path d="M4 6h16v12H4V6Z"></path>
+            <path d="M8 10h4"></path>
+            <path d="M8 14h8"></path>
+        </symbol>
+    </svg>
+    <header class="public-delivery-topbar">
+        <div class="public-delivery-brand" aria-label="AYAMPI Digital Asset Delivery">
+            <span><svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-ayampi"></use></svg>AYAMPI</span>
+            <strong>Digital Asset Delivery</strong>
+        </div>
+        <div class="public-delivery-topbar-meta">
+            <span>Entrega segura de archivos</span>
+            <b>Enlace seguro</b>
+        </div>
+    </header>
 
-        <section class="delivery-file-summary" aria-label="Resumen de archivos">
-            <div>
-                <span>Archivos</span>
-                <strong>{{ photo_count }} fotografía{% if photo_count != 1 %}s{% endif %}</strong>
-            </div>
-            <div>
-                <span>Documentos</span>
-                <strong>{{ document_count }}</strong>
-            </div>
-            <div>
-                <span>Tamaño de la entrega</span>
-                <strong>{{ total_bytes_label }}</strong>
+    <main class="public-delivery-shell" aria-labelledby="public-delivery-title">
+        <section class="public-delivery-hero{% if hero_image_url %} has-image{% endif %}">
+            {% if hero_image_url %}
+            <img class="public-delivery-hero-image" src="{{ hero_image_url }}" alt="" aria-hidden="true" loading="eager">
+            {% endif %}
+            <div class="public-delivery-hero-overlay"></div>
+            <div class="public-delivery-hero-content">
+                <div class="public-delivery-hero-main">
+                    <p class="public-delivery-kicker">Cobertura fotografica</p>
+                    <h1 id="public-delivery-title">{{ shipment.coverage_snapshot.coverage_name or shipment.name }}</h1>
+                    <p class="public-delivery-location">{{ location_label }}</p>
+                    <dl class="public-delivery-hero-stats" aria-label="Resumen de entrega">
+                        <div>
+                            <dt><svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-camera"></use></svg>Fotografias</dt>
+                            <dd>{{ photo_count }}</dd>
+                        </div>
+                        <div>
+                            <dt><svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-document"></use></svg>Documentos</dt>
+                            <dd>{{ document_count }}</dd>
+                        </div>
+                        <div>
+                            <dt><svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-archive"></use></svg>Tamaño de la entrega</dt>
+                            <dd>{{ total_bytes_label }}</dd>
+                        </div>
+                    </dl>
+                </div>
+                <div class="public-delivery-hero-actions">
+                    <a class="primary-button compact-action public-delivery-download-all" href="{{ url_for('downloads.download_zip', token=token) }}" aria-label="Descargar todo">
+                        <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-download"></use></svg>
+                        DESCARGAR TODO
+                    </a>
+                </div>
             </div>
         </section>
 
-        <section class="delivery-section" aria-labelledby="delivery-photos-title">
-            <div class="delivery-section-header">
-                <h2 id="delivery-photos-title">Fotografías</h2>
+        {% if profile.show_public_profile %}
+        <section class="public-delivery-profile" aria-label="Perfil del fotografo">
+            <div class="public-delivery-avatar">
+                {% if profile_avatar_url %}
+                <img src="{{ profile_avatar_url }}" alt="Avatar de {{ profile.display_name or 'perfil publico' }}" loading="lazy">
+                {% else %}
+                <span aria-hidden="true">{{ (profile.display_name or profile.organization or "A")[:1] | upper }}</span>
+                {% endif %}
+            </div>
+            <div class="public-delivery-profile-copy">
+                <h2>{{ profile.display_name or "Perfil editorial" }}</h2>
+                {% if profile.role %}<p class="public-delivery-profile-role">{{ profile.role }}</p>{% endif %}
+                {% if profile.organization or profile.location %}
+                <div class="public-delivery-profile-meta">
+                    {% if profile.organization %}<p class="public-delivery-profile-line"><svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-building"></use></svg>{{ profile.organization }}</p>{% endif %}
+                    {% if profile.location %}<p class="public-delivery-profile-line"><svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-location"></use></svg>{{ profile.location }}</p>{% endif %}
+                </div>
+                {% endif %}
+                {% if profile.public_email %}<a class="public-delivery-profile-line" href="mailto:{{ profile.public_email }}"><svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-mail"></use></svg>{{ profile.public_email }}</a>{% endif %}
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="public-delivery-info" aria-labelledby="public-delivery-info-title">
+            <h2 id="public-delivery-info-title">Informacion de entrega</h2>
+            <dl>
+                <div>
+                    <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-calendar"></use></svg>
+                    <dt>Creada</dt>
+                    <dd>{{ created_at_display }}</dd>
+                </div>
+                <div>
+                    <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-camera"></use></svg>
+                    <dt>Fotografias</dt>
+                    <dd>{{ photo_count }}</dd>
+                </div>
+                <div>
+                    <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-document"></use></svg>
+                    <dt>Documentos</dt>
+                    <dd>{{ document_count }}</dd>
+                </div>
+                <div>
+                    <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-archive"></use></svg>
+                    <dt>Tamaño <span>total</span></dt>
+                    <dd>{{ total_bytes_label }}</dd>
+                </div>
+                <div>
+                    <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-clock"></use></svg>
+                    <dt>Disponible hasta</dt>
+                    <dd>{{ expires_at_short or expires_at_display }}</dd>
+                </div>
+            </dl>
+        </section>
+
+        <section class="public-delivery-section" aria-labelledby="public-delivery-photos-title">
+            <div class="public-delivery-section-header">
+                <h2 id="public-delivery-photos-title">Fotografias</h2>
                 <span>{{ photo_count }}</span>
             </div>
-            <div class="delivery-photo-grid">
+            {% if photo_files %}
+            <div class="public-delivery-photo-grid">
                 {% for file in photo_files %}
-                <article class="delivery-file-row delivery-file-row--photo">
-                    <div class="delivery-file-thumb" aria-hidden="true">
+                <article class="public-delivery-photo-card">
+                    <div class="public-delivery-photo-thumb">
                         {% if file.thumbnail_url %}
-                        <img src="{{ file.thumbnail_url }}" alt="" loading="lazy" decoding="async">
+                        <img src="{{ file.thumbnail_url }}" alt="Miniatura de {{ file.filename }}" loading="lazy" decoding="async">
                         {% else %}
-                        <span aria-hidden="true">▧</span>
+                        <span aria-hidden="true">IMG</span>
                         {% endif %}
                     </div>
-                    <div class="delivery-file-copy">
+                    <div class="public-delivery-file-copy">
                         <strong title="{{ file.filename }}">{{ file.filename }}</strong>
-                        <p>Fotografía{% if file.size_label %} · {{ file.size_label }}{% endif %}</p>
+                        <p>{{ file.extension | upper or "JPG" }}{% if file.size_label %} / {{ file.size_label }}{% endif %}</p>
                     </div>
-                    <a class="delivery-file-action" href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">Descargar</a>
+                    <a class="public-delivery-file-action" href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">
+                        <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-download"></use></svg>
+                        Descargar
+                    </a>
                 </article>
                 {% endfor %}
             </div>
+            {% else %}
+            <p class="public-delivery-empty">No hay fotografias disponibles en esta entrega.</p>
+            {% endif %}
         </section>
 
         {% if document_files %}
-        <section class="delivery-section delivery-section--documents" aria-labelledby="delivery-documents-title">
-            <div class="delivery-section-header">
-                <h2 id="delivery-documents-title">Documentos</h2>
+        <section class="public-delivery-section" aria-labelledby="public-delivery-documents-title">
+            <div class="public-delivery-section-header">
+                <h2 id="public-delivery-documents-title">Documentos</h2>
                 <span>{{ document_count }}</span>
             </div>
-            <div class="delivery-document-list">
+            <div class="public-delivery-document-grid">
                 {% for file in document_files %}
-                <article class="delivery-file-row delivery-file-row--document">
-                    <div class="delivery-file-thumb delivery-file-thumb--document" aria-hidden="true">
-                        <span>DOCX</span>
-                    </div>
-                    <div class="delivery-file-copy">
+                <article class="public-delivery-document-card">
+                    <span class="public-delivery-document-icon">
+                        <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-document"></use></svg>
+                        <b>{{ file.doc_badge }}</b>
+                    </span>
+                    <div class="public-delivery-file-copy">
                         <strong title="{{ file.filename }}">{{ file.filename }}</strong>
-                        <p>Documento Word{% if file.size_label %} · {{ file.size_label }}{% endif %}</p>
+                        <p>{{ file.doc_kind }}{% if file.size_label %} / {{ file.size_label }}{% endif %}</p>
                     </div>
-                    <a class="delivery-file-action" href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">Descargar</a>
+                    <a class="public-delivery-file-action" href="{{ url_for('downloads.download_file', token=token, file_id=file.id) }}">
+                        <svg class="public-delivery-icon" aria-hidden="true"><use href="#public-icon-download"></use></svg>
+                        Descargar
+                    </a>
                 </article>
                 {% endfor %}
             </div>
         </section>
         {% endif %}
     </main>
+
+    <footer class="public-delivery-footer">
+        <span>AYAMPI · Digital Asset Delivery</span>
+    </footer>
     <script src="{{ url_for('static', filename='js/delivery_backgrounds.js') }}" defer></script>
 </body>
 </html>

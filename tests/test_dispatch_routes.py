@@ -11,6 +11,7 @@ from app.dispatch import DispatchShipmentStore, ShipmentService
 from app.dispatch.scheduler import DispatchScheduler
 from app.lens_read_service import LensReadService
 from app.media import ThumbnailService
+from app.routes import dispatch as dispatch_routes
 from app.routes import web
 from app.settings import OutboundChannelDraft
 
@@ -136,12 +137,12 @@ class DispatchRoutesTest(unittest.TestCase):
             "name": "Xinhua",
             "display_name": "Xinhua News Agency",
             "channel_type": "smtp",
-            "sender_email": "atlas@lavoceria.com",
+            "sender_email": "notificaciones@ayampi.com",
             "reply_to": "",
             "smtp_host": "smtp.zoho.com",
             "smtp_port": 465,
             "smtp_security": "ssl",
-            "smtp_username": "atlas@lavoceria.com",
+            "smtp_username": "notificaciones@ayampi.com",
             "credential_ref": "ATLAS_SMTP_CHANNEL_XINHUA",
             "is_active": True,
             "is_default": True,
@@ -184,7 +185,7 @@ class DispatchRoutesTest(unittest.TestCase):
 
         self.assertEqual(dashboard.status_code, 200)
         dashboard_body = dashboard.get_data(as_text=True)
-        self.assertIn("BIENVENIDO A ATLAS", dashboard_body)
+        self.assertIn("BIENVENIDO A AYAMPI", dashboard_body)
         self.assertIn("Centro editorial", dashboard_body)
         self.assertIn("MÓDULOS ACTIVOS", dashboard_body)
         self.assertIn("SETTINGS", dashboard_body)
@@ -192,17 +193,24 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn("Abrir LENS", dashboard_body)
         self.assertIn("Abrir DISPATCH", dashboard_body)
         self.assertIn("Abrir FLOW", dashboard_body)
+        self.assertIn("Abrir TOOLS", dashboard_body)
         self.assertNotIn("Abrir SETTINGS", dashboard_body)
         self.assertNotIn("atlas-module-card--settings", dashboard_body)
+        self.assertEqual(dashboard_body.count("atlas-module-card atlas-module-card--"), 4)
         self.assertIn('href="/lens"', dashboard_body)
         self.assertIn('href="/dispatch/"', dashboard_body)
         self.assertIn('href="/flow"', dashboard_body)
+        self.assertIn('href="/tools/"', dashboard_body)
+        self.assertNotIn("http://localhost:8092/", dashboard_body)
+        self.assertNotIn("ATLAS", dashboard_body)
+        self.assertNotIn("lavoceria.com", dashboard_body)
         self.assertIn('href="/settings/"', dashboard_body)
         self.assertLess(dashboard_body.index('href="/flow"'), dashboard_body.index('href="/lens"'))
         self.assertLess(dashboard_body.index('href="/lens"'), dashboard_body.index('href="/dispatch/"'))
         self.assertLess(dashboard_body.index('href="/dispatch/"'), dashboard_body.index('href="/settings/"'))
         self.assertLess(dashboard_body.index('atlas-module-card--flow'), dashboard_body.index('atlas-module-card--lens'))
         self.assertLess(dashboard_body.index('atlas-module-card--lens'), dashboard_body.index('atlas-module-card--dispatch'))
+        self.assertLess(dashboard_body.index('atlas-module-card--dispatch'), dashboard_body.index('atlas-module-card--tools'))
         self.assertIn("PRÓXIMOS MÓDULOS", dashboard_body)
         self.assertIn("NEXUS", dashboard_body)
         self.assertIn("PULSE", dashboard_body)
@@ -764,6 +772,30 @@ class DispatchRoutesTest(unittest.TestCase):
         self.assertIn('class="coverage-summary-grid"', body)
         self.assertIn('data-content-summary', body)
         self.assertIn("Documento Word incluido", body)
+
+    def test_dispatch_coverage_options_sort_newest_created_at_first(self):
+        self.coverages.update({
+            "cov-old": {
+                **copy.deepcopy(self.coverages["cov-1"]),
+                "coverage_name": "Alfa",
+                "created_at": "2026-08-01T10:00:00+00:00",
+            },
+            "cov-new": {
+                **copy.deepcopy(self.coverages["cov-1"]),
+                "coverage_name": "Zulu",
+                "created_at": "2026-08-03T10:00:00+00:00",
+            },
+            "cov-mid": {
+                **copy.deepcopy(self.coverages["cov-1"]),
+                "coverage_name": "Beta",
+                "created_at": "2026-08-02T10:00:00+00:00",
+            },
+        })
+
+        with self.app.test_request_context("/dispatch/new"):
+            options = dispatch_routes.list_coverage_options()
+
+        self.assertEqual([item["id"] for item in options[:3]], ["cov-new", "cov-mid", "cov-old"])
 
     def test_get_dispatch_new_immediate_hides_date_time_and_uses_single_timezone_control(self):
         response = self.client.post("/dispatch/new", data=self.valid_form(mode="immediate", name=""), follow_redirects=False)
